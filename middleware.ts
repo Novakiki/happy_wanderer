@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const COOKIE_NAME = 'vals-memory-auth';
+const AUTH_COOKIE_NAME = 'vals-memory-auth';
+const LETTER_COOKIE_NAME = 'vals-memory-letter';
 
 // Paths that don't require authentication
 const PUBLIC_PATHS = ['/api/auth'];
@@ -14,9 +15,10 @@ export function middleware(request: NextRequest) {
   }
 
   // Check for auth cookie
-  const authCookie = request.cookies.get(COOKIE_NAME);
+  const authCookie = request.cookies.get(AUTH_COOKIE_NAME);
+  const isAuthenticated = authCookie?.value === 'authenticated';
 
-  if (!authCookie || authCookie.value !== 'authenticated') {
+  if (!isAuthenticated) {
     // For API routes, return 401
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -27,6 +29,15 @@ export function middleware(request: NextRequest) {
     const response = NextResponse.next();
     response.headers.set('x-auth-status', 'unauthenticated');
     return response;
+  }
+
+  const letterCookie = request.cookies.get(LETTER_COOKIE_NAME);
+  const hasSeenLetter = letterCookie?.value === 'seen';
+  const isLetterPath = pathname === '/letter' || pathname.startsWith('/api/letter');
+
+  if (!hasSeenLetter && !isLetterPath && !pathname.startsWith('/api/')) {
+    const letterUrl = new URL('/letter', request.url);
+    return NextResponse.redirect(letterUrl);
   }
 
   return NextResponse.next();

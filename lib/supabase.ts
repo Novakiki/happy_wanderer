@@ -10,7 +10,11 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 // QUERY HELPERS
 // =============================================================================
 
-export async function getTimelineEvents() {
+type PrivacyLevel = 'public' | 'family' | 'kids-only';
+
+export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel[] }) {
+  const privacyLevels = options?.privacyLevels;
+
   const { data, error } = await supabase
     .from('timeline_events')
     .select(`
@@ -19,6 +23,7 @@ export async function getTimelineEvents() {
       themes:event_themes(theme:themes(id, label))
     `)
     .eq('status', 'published')
+    .in('privacy_level', privacyLevels && privacyLevels.length ? privacyLevels : ['public', 'family', 'kids-only'])
     .order('year', { ascending: true });
 
   if (error) {

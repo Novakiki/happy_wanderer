@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function SubmitPage() {
-  redirect("/share");
+  redirect("/chapters");
 }

@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "lsof -ti:3000 | xargs kill -9 2>/dev/null || true && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@supabase/supabase-js": "^2.89.0",
     "next": "16.1.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"

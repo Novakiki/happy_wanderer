@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Newsreader, Sora } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
-import Navigation from "@/components/Navigation";
 import PasswordGate from "@/components/PasswordGate";
 
 const newsreader = Newsreader({
@@ -18,6 +17,7 @@ const sora = Sora({
 export const metadata: Metadata = {
   title: "The Happy Wanderer",
   description: "A place to share and explore memories of Valerie Park Anderson",
+  metadataBase: new URL("https://val.virtuallimit.com"),
 };
 
 export default async function RootLayout({

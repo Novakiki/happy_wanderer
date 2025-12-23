@@ -39,37 +39,66 @@ export default function ChaptersPage() {
   const [inviteContact, setInviteContact] = useState('');
   const [personalMessage, setPersonalMessage] = useState('');
   const [inviteSent, setInviteSent] = useState(false);
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Fetch data from Supabase
   useEffect(() => {
     async function fetchData() {
       try {
-        const [eventsData, themesData] = await Promise.all([
-          getTimelineEvents(),
-          getThemes()
-        ]);
+        // Prefer server-fetched score (avoids client env or RLS hiccups)
+        const res = await fetch('/api/score');
+        if (res.ok) {
+          const json = await res.json();
+          const eventsData = json.events || [];
+          const themesData = json.themes || [];
 
-        // Map database format to UI format
-        const mappedEvents: TimelineEvent[] = eventsData.map((e) => ({
-          id: e.id,
-          year: e.year,
-          date: e.date,
-          type: e.type,
-          title: e.title,
-          preview: e.preview,
-          fullEntry: e.full_entry,
-          whyIncluded: e.why_included,
-          sourceUrl: e.source_url,
-          sourceName: e.source_name,
-          contributor: e.contributor?.name || 'Unknown',
-          contributorRelation: e.contributor?.relation,
-          themes: e.themes?.map((t: { theme: { id: string } }) => t.theme.id) || [],
-          location: e.location,
-          peopleInvolved: e.people_involved,
-        }));
+          const mappedEvents: TimelineEvent[] = eventsData.map((e: any) => ({
+            id: e.id,
+            year: e.year,
+            date: e.date,
+            type: e.type,
+            title: e.title,
+            preview: e.preview,
+            fullEntry: e.full_entry,
+            whyIncluded: e.why_included,
+            sourceUrl: e.source_url,
+            sourceName: e.source_name,
+            contributor: e.contributor?.name || 'Unknown',
+            contributorRelation: e.contributor?.relation,
+            themes: e.themes?.map((t: { theme: { id: string } }) => t.theme.id) || [],
+            location: e.location,
+            peopleInvolved: e.people_involved,
+          }));
 
-        setEvents(mappedEvents);
-        setThemes(themesData || []);
+          setEvents(mappedEvents);
+          setThemes(themesData || []);
+        } else {
+          // Fallback to direct Supabase client
+          const [eventsData, themesData] = await Promise.all([
+            getTimelineEvents({ privacyLevels: ['public', 'family', 'kids-only'] }),
+            getThemes(),
+          ]);
+          const mappedEvents: TimelineEvent[] = eventsData.map((e) => ({
+            id: e.id,
+            year: e.year,
+            date: e.date,
+            type: e.type,
+            title: e.title,
+            preview: e.preview,
+            fullEntry: e.full_entry,
+            whyIncluded: e.why_included,
+            sourceUrl: e.source_url,
+            sourceName: e.source_name,
+            contributor: e.contributor?.name || 'Unknown',
+            contributorRelation: e.contributor?.relation,
+            themes: e.themes?.map((t: { theme: { id: string } }) => t.theme.id) || [],
+            location: e.location,
+            peopleInvolved: e.people_involved,
+          }));
+          setEvents(mappedEvents);
+          setThemes(themesData || []);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -119,22 +148,43 @@ export default function ChaptersPage() {
     setWitnesses(witnesses.filter(w => w !== name));
   };
 
-  const handleSendInvite = () => {
-    // TODO: Actually send invite via API
-    console.log('Sending invite:', {
-      event: selectedEvent,
-      witnesses,
-      method: inviteMethod,
-      contact: inviteContact,
-      message: personalMessage
-    });
-    setInviteSent(true);
-    setTimeout(() => setInviteSent(false), 3000);
+  const handleSendInvite = async () => {
+    if (!selectedEvent) return;
+
+    setInviteSent(false);
+    setInviteError(null);
+    setInviteSending(true);
+    try {
+      const res = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_id: selectedEvent.id,
+          recipient_name: witnesses[0] || 'Friend of Valerie',
+          recipient_contact: inviteContact || 'link',
+          method: inviteMethod,
+          message: personalMessage,
+          witnesses,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Invite failed');
+      setInviteSent(true);
+      setPersonalMessage('');
+      setInviteContact('');
+    } catch (error) {
+      console.error(error);
+      setInviteError('Could not send invite. Please try again.');
+    } finally {
+      setInviteSending(false);
+      setTimeout(() => setInviteSent(false), 2000);
+    }
   };
 
   const copyShareLink = () => {
     const link = `${window.location.origin}/memory/${selectedEvent?.id}`;
     navigator.clipboard.writeText(link);
+    setInviteError(null);
     setInviteSent(true);
     setTimeout(() => setInviteSent(false), 2000);
   };
@@ -158,7 +208,17 @@ export default function ChaptersPage() {
   }
 
   return (
-    <div className="min-h-screen text-white overflow-hidden">
+    <div
+      className="min-h-screen text-white overflow-hidden bg-[#0b0b0b]"
+      style={{
+        backgroundImage: `
+          radial-gradient(900px 520px at 12% -8%, rgba(224, 122, 95, 0.12), transparent 60%),
+          radial-gradient(700px 520px at 88% 6%, rgba(124, 138, 120, 0.12), transparent 55%),
+          linear-gradient(180deg, rgba(11, 11, 11, 1), rgba(5, 5, 5, 1))
+        `,
+        backgroundAttachment: 'fixed'
+      }}
+    >
       {/* Intro Section */}
       <section className={`transition-opacity duration-1000 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
         <div className="max-w-4xl mx-auto px-6 pt-24 pb-8">
@@ -181,48 +241,6 @@ export default function ChaptersPage() {
             This is a place to explore who she was — through the memories,
             stories, and moments shared by family and friends.
           </p>
-        </div>
-      </section>
-
-      {/* Navigation Cards */}
-      <section className="max-w-4xl mx-auto px-6 py-8">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <a
-            href="/meet"
-            className="group p-5 rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all animate-fade-in-up"
-            style={{ animationDelay: '400ms', animationFillMode: 'both' }}
-          >
-            <h3 className="text-lg font-light text-white/90 group-hover:text-white">
-              Meet Her
-            </h3>
-            <p className="text-sm text-white/40 mt-1">
-              Ask questions, hear stories
-            </p>
-          </a>
-          <a
-            href="/share"
-            className="group p-5 rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all animate-fade-in-up"
-            style={{ animationDelay: '500ms', animationFillMode: 'both' }}
-          >
-            <h3 className="text-lg font-light text-white/90 group-hover:text-white">
-              Share a Memory
-            </h3>
-            <p className="text-sm text-white/40 mt-1">
-              Add your voice to the chorus
-            </p>
-          </a>
-          <a
-            href="/photos"
-            className="group p-5 rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all animate-fade-in-up"
-            style={{ animationDelay: '600ms', animationFillMode: 'both' }}
-          >
-            <h3 className="text-lg font-light text-white/90 group-hover:text-white">
-              Photos
-            </h3>
-            <p className="text-sm text-white/40 mt-1">
-              See her through the years
-            </p>
-          </a>
         </div>
       </section>
 
@@ -346,10 +364,6 @@ export default function ChaptersPage() {
         <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-white/30">
           <a href="/letter" className="hover:text-white/50 transition-colors">
             A letter to her children
-          </a>
-          <span className="text-white/10">·</span>
-          <a href="/about" className="hover:text-white/50 transition-colors">
-            Why this site exists
           </a>
         </div>
       </footer>
@@ -582,7 +596,7 @@ export default function ChaptersPage() {
             <div className="px-6 py-4 border-t border-white/10">
               <button
                 onClick={inviteMethod === 'link' ? copyShareLink : handleSendInvite}
-                disabled={inviteMethod !== 'link' && !inviteContact}
+                disabled={(inviteMethod !== 'link' && !inviteContact) || inviteSending}
                 className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
                   inviteSent
                     ? 'bg-green-600 text-white'
@@ -594,6 +608,10 @@ export default function ChaptersPage() {
                     <span>✓</span>
                     <span>{inviteMethod === 'link' ? 'Link copied!' : 'Invite sent!'}</span>
                   </>
+                ) : inviteSending ? (
+                  <>
+                    <span>Sending…</span>
+                  </>
                 ) : (
                   <>
                     <span>{inviteMethod === 'link' ? 'Copy share link' : 'Send invite'}</span>
@@ -601,6 +619,9 @@ export default function ChaptersPage() {
                   </>
                 )}
               </button>
+              {inviteError && (
+                <p className="text-xs text-red-300 text-center mt-2">{inviteError}</p>
+              )}
               <p className="text-xs text-white/30 text-center mt-3">
                 {witnesses.length > 0
                   ? `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} will be tagged`

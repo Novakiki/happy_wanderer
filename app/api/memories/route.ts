@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
         submitter_relationship: submitter_relationship?.trim() || null,
         submitter_email: submitter_email?.trim() || null,
         tags: tags?.length > 0 ? tags : null,
-        is_visible: true,
+        is_visible: false, // require approval before showing
       })
       .select()
       .single();
