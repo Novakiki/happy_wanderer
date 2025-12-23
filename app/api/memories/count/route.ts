@@ -1,0 +1,21 @@
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+
+export async function GET() {
+  try {
+    const { count, error } = await supabase
+      .from('memories')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_visible', true);
+
+    if (error) {
+      console.error('Supabase count error:', error);
+      return NextResponse.json({ count: 0 });
+    }
+
+    return NextResponse.json({ count: count || 0 });
+  } catch (error) {
+    console.error('Memory count error:', error);
+    return NextResponse.json({ count: 0 });
+  }
+}
