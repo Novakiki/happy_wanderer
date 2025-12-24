@@ -374,12 +374,6 @@ export default function ChaptersPage() {
                       `}
                     >
                       <p className="text-white text-sm font-medium">{event.title}</p>
-                      {(event.date || event.location) && (
-                        <p className="text-white/40 text-[11px] mt-0.5">
-                          {event.date ? `${event.date}, ${event.year}` : event.year}
-                          {event.location ? ` • ${event.location}` : ''}
-                        </p>
-                      )}
                       {event.preview && (
                         <p className="text-white/60 text-xs mt-1 leading-relaxed">{event.preview}</p>
                       )}
