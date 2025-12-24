@@ -216,11 +216,11 @@ export default function ChaptersPage() {
             rgba(255, 255, 255, 0.03) 0,
             rgba(255, 255, 255, 0.03) 1px,
             transparent 1px,
-            transparent 8px,
-            rgba(255, 255, 255, 0.02) 8px,
-            rgba(255, 255, 255, 0.02) 9px,
-            transparent 9px,
-            transparent 140px
+            transparent 12px,
+            rgba(255, 255, 255, 0.02) 12px,
+            rgba(255, 255, 255, 0.02) 13px,
+            transparent 13px,
+            transparent 220px
           ),
           radial-gradient(900px 520px at 12% -8%, rgba(224, 122, 95, 0.12), transparent 60%),
           radial-gradient(700px 520px at 88% 6%, rgba(124, 138, 120, 0.12), transparent 55%),
@@ -361,11 +361,6 @@ export default function ChaptersPage() {
                       `}
                     >
                       <p className="text-white text-sm font-medium">{event.title}</p>
-                      {isOrigin && (
-                        <p className="text-white/60 text-sm mt-1" aria-label="Synchronicity note">
-                          ✶
-                        </p>
-                      )}
                       {event.preview && (
                         <p className="text-white/60 text-xs mt-1 leading-relaxed">{event.preview}</p>
                       )}
@@ -439,11 +434,6 @@ export default function ChaptersPage() {
               <div>
                 <p className="text-white/40 text-sm">{selectedEvent.year}</p>
                 <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
-                {selectedEvent.type === 'origin' && (
-                  <p className="text-white/70 text-sm mt-1" aria-label="Synchronicity note">
-                    ✶
-                  </p>
-                )}
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
