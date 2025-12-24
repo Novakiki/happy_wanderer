@@ -27,6 +27,11 @@ export default function MemoryForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.submitter_name.trim() || !formData.submitter_relationship.trim()) {
+      setError('Please add your name and relationship before submitting.');
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -273,7 +278,7 @@ export default function MemoryForm() {
         <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-white mb-2">
-              Your name
+              Your name <span className="text-red-300">*</span>
             </label>
             <input
               type="text"
@@ -282,11 +287,12 @@ export default function MemoryForm() {
               onChange={e => setFormData({ ...formData, submitter_name: e.target.value })}
               placeholder="e.g., Sarah"
               className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent focus:bg-white/15"
+              required
             />
           </div>
           <div>
             <label htmlFor="relationship" className="block text-sm font-medium text-white mb-2">
-              Your relationship to Val
+              Your relationship to Val <span className="text-red-300">*</span>
             </label>
             <input
               type="text"
@@ -295,6 +301,7 @@ export default function MemoryForm() {
               onChange={e => setFormData({ ...formData, submitter_relationship: e.target.value })}
               placeholder="e.g., cousin, friend, coworker, neighbor"
               className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/10 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent focus:bg-white/15"
+              required
             />
           </div>
         </div>
@@ -320,7 +327,12 @@ export default function MemoryForm() {
 
         <button
           type="submit"
-          disabled={isSubmitting || !formData.content.trim()}
+          disabled={
+            isSubmitting ||
+            !formData.content.trim() ||
+            !formData.submitter_name.trim() ||
+            !formData.submitter_relationship.trim()
+          }
           className="w-full px-6 py-3 bg-[#e07a5f] text-white rounded-xl hover:bg-[#d06a4f] disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed transition-colors"
         >
           {isSubmitting ? 'Submitting...' : 'Share This Memory'}
