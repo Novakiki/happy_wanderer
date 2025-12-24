@@ -362,8 +362,8 @@ export default function ChaptersPage() {
                     >
                       <p className="text-white text-sm font-medium">{event.title}</p>
                       {isOrigin && (
-                        <p className="text-white/40 text-[10px] uppercase tracking-[0.2em] mt-1">
-                          Synchronicity-based storytelling
+                        <p className="text-white/60 text-sm mt-1" aria-label="Synchronicity note">
+                          ✶
                         </p>
                       )}
                       {event.preview && (
@@ -440,8 +440,8 @@ export default function ChaptersPage() {
                 <p className="text-white/40 text-sm">{selectedEvent.year}</p>
                 <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
                 {selectedEvent.type === 'origin' && (
-                  <p className="text-white/40 text-[10px] uppercase tracking-[0.2em] mt-2">
-                    Synchronicity-based storytelling
+                  <p className="text-white/70 text-sm mt-1" aria-label="Synchronicity note">
+                    ✶
                   </p>
                 )}
               </div>
