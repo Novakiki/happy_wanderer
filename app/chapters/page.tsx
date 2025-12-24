@@ -200,7 +200,7 @@ export default function ChaptersPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-white">
-        <div className="text-center">
+        <div className="text-left">
           <div className="animate-pulse text-white/50">Loading her story...</div>
         </div>
       </div>
@@ -212,6 +212,16 @@ export default function ChaptersPage() {
       className="min-h-screen text-white overflow-hidden bg-[#0b0b0b]"
       style={{
         backgroundImage: `
+          repeating-linear-gradient(90deg,
+            rgba(255, 255, 255, 0.03) 0,
+            rgba(255, 255, 255, 0.03) 1px,
+            transparent 1px,
+            transparent 8px,
+            rgba(255, 255, 255, 0.02) 8px,
+            rgba(255, 255, 255, 0.02) 9px,
+            transparent 9px,
+            transparent 140px
+          ),
           radial-gradient(900px 520px at 12% -8%, rgba(224, 122, 95, 0.12), transparent 60%),
           radial-gradient(700px 520px at 88% 6%, rgba(124, 138, 120, 0.12), transparent 55%),
           linear-gradient(180deg, rgba(11, 11, 11, 1), rgba(5, 5, 5, 1))
@@ -241,6 +251,28 @@ export default function ChaptersPage() {
             This is a place to explore who she was — through the memories,
             stories, and moments shared by family and friends.
           </p>
+          <div
+            className="mt-4 animate-fade-in-up"
+            style={{ animationDelay: '330ms', animationFillMode: 'both' }}
+          >
+            <a
+              href="/letter"
+              className="text-sm text-white/60 hover:text-white transition-colors underline underline-offset-4"
+            >
+              Read the letter to her children
+            </a>
+          </div>
+          <div
+            className="mt-8 animate-fade-in-up"
+            style={{ animationDelay: '360ms', animationFillMode: 'both' }}
+          >
+            <a
+              href="/share"
+              className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-6 py-3 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
+            >
+              Share a memory
+            </a>
+          </div>
         </div>
       </section>
 
@@ -252,11 +284,28 @@ export default function ChaptersPage() {
         >
           The Score
         </p>
+        <div
+          className="max-w-4xl mx-auto flex flex-wrap items-center gap-4 text-xs text-white/40 mb-2 animate-fade-in-up"
+          style={{ animationDelay: '740ms', animationFillMode: 'both' }}
+        >
+          <div className="inline-flex items-center gap-2">
+            <span className="h-3 w-1 rounded-full bg-white/80" />
+            <span>Synchronicity-based storytelling</span>
+          </div>
+          <div className="inline-flex items-center gap-2">
+            <span className="h-3 w-1 rounded-full bg-[#e07a5f]" />
+            <span>Milestones</span>
+          </div>
+          <div className="inline-flex items-center gap-2">
+            <span className="h-3 w-1 rounded-full bg-white/30" />
+            <span>Memories</span>
+          </div>
+        </div>
 
         {/* Timeline container */}
         <div className="relative h-[280px] mt-8">
           {events.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center text-white/30">
+            <div className="absolute inset-0 flex items-start justify-start text-white/30 pt-6">
               No memories yet. Be the first to share.
             </div>
           ) : (
@@ -312,6 +361,11 @@ export default function ChaptersPage() {
                       `}
                     >
                       <p className="text-white text-sm font-medium">{event.title}</p>
+                      {isOrigin && (
+                        <p className="text-white/40 text-[10px] uppercase tracking-[0.2em] mt-1">
+                          Synchronicity-based storytelling
+                        </p>
+                      )}
                       {event.preview && (
                         <p className="text-white/60 text-xs mt-1 leading-relaxed">{event.preview}</p>
                       )}
@@ -338,32 +392,34 @@ export default function ChaptersPage() {
 
       {/* Explore by Motif */}
       <section className="max-w-4xl mx-auto px-6 py-12">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-t border-white/10 pt-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-start gap-4 border-t border-white/10 pt-8">
           <p className="text-white/40 text-sm">
             Motifs — the recurring patterns of a life.
           </p>
+          <span className="text-xs uppercase tracking-[0.3em] text-white/30">
+            Coming soon
+          </span>
         </div>
         <div className="flex flex-wrap gap-3 mt-6">
           {themes.map((motif) => (
-            <a
+            <span
               key={motif.id}
-              href={`/motifs/${motif.id}`}
-              className="px-4 py-2 rounded-full border border-white/10 text-sm text-white/50 hover:text-white hover:border-white/30 hover:bg-white/5 transition-all"
+              className="px-4 py-2 rounded-full border border-white/10 text-sm text-white/30 bg-white/[0.02]"
             >
               {motif.label}
-            </a>
+            </span>
           ))}
         </div>
-        <p className="text-white/20 text-xs mt-6 italic">
-          Motifs emerge from the notes shared — more will surface as voices join the chorus.
+        <p className="text-white/30 text-xs mt-6 italic">
+          Motifs are still taking shape. This view will open once enough notes are in.
         </p>
       </section>
 
       {/* Footer */}
       <footer className="max-w-4xl mx-auto px-6 py-12 mt-8">
-        <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-white/30">
-          <a href="/letter" className="hover:text-white/50 transition-colors">
-            A letter to her children
+        <div className="flex flex-wrap items-center justify-start gap-6 text-sm text-white/30">
+          <a href="/share" className="hover:text-white/50 transition-colors">
+            Share a memory
           </a>
         </div>
       </footer>
@@ -383,6 +439,11 @@ export default function ChaptersPage() {
               <div>
                 <p className="text-white/40 text-sm">{selectedEvent.year}</p>
                 <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
+                {selectedEvent.type === 'origin' && (
+                  <p className="text-white/40 text-[10px] uppercase tracking-[0.2em] mt-2">
+                    Synchronicity-based storytelling
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
@@ -620,9 +681,9 @@ export default function ChaptersPage() {
                 )}
               </button>
               {inviteError && (
-                <p className="text-xs text-red-300 text-center mt-2">{inviteError}</p>
+                <p className="text-xs text-red-300 text-left mt-2">{inviteError}</p>
               )}
-              <p className="text-xs text-white/30 text-center mt-3">
+              <p className="text-xs text-white/30 text-left mt-3">
                 {witnesses.length > 0
                   ? `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} will be tagged`
                   : 'Tag witnesses to start a memory cascade'}
