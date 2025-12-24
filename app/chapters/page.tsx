@@ -395,16 +395,6 @@ export default function ChaptersPage() {
             Coming soon
           </span>
         </div>
-        <div className="flex flex-wrap gap-3 mt-6">
-          {themes.map((motif) => (
-            <span
-              key={motif.id}
-              className="px-4 py-2 rounded-full border border-white/10 text-sm text-white/30 bg-white/[0.02]"
-            >
-              {motif.label}
-            </span>
-          ))}
-        </div>
         <p className="text-white/30 text-xs mt-6 italic">
           Motifs are still taking shape. This view will open once enough notes are in.
         </p>
