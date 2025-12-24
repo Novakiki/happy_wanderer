@@ -213,14 +213,21 @@ export default function ChaptersPage() {
       style={{
         backgroundImage: `
           repeating-linear-gradient(90deg,
-            rgba(255, 255, 255, 0.015) 0,
-            rgba(255, 255, 255, 0.015) 1px,
+            rgba(255, 255, 255, 0.008) 0,
+            rgba(255, 255, 255, 0.008) 1px,
             transparent 1px,
             transparent 12px,
-            rgba(255, 255, 255, 0.01) 12px,
-            rgba(255, 255, 255, 0.01) 13px,
+            rgba(255, 255, 255, 0.006) 12px,
+            rgba(255, 255, 255, 0.006) 13px,
             transparent 13px,
             transparent 220px
+          ),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.06) 0%,
+            rgba(255, 255, 255, 0) 38%,
+            rgba(255, 255, 255, 0) 62%,
+            rgba(255, 255, 255, 0.06) 100%
           ),
           radial-gradient(900px 520px at 12% -8%, rgba(224, 122, 95, 0.12), transparent 60%),
           radial-gradient(700px 520px at 88% 6%, rgba(124, 138, 120, 0.12), transparent 55%),
