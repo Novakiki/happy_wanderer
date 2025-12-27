@@ -41,3 +41,6 @@
 ## Middleware/proxy
 - Use `proxy.ts` only; matcher allows `/respond` without auth.
 
+## See also
+- `docs/routes.md` (auth/public, labels)
+- `AGENTS.md` (purpose, tone, metaphor, guardrails)
