@@ -15,7 +15,6 @@ import {
   LIFE_STAGES,
   MODAL_LABELS,
   SCORE_TITLE,
-  SITE_TITLE,
 } from '@/lib/terminology';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -330,7 +329,7 @@ export default function ChaptersPage() {
             className="text-xs uppercase tracking-[0.3em] text-white/40 animate-fade-in-up"
             style={{ animationDelay: '50ms', animationFillMode: 'both' }}
           >
-            {SITE_TITLE}
+            Valerie Park Anderson
           </p>
           <h1
             className="text-3xl sm:text-4xl md:text-5xl font-serif leading-tight text-white/95 mt-4 animate-fade-in-up"
