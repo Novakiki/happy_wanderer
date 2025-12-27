@@ -10,6 +10,7 @@ import {
   TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
 import { formStyles } from '@/lib/styles';
+import type { ReferenceVisibility } from '@/lib/references';
 import RichTextEditor from './RichTextEditor';
 
 const toPlainText = (html?: string | null) =>
@@ -59,6 +60,9 @@ type IncomingEvent = Omit<EditableEvent, 'sources'> & {
     display_name?: string | null;
     role?: string | null;
     relationship_to_subject?: string | null;
+    visibility?: ReferenceVisibility | null;
+    note?: string | null;
+    person_id?: string | null;
     person?: { id?: string | null; canonical_name?: string | null } | null;
   }[];
 };
@@ -80,16 +84,17 @@ export default function EditNotesClient({ token, contributorName, events: initia
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<Record<string, EditableEvent>>(() =>
     initialEvents.reduce((acc, event) => {
+      const activeReferences = event.references?.filter((ref) => ref.visibility !== 'removed') ?? [];
       const linkRefs =
-        event.references?.filter((ref) => ref.type === 'link')?.map((ref) => ({
+        activeReferences.filter((ref) => ref.type === 'link')?.map((ref) => ({
           id: ref.id,
           display_name: ref.display_name || '',
           url: ref.url || '',
         })) ?? [];
       const personRefs =
-        event.references?.filter((ref) => ref.type === 'person')?.map((ref) => ({
+        activeReferences.filter((ref) => ref.type === 'person')?.map((ref) => ({
           id: ref.id,
-          person_id: ref.person?.id || undefined,
+          person_id: ref.person?.id || ref.person_id || undefined,
           name: ref.person?.canonical_name || ref.display_name || '',
           relationship: ref.relationship_to_subject || '',
           role:

@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { normalizePrivacyLevel } from '@/lib/memories';
+import { buildInviteData } from '@/lib/invites';
+import {
+  normalizeLinkReferenceInput,
+  normalizeReferenceRole,
+  resolvePersonReferenceId,
+  type ReferenceRole,
+} from '@/lib/edit-references';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -97,12 +104,31 @@ export async function POST(request: Request) {
           .map((p: unknown) => (typeof p === 'string' ? p.trim() : ''))
           .filter((p: string) => p.length > 0)
         : [];
-    const linkRefs = Array.isArray(references?.links)
-      ? references.links
-      : Array.isArray(sources)
-        ? sources
-        : [];
-    const personRefs = Array.isArray(references?.people) ? references.people : [];
+    const referencesPayload =
+      references && typeof references === 'object'
+        ? (references as Record<string, unknown>)
+        : null;
+    const hasSourcesPayload = Object.prototype.hasOwnProperty.call(body, 'sources');
+    const hasReferencesPayload = Object.prototype.hasOwnProperty.call(body, 'references');
+    const hasLinkPayload =
+      hasSourcesPayload ||
+      (hasReferencesPayload && referencesPayload && Object.prototype.hasOwnProperty.call(referencesPayload, 'links'));
+    const hasPersonPayload =
+      hasReferencesPayload && referencesPayload && Object.prototype.hasOwnProperty.call(referencesPayload, 'people');
+    const referenceLinks =
+      referencesPayload && Array.isArray((referencesPayload as { links?: unknown }).links)
+        ? (referencesPayload as { links?: any[] }).links
+        : null;
+    const referencePeople =
+      referencesPayload && Array.isArray((referencesPayload as { people?: unknown }).people)
+        ? (referencesPayload as { people?: any[] }).people
+        : null;
+    const linkRefs = hasLinkPayload
+      ? referenceLinks ?? (Array.isArray(sources) ? sources : [])
+      : null;
+    const personRefs = hasPersonPayload
+      ? referencePeople ?? []
+      : null;
 
     const allowedLifeStages = new Set(['childhood', 'teens', 'college', 'young_family', 'beyond']);
     const normalizedLifeStage = typeof life_stage === 'string' && allowedLifeStages.has(life_stage.trim())
@@ -171,100 +197,323 @@ export async function POST(request: Request) {
       throw updateError;
     }
 
-    // Replace all references (links + people) if provided
-    if (Array.isArray(linkRefs) || Array.isArray(personRefs)) {
-      await admin.from('event_references').delete().eq('event_id', event_id);
+    if (hasLinkPayload || hasPersonPayload) {
+      const { data: existingRefs, error: existingError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+        .select('id, type, person_id, url, display_name, role, relationship_to_subject, visibility')
+        .eq('event_id', event_id);
 
-      const linkRows = (linkRefs || [])
-        .map((src: any) => ({
-          display_name: String(src?.display_name || '').trim(),
-          url: String(src?.url || '').trim(),
-          role: src?.role,
-        }))
-        .filter((src) => src.display_name && src.url)
-        .map((src) => ({
-          event_id,
-          type: 'link' as const,
-          display_name: src.display_name,
-          url: src.url,
-          role:
-            src.role === 'related' ||
-            src.role === 'source' ||
-            src.role === 'witness' ||
-            src.role === 'heard_from'
-              ? src.role
-              : 'source',
-          added_by: tokenRow.contributor_id,
-        }));
-
-      const resolvedPeople: Array<{
-        name: string;
-        relationship?: string | null;
-        role: 'witness' | 'heard_from' | 'source' | 'related';
-      }> = [];
-
-      for (const ref of personRefs || []) {
-        const name = String((ref?.name || ref?.display_name || '')).trim();
-        if (!name) continue;
-        const role =
-          ref?.role === 'heard_from' ||
-          ref?.role === 'source' ||
-          ref?.role === 'related' ||
-          ref?.role === 'witness'
-            ? ref.role
-            : 'witness';
-        resolvedPeople.push({
-          name,
-          relationship: String(ref?.relationship || ref?.relationship_to_subject || '').trim() || null,
-          role,
-        });
+      if (existingError) {
+        throw existingError;
       }
 
+      const existingRefsSafe = existingRefs || [];
+      const existingById = new Map(existingRefsSafe.map((ref) => [ref.id, ref]));
+      const existingLinks = existingRefsSafe.filter((ref) => ref.type === 'link' && ref.visibility !== 'removed');
+      const existingPeople = existingRefsSafe.filter((ref) => ref.type === 'person' && ref.visibility !== 'removed');
+
+      const linkKeepIds = new Set<string>();
+      const personKeepIds = new Set<string>();
+      const linkRows: Array<{
+        event_id: string;
+        type: 'link';
+        display_name: string;
+        url: string;
+        role: ReferenceRole;
+        added_by: string | null;
+      }> = [];
       const personRows: Array<{
         event_id: string;
         type: 'person';
         person_id: string;
-        role: 'witness' | 'heard_from' | 'source' | 'related';
+        role: ReferenceRole;
         relationship_to_subject: string | null;
+        visibility: 'pending';
         added_by: string | null;
       }> = [];
 
-      for (const ref of resolvedPeople) {
-        // Resolve or create person
-        const { data: existing } = await admin
-          .from('people')
-          .select('id')
-          .ilike('canonical_name', ref.name)
-          .limit(1);
-        let personId = existing && existing[0] ? (existing[0] as { id: string }).id : null;
-        if (!personId) {
-          const { data: created } = await admin
-            .from('people')
-            .insert({
-              canonical_name: ref.name,
-              visibility: 'pending',
-              created_by: tokenRow.contributor_id,
-            })
-            .select('id')
-            .single();
-          personId = (created as { id?: string } | null)?.id || null;
+      const canUsePersonIdCache = new Map<string, boolean>();
+      const canUsePersonId = async (personId: string) => {
+        if (canUsePersonIdCache.has(personId)) {
+          return canUsePersonIdCache.get(personId) ?? false;
         }
-        if (!personId) continue;
-        personRows.push({
-          event_id,
-          type: 'person',
-          person_id: personId,
-          role: ref.role,
-          relationship_to_subject: ref.relationship || null,
-          added_by: tokenRow.contributor_id,
-        });
+
+        const { data: personRowsData } = await (admin.from('people') as ReturnType<typeof admin.from>)
+          .select('id, visibility, created_by')
+          .eq('id', personId)
+          .limit(1);
+        const personRow = personRowsData?.[0] as { visibility?: string | null; created_by?: string | null } | undefined;
+
+        if (!personRow) {
+          canUsePersonIdCache.set(personId, false);
+          return false;
+        }
+
+        const baseVisibility = (personRow.visibility ?? 'pending') as 'approved' | 'pending' | 'anonymized' | 'blurred' | 'removed';
+        if (baseVisibility === 'approved') {
+          canUsePersonIdCache.set(personId, true);
+          return true;
+        }
+        if (baseVisibility === 'removed') {
+          canUsePersonIdCache.set(personId, false);
+          return false;
+        }
+
+        if (tokenRow.contributor_id && personRow.created_by === tokenRow.contributor_id) {
+          canUsePersonIdCache.set(personId, true);
+          return true;
+        }
+
+        const { data: claimRows } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+          .select('id')
+          .eq('person_id', personId)
+          .eq('status', 'approved')
+          .limit(1);
+        if (claimRows && claimRows.length > 0) {
+          canUsePersonIdCache.set(personId, true);
+          return true;
+        }
+
+        if (tokenRow.contributor_id) {
+          const { data: referenceRows } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+            .select('id')
+            .eq('person_id', personId)
+            .eq('added_by', tokenRow.contributor_id)
+            .limit(1);
+          if (referenceRows && referenceRows.length > 0) {
+            canUsePersonIdCache.set(personId, true);
+            return true;
+          }
+        }
+
+        canUsePersonIdCache.set(personId, false);
+        return false;
+      };
+
+      const resolvePersonIdByName = async (name: string) => {
+        const trimmedName = name.trim();
+        if (!trimmedName) return null;
+
+        const { data: aliasRows } = await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+          .select('person_id')
+          .ilike('alias', trimmedName)
+          .limit(5);
+        if (aliasRows && aliasRows.length > 0) {
+          for (const row of aliasRows as Array<{ person_id?: string | null }>) {
+            if (row.person_id && await canUsePersonId(row.person_id)) {
+              return row.person_id;
+            }
+          }
+        }
+
+        const { data: personRowsData } = await (admin.from('people') as ReturnType<typeof admin.from>)
+          .select('id')
+          .ilike('canonical_name', trimmedName)
+          .limit(5);
+        if (personRowsData && personRowsData.length > 0) {
+          for (const row of personRowsData as Array<{ id?: string | null }>) {
+            if (row.id && await canUsePersonId(row.id)) {
+              await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+                .insert({
+                  person_id: row.id,
+                  alias: trimmedName,
+                  created_by: tokenRow.contributor_id,
+                });
+              return row.id;
+            }
+          }
+        }
+
+        const { data: newPerson } = await (admin.from('people') as ReturnType<typeof admin.from>)
+          .insert({
+            canonical_name: trimmedName,
+            visibility: 'pending',
+            created_by: tokenRow.contributor_id,
+          })
+          .select('id')
+          .single();
+
+        const newPersonId = (newPerson as { id?: string } | null)?.id ?? null;
+        if (!newPersonId) return null;
+
+        await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+          .insert({
+            person_id: newPersonId,
+            alias: trimmedName,
+            created_by: tokenRow.contributor_id,
+          });
+
+        return newPersonId;
+      };
+
+      let cachedSubmitterName: string | null = null;
+      const getSubmitterName = async () => {
+        if (cachedSubmitterName !== null) {
+          return cachedSubmitterName;
+        }
+        const { data: contributorRow } = await admin
+          .from('contributors')
+          .select('name')
+          .eq('id', tokenRow.contributor_id)
+          .single();
+        cachedSubmitterName = contributorRow?.name || 'Someone';
+        return cachedSubmitterName;
+      };
+
+      const updateReference = async (id: string, updates: Record<string, unknown>) => {
+        const { error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+          .update(updates as any)
+          .eq('id', id);
+        if (error) {
+          throw error;
+        }
+      };
+
+      if (hasLinkPayload) {
+        for (const raw of linkRefs || []) {
+          const rawId = typeof raw?.id === 'string' ? raw.id : null;
+          const existing = rawId ? existingById.get(rawId) : null;
+          const activeExisting = existing && existing.visibility !== 'removed' ? existing : null;
+          const fallbackRole = normalizeReferenceRole(activeExisting?.role, 'source');
+          const normalized = normalizeLinkReferenceInput(raw || {}, fallbackRole);
+
+          if (!normalized) {
+            continue;
+          }
+
+          if (activeExisting && activeExisting.type === 'link') {
+            linkKeepIds.add(activeExisting.id);
+            await updateReference(activeExisting.id, {
+              display_name: normalized.display_name,
+              url: normalized.url,
+              role: normalized.role,
+            });
+          } else {
+            linkRows.push({
+              event_id,
+              type: 'link',
+              display_name: normalized.display_name,
+              url: normalized.url,
+              role: normalized.role,
+              added_by: tokenRow.contributor_id,
+            });
+          }
+        }
+      }
+
+      if (hasPersonPayload) {
+        for (const raw of personRefs || []) {
+          const rawId = typeof raw?.id === 'string' ? raw.id : null;
+          const existing = rawId ? existingById.get(rawId) : null;
+          const activeExisting = existing && existing.visibility !== 'removed' ? existing : null;
+          const fallbackRole = normalizeReferenceRole(activeExisting?.role, 'witness');
+          const role = normalizeReferenceRole(raw?.role, fallbackRole);
+          const relationship = String(raw?.relationship || raw?.relationship_to_subject || '').trim() || null;
+
+          const personId = await resolvePersonReferenceId({
+            ref: raw || {},
+            existingPersonId: activeExisting?.person_id ?? undefined,
+            canUsePersonId,
+            resolvePersonIdByName,
+          });
+
+          if (!personId) {
+            continue;
+          }
+
+          if (activeExisting && activeExisting.type === 'person') {
+            personKeepIds.add(activeExisting.id);
+            await updateReference(activeExisting.id, {
+              person_id: personId,
+              role,
+              relationship_to_subject: relationship,
+            });
+          } else {
+            personRows.push({
+              event_id,
+              type: 'person',
+              person_id: personId,
+              role,
+              relationship_to_subject: relationship,
+              visibility: 'pending',
+              added_by: tokenRow.contributor_id,
+            });
+          }
+
+          const phone = typeof raw?.phone === 'string' ? raw.phone.trim() : '';
+          if (phone) {
+            let inviteName = String(raw?.name || raw?.display_name || '').trim();
+            if (!inviteName) {
+              const { data: personRowsData } = await (admin.from('people') as ReturnType<typeof admin.from>)
+                .select('canonical_name')
+                .eq('id', personId)
+                .limit(1);
+              inviteName = (personRowsData && personRowsData[0] ? personRowsData[0].canonical_name : inviteName) as string;
+            }
+
+            const senderName = await getSubmitterName();
+            const inviteData = buildInviteData(
+              { name: inviteName || 'Someone', relationship: relationship || '', phone },
+              senderName
+            );
+
+            if (inviteData) {
+              const { data: existingInvite } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+                .select('id')
+                .eq('event_id', event_id)
+                .eq('recipient_contact', inviteData.recipient_contact)
+                .limit(1);
+
+              if (!existingInvite || existingInvite.length === 0) {
+                await (admin.from('invites') as ReturnType<typeof admin.from>)
+                  .insert({
+                    event_id,
+                    recipient_name: inviteData.recipient_name,
+                    recipient_contact: inviteData.recipient_contact,
+                    method: inviteData.method,
+                    message: inviteData.message,
+                    sender_id: tokenRow.contributor_id,
+                    status: 'pending',
+                  });
+              }
+            }
+          }
+        }
       }
 
       const allRows = [...linkRows, ...personRows];
       if (allRows.length > 0) {
-        const { error: refError } = await admin.from('event_references').insert(allRows as any);
+        const { error: refError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+          .insert(allRows as any);
         if (refError) {
           throw refError;
+        }
+      }
+
+      if (hasLinkPayload) {
+        const linkIdsToDelete = existingLinks
+          .filter((ref) => !linkKeepIds.has(ref.id))
+          .map((ref) => ref.id);
+        if (linkIdsToDelete.length > 0) {
+          const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+            .delete()
+            .in('id', linkIdsToDelete);
+          if (deleteError) {
+            throw deleteError;
+          }
+        }
+      }
+
+      if (hasPersonPayload) {
+        const personIdsToDelete = existingPeople
+          .filter((ref) => !personKeepIds.has(ref.id))
+          .map((ref) => ref.id);
+        if (personIdsToDelete.length > 0) {
+          const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+            .delete()
+            .in('id', personIdsToDelete);
+          if (deleteError) {
+            throw deleteError;
+          }
         }
       }
     }

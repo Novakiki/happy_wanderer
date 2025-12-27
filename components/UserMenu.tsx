@@ -60,17 +60,33 @@ export default function UserMenu({ name, relation, editToken }: Props) {
             <div className="py-1">
               <Link
                 href={editToken ? `/edit/${editToken}` : '/edit'}
-                className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
-                My notes
+                <span>My notes</span>
+                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
+                  View and edit your contributions
+                </span>
               </Link>
               <Link
                 href="/people"
-                className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
-                Connections
+                <span>Connections</span>
+                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
+                  Who you remember, who remembers you
+                </span>
+              </Link>
+              <Link
+                href="/settings"
+                className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                onClick={() => setIsOpen(false)}
+              >
+                <span>Settings</span>
+                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
+                  Password, relationship, notifications
+                </span>
               </Link>
               <button
                 onClick={handleSignOut}

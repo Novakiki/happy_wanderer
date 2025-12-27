@@ -120,7 +120,9 @@ export default async function EditTokenPage({
           url,
           display_name,
           role,
+          visibility,
           relationship_to_subject,
+          person_id,
           person:people(id, canonical_name)
         )
       `

@@ -42,6 +42,7 @@ async function getEventById(eventId: string, contributorName: string) {
       timing_certainty,
       timing_input_type,
       timing_note,
+      location,
       type,
       title,
       preview,
@@ -58,7 +59,9 @@ async function getEventById(eventId: string, contributorName: string) {
         url,
         display_name,
         role,
+        visibility,
         relationship_to_subject,
+        person_id,
         person:people(id, canonical_name)
       )
     `)
@@ -117,6 +120,7 @@ async function getEventsForToken(token: string, contributorName?: string) {
       timing_certainty,
       timing_input_type,
       timing_note,
+      location,
       type,
       title,
       preview,
@@ -132,7 +136,9 @@ async function getEventsForToken(token: string, contributorName?: string) {
         url,
         display_name,
         role,
+        visibility,
         relationship_to_subject,
+        person_id,
         person:people(id, canonical_name)
       )
     `)
@@ -162,6 +168,7 @@ async function getEventsForToken(token: string, contributorName?: string) {
           timing_certainty,
           timing_input_type,
           timing_note,
+          location,
           type,
           title,
           preview,
@@ -169,6 +176,7 @@ async function getEventsForToken(token: string, contributorName?: string) {
           why_included,
           source_name,
           source_url,
+          privacy_level,
           people_involved,
           references:event_references(
             id,
@@ -176,7 +184,9 @@ async function getEventsForToken(token: string, contributorName?: string) {
             url,
             display_name,
             role,
+            visibility,
             relationship_to_subject,
+            person_id,
             person:people(id, canonical_name)
           )
         `)
