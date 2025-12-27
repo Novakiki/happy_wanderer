@@ -8,9 +8,10 @@ import { useState } from 'react';
 type Props = {
   name: string;
   relation?: string;
+  editToken?: string;
 };
 
-export default function UserMenu({ name, relation }: Props) {
+export default function UserMenu({ name, relation, editToken }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const router = useRouter();
@@ -57,6 +58,13 @@ export default function UserMenu({ name, relation }: Props) {
               )}
             </div>
             <div className="py-1">
+              <Link
+                href={editToken ? `/edit/${editToken}` : '/edit'}
+                className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                onClick={() => setIsOpen(false)}
+              >
+                Edit notes
+              </Link>
               <Link
                 href="/people"
                 className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"

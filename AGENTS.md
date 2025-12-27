@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Purpose
-This repo builds **The Happy Wanderer** — a private memory site for Valerie Park Anderson.
+This repo builds **Happy Wanderer** — a private memory site for Valerie Park Anderson.
 The name comes from a 1953 song whose chorus ("Valeri, valera") literally sings her name.
 Her father, a gifted pianist who played by ear, sang this song to her.
 
@@ -13,7 +13,7 @@ The site uses a consistent musical score metaphor. **Always use these terms:**
 
 | Term | Meaning | Example |
 |------|---------|---------|
-| **The Happy Wanderer** | Site name | The song that sang her name |
+| **Happy Wanderer** | Site name | The song that sang her name |
 | **The Score** | The complete timeline/collection | Nav label, main view |
 | **Movements** | Major life phases | Movement I: Early Years |
 | **Measures** | Time groupings (decades, eras) | 1975–1996 |
@@ -23,7 +23,7 @@ The site uses a consistent musical score metaphor. **Always use these terms:**
 
 ### Hierarchy
 ```
-The Happy Wanderer (site name / the song)
+Happy Wanderer (site name / the song)
   └── The Score (the complete timeline)
         └── Movements (life phases)
               └── Measures (time periods)
@@ -34,7 +34,7 @@ The Happy Wanderer (site name / the song)
 
 ### Etymology anchors
 - **Chorea**: Greek for "dance," shares root with "chorus" — this is why the site connects dance, music, and community
-- **Valeri, valera**: The chorus of The Happy Wanderer — literally her name in song
+- **Valeri, valera**: The chorus of Happy Wanderer — literally her name in song
 
 ## Audience and tone
 - Kids portal: gentle, reassuring, honest
@@ -48,33 +48,87 @@ The Happy Wanderer (site name / the song)
 - Cloudflare for hosting
 
 ### Key routes
-- `/` → redirects to `/chapters` (The Score)
-- `/chapters` — The Score (timeline visualization, dark theme)
-- `/meet` — kids portal ("Hear")
-- `/share` — contributor portal ("Keep")
-- `/admin` — admin dashboard
-- `/motifs/:id` — filter by motif
-- `/photos`, `/letters`, `/voices` — kids sections
+- `/` → redirects to `/letter`
+- `/letter` — note to her children (password gate + continue to score)
+- `/score` — The Score (timeline visualization, dark theme)
+- `/share` — contributor portal
+- `/edit` — request magic link to edit submissions
+- Edit session cookie: `vals-memory-edit`
+- `/chat` — LLM chat (kids-facing assistant)
+- `/memory/:id` — single note view
 
 ### Route groups
-- `(main)` — warm paper theme with Navigation component
-- `chapters` — dark immersive theme with its own layout
+- `(main)` — share
+- `/score` — dark immersive theme with its own layout
 
 ### Database
 - Schema: `lib/schema.sql` (run in Supabase SQL Editor)
+- Seed: `lib/seed.sql` (run after schema if you need the starter data)
 - Types: `lib/database.types.ts`
 - Client: `lib/supabase.ts` (query helpers)
 
 ### Key tables
 - `timeline_events` — notes (the core content)
 - `contributors` — people who share memories
-- `themes` — motifs (Her Joy, Her Fire, etc.)
 - `witnesses` — people tagged in memories
 - `invites` — sharing/viral cascade tracking
+- `edit_tokens` — magic links for editing submissions
+- `event_references` — attribution chain (who told whom, who was there)
+- `memory_threads` — links between related accounts of the same story
+
+## Story Attribution & Chain Mail (IMPORTANT)
+
+The site supports both **linear storytelling** (chronological timeline) and **synchronized storytelling** (multiple perspectives on the same moment, stories that echo across time).
+
+### The Chain Mail Metaphor
+
+Three meanings, all intentional:
+
+1. **Chain mail armor**: Interlocking rings that create strength through connection. No single person carries the whole story—the mesh holds because each link connects to others.
+
+2. **Chain letters**: "Pass it on." Each recipient adds their piece. The `heard_from` field captures this—"I received this story from Uncle John, now I'm passing it to you."
+
+3. **Mail as correspondence**: The intimate act of sharing. Not broadcast, not archive—*letter*. A memory addressed to someone.
+
+### Reference Roles
+
+The `event_references` table tracks **provenance**—not just "what happened" but "how do we know":
+
+| Role | Meaning | Use case |
+|------|---------|----------|
+| `heard_from` | "I heard this story from this person" | The original storyteller (can be invited to add their version) |
+| `witness` | "This person was there" | Corroboration, someone who can confirm |
+| `source` | External factual source | Wikipedia, news article, document |
+| `related` | Related content | YouTube video, photo album, etc. |
+
+### Memory Threads
+
+The `memory_threads` table links related accounts:
+
+| Relationship | Meaning |
+|--------------|---------|
+| `perspective` | Same story, different teller (the core chain mail link) |
+| `addition` | One story completes another |
+| `correction` | One story revises another |
+| `related` | Stories that rhyme across time |
+
+### The Form as Epistemology
+
+The MemoryForm captures how stories propagate through families:
+
+```
+WHO is telling       → submitter_name, submitter_relationship
+WHO told them        → heard_from (the chain mail link)
+WHO was there        → witnesses (person references)
+WHAT supports it     → sources (link references)
+WHAT it responds to  → prompted_by_event_id (completing the chain)
+```
+
+Most family stories are **retold, not witnessed**. The `heard_from` field makes this chain visible. When someone checks "invite them to share their version," they're extending the chain—saying: "I've been carrying your story. Do you want to carry it yourself now?"
 
 ### Access gate
 - Password via cookie "vals-memory-auth"
-- middleware.ts guards routes
+- `proxy.ts` guards routes
 
 ## Data and privacy rules
 - Chat responses must only use approved memories and obituary facts
@@ -103,6 +157,7 @@ The Happy Wanderer (site name / the song)
 - Attribute every memory to a source when possible
 - Avoid medical speculation or private details
 - If a request is sensitive or unclear, ask before writing
+- Entry type rules: `docs/content.md`
 
 ## Engineering guardrails
 - Prefer small, explicit changes over refactors
@@ -119,4 +174,4 @@ The Happy Wanderer (site name / the song)
 ## Done means
 - New routes render without errors
 - Mobile layout is readable
-- Navigation updated for any new top-level routes
+- Top-level routes are linked where needed (score layout)

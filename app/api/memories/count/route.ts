@@ -4,9 +4,10 @@ import { supabase } from '@/lib/supabase';
 export async function GET() {
   try {
     const { count, error } = await supabase
-      .from('memories')
+      .from('timeline_events')
       .select('*', { count: 'exact', head: true })
-      .eq('is_visible', true);
+      .eq('status', 'published')
+      .in('privacy_level', ['public', 'kids-only']);
 
     if (error) {
       console.error('Supabase count error:', error);

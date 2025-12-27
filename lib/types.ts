@@ -3,10 +3,7 @@ export interface Memory {
   content: string;
   submitter_name: string | null;
   submitter_relationship: string | null;
-  submitter_email: string | null;
-  tags: string[] | null;
   created_at: string;
-  is_visible: boolean;
 }
 
 export interface ChatMessage {

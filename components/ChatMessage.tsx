@@ -12,8 +12,8 @@ export default function ChatMessage({ message }: Props) {
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
           isUser
-            ? 'bg-[var(--ink)] text-[var(--paper)]'
-            : 'bg-[color:var(--paper-deep)]/80 text-[var(--ink)]'
+            ? 'bg-[#e07a5f] text-white'
+            : 'bg-white/[0.06] text-white/80'
         }`}
       >
         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>

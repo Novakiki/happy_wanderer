@@ -1,18 +1,20 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 
-const AUTH_COOKIE_NAME = "vals-memory-auth";
 const LETTER_COOKIE_NAME = "vals-memory-letter";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 export async function POST() {
-  const cookieStore = await cookies();
-  const authCookie = cookieStore.get(AUTH_COOKIE_NAME);
+  // Require Supabase auth
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!authCookie || authCookie.value !== "authenticated") {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const cookieStore = await cookies();
   cookieStore.set(LETTER_COOKIE_NAME, "seen", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

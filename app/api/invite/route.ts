@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     // Insert invite
-    const { error: inviteError } = await admin.from('invites').insert({
+    const { error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>).insert({
       event_id,
       recipient_name,
       recipient_contact,
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         }));
 
       if (witnessRows.length) {
-        const { error: witnessError } = await admin.from('witnesses').insert(witnessRows);
+        const { error: witnessError } = await (admin.from('witnesses') as ReturnType<typeof admin.from>).insert(witnessRows);
         if (witnessError) {
           console.warn('Witness insert error (continuing):', witnessError);
         }

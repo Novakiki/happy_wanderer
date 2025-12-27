@@ -5,14 +5,8 @@
   --font-serif: var(--font-serif);
 }
 
-:root {
-  --paper: #f7f1e8;
-  --paper-deep: #efe2d4;
-  --ink: #2c241e;
-  --ink-soft: #5a4b40;
-  --clay: #c89a6a;
-  --sage: #7c8a78;
-  --blush: #d9b3a1;
+html {
+  background-color: #0b0b0b;
 }
 
 body {
@@ -23,7 +17,7 @@ body {
   font-family: var(--font-serif), Georgia, serif;
 }
 
-/* Prose styling for the about page */
+/* Prose styling */
 .prose p {
   margin-bottom: 1.25rem;
   line-height: 1.75;
@@ -31,6 +25,56 @@ body {
 
 .prose p:last-child {
   margin-bottom: 0;
+}
+
+/* Rich text editor prose styles */
+.prose-invert {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.prose-sm p {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.prose-sm p:last-child {
+  margin-bottom: 0;
+}
+
+.prose-sm strong {
+  font-weight: 600;
+  color: white;
+}
+
+.prose-sm em {
+  font-style: italic;
+}
+
+.prose-sm ul, .prose-sm ol {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.prose-sm li {
+  margin-bottom: 0.25rem;
+}
+
+.prose-sm ul {
+  list-style-type: disc;
+}
+
+.prose-sm ol {
+  list-style-type: decimal;
+}
+
+/* Tiptap placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  height: 0;
 }
 
 /* Animations for immersive experiences */

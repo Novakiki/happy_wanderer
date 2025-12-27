@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Newsreader, Sora } from "next/font/google";
-import { cookies } from "next/headers";
+import { SITE_DESCRIPTION, SITE_TITLE } from "@/lib/terminology";
 import "./globals.css";
-import PasswordGate from "@/components/PasswordGate";
 
 const newsreader = Newsreader({
   variable: "--font-serif",
@@ -15,30 +14,24 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "The Happy Wanderer",
-  description: "A place to share and explore memories of Valerie Park Anderson",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
   metadataBase: new URL("https://val.virtuallimit.com"),
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const authCookie = cookieStore.get("vals-memory-auth");
-  const isAuthenticated = authCookie?.value === "authenticated";
-
+  // Authentication is now handled by middleware
+  // Unauthenticated users are redirected to /auth/login
   return (
     <html lang="en">
       <body
         className={`${newsreader.variable} ${sora.variable} font-sans antialiased`}
       >
-        {isAuthenticated ? (
-          <main>{children}</main>
-        ) : (
-          <PasswordGate />
-        )}
+        <main>{children}</main>
       </body>
     </html>
   );

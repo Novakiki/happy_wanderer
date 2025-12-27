@@ -9,7 +9,11 @@ type UserProfile = {
   relation: string;
 };
 
-export default function UserMenuClient() {
+type Props = {
+  editToken?: string;
+};
+
+export default function UserMenuClient({ editToken }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
@@ -32,5 +36,5 @@ export default function UserMenuClient() {
   }, []);
 
   if (!profile) return null;
-  return <UserMenu name={profile.name} relation={profile.relation} />;
+  return <UserMenu name={profile.name} relation={profile.relation} editToken={editToken} />;
 }

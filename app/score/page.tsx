@@ -30,7 +30,6 @@ function decodeHtml(input: string) {
 }
 
 export default function ChaptersPage() {
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [bundles, setBundles] = useState<StoryBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredEvent, setHoveredEvent] = useState<TimelineEvent | null>(null);
@@ -50,7 +49,6 @@ export default function ChaptersPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
-  const [showVision, setShowVision] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [activeTab, setActiveTab] = useState<'time' | 'witness' | 'storyteller' | 'thread' | 'coincidence'>('time');
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -94,26 +92,28 @@ export default function ChaptersPage() {
   useEffect(() => {
     if (activeTab !== 'time' || loading) return;
 
+    const wheelOptions: AddEventListenerOptions = { passive: false };
+    const touchOptions: AddEventListenerOptions = { passive: true };
+    let attachedEl: HTMLDivElement | null = null;
+
     // Small delay to ensure ref is attached after render
     const timer = setTimeout(() => {
-      const el = timelineRef.current;
-      if (!el) return;
+      attachedEl = timelineRef.current;
+      if (!attachedEl) return;
 
-      el.addEventListener('wheel', handleWheel, { passive: false });
-      el.addEventListener('touchstart', handleTouchStart, { passive: true });
-      el.addEventListener('touchmove', handleTouchMove, { passive: true });
-      el.addEventListener('touchend', handleTouchEnd);
+      attachedEl.addEventListener('wheel', handleWheel as EventListener, wheelOptions);
+      attachedEl.addEventListener('touchstart', handleTouchStart as EventListener, touchOptions);
+      attachedEl.addEventListener('touchmove', handleTouchMove as EventListener, touchOptions);
+      attachedEl.addEventListener('touchend', handleTouchEnd as EventListener, touchOptions);
     }, 50);
 
     return () => {
       clearTimeout(timer);
-      const el = timelineRef.current;
-      if (el) {
-        el.removeEventListener('wheel', handleWheel);
-        el.removeEventListener('touchstart', handleTouchStart);
-        el.removeEventListener('touchmove', handleTouchMove);
-        el.removeEventListener('touchend', handleTouchEnd);
-      }
+      if (!attachedEl) return;
+      attachedEl.removeEventListener('wheel', handleWheel as EventListener, wheelOptions);
+      attachedEl.removeEventListener('touchstart', handleTouchStart as EventListener, touchOptions);
+      attachedEl.removeEventListener('touchmove', handleTouchMove as EventListener, touchOptions);
+      attachedEl.removeEventListener('touchend', handleTouchEnd as EventListener, touchOptions);
     };
   }, [activeTab, loading, handleWheel, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
@@ -164,7 +164,6 @@ export default function ChaptersPage() {
 
           const mappedEvents = mapTimelineEvents(eventsData).map(e => applyScoreEventOverrides(e));
           const eventBundles = groupEventsIntoBundles(mappedEvents);
-          setEvents(mappedEvents);
           setBundles(eventBundles);
         } else {
           // Fallback to direct Supabase client
@@ -173,7 +172,6 @@ export default function ChaptersPage() {
           const mappedEvents = mapTimelineEvents(eventsData).map(e => applyScoreEventOverrides(e));
           const eventBundles = groupEventsIntoBundles(mappedEvents);
 
-          setEvents(mappedEvents);
           setBundles(eventBundles);
         }
       } catch (error) {
@@ -559,11 +557,6 @@ export default function ChaptersPage() {
                 const hasMore = event.fullEntry || event.preview;
                 const isApproximate = event.timingCertainty === 'approximate';
                 const isVague = event.timingCertainty === 'vague';
-                const hasYearRange = typeof event.yearEnd === 'number' && event.yearEnd !== event.year;
-                const hasAgeRange = event.timingInputType === 'age_range'
-                  && event.ageStart !== null
-                  && event.ageEnd !== null;
-                const hasRange = hasYearRange || hasAgeRange;
                 const yearLabel = formatYearLabel(event);
                 const timingLabel = formatTimingLabel(event);
                 const baseHeight = isOrigin ? 'h-36' : isMilestone ? 'h-28' : 'h-16';

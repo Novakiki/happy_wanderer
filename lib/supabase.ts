@@ -19,8 +19,8 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
     .from('timeline_events')
     .select(`
       *,
-      contributor:contributors(name, relation),
-      themes:event_themes(theme:themes(id, label))
+      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
+      media:event_media(media:media(*))
     `)
     .eq('status', 'published')
     .in('privacy_level', privacyLevels && privacyLevels.length ? privacyLevels : ['public', 'family', 'kids-only'])
@@ -34,27 +34,13 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
   return data;
 }
 
-export async function getThemes() {
-  const { data, error } = await supabase
-    .from('themes')
-    .select('*')
-    .order('label');
-
-  if (error) {
-    console.error('Error fetching themes:', error);
-    return [];
-  }
-
-  return data;
-}
-
 export async function getEventById(id: string) {
   const { data, error } = await supabase
     .from('timeline_events')
     .select(`
       *,
-      contributor:contributors(name, relation),
-      themes:event_themes(theme:themes(id, label))
+      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
+      media:event_media(media:media(*))
     `)
     .eq('id', id)
     .single();
@@ -86,8 +72,7 @@ export async function createTimelineEvent(event: {
   people_involved?: string[];
   privacy_level?: 'public' | 'family' | 'kids-only';
 }) {
-  const { data, error } = await supabase
-    .from('timeline_events')
+  const { data, error } = await (supabase.from('timeline_events') as ReturnType<typeof supabase.from>)
     .insert({
       ...event,
       status: 'pending', // All new events start as pending
@@ -109,8 +94,7 @@ export async function addWitness(witness: {
   contact_method?: 'email' | 'sms' | 'link';
   contact_info?: string;
 }) {
-  const { data, error } = await supabase
-    .from('witnesses')
+  const { data, error } = await (supabase.from('witnesses') as ReturnType<typeof supabase.from>)
     .insert(witness)
     .select()
     .single();
@@ -131,8 +115,7 @@ export async function createInvite(invite: {
   message?: string;
   sender_id?: string;
 }) {
-  const { data, error } = await supabase
-    .from('invites')
+  const { data, error } = await (supabase.from('invites') as ReturnType<typeof supabase.from>)
     .insert(invite)
     .select()
     .single();
@@ -147,8 +130,7 @@ export async function createInvite(invite: {
 
 // Get contributor by name (for looking up Amy, Derek, etc.)
 export async function getContributorByName(name: string) {
-  const { data, error } = await supabase
-    .from('contributors')
+  const { data, error } = await (supabase.from('contributors') as ReturnType<typeof supabase.from>)
     .select('*')
     .ilike('name', name)
     .single();
@@ -168,8 +150,7 @@ export async function createContributor(contributor: {
   email?: string;
   phone?: string;
 }) {
-  const { data, error } = await supabase
-    .from('contributors')
+  const { data, error } = await (supabase.from('contributors') as ReturnType<typeof supabase.from>)
     .insert(contributor)
     .select()
     .single();

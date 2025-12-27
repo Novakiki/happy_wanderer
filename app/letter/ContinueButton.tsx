@@ -16,7 +16,7 @@ export default function ContinueButton() {
       if (!response.ok) {
         throw new Error("Failed to continue");
       }
-      router.push("/chapters");
+      router.push("/score");
     } catch (err) {
       console.error(err);
       setError("Something went wrong. Please try again.");

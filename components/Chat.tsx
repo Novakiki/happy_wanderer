@@ -2,10 +2,12 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { ChatMessage as ChatMessageType } from '@/lib/types';
+import { formatNoteCount, NOTE_LABEL_PLURAL } from '@/lib/terminology';
+import { formStyles } from '@/lib/styles';
 import ChatMessage from './ChatMessage';
 
 const SUGGESTED_QUESTIONS = [
-  "Tell me a funny story about Mom",
+  "Tell me a funny story about Val",
   "What did people love about her?",
   "What was she like as a young woman?",
   "How did she show love to others?",
@@ -32,9 +34,9 @@ export default function Chat() {
 
       const initialMessage: ChatMessageType = {
         role: 'assistant',
-        content: `Hello. I'm here to help you learn about your mom through memories and stories that family and friends have shared here.
+        content: `Hello. I'm here to help you learn about Val through notes and stories that family and friends have shared here.
 
-Everything I tell you comes directly from someone who knew and loved her - I'll always tell you who shared each memory. I won't make anything up or pretend to know things I don't. If no one has shared a memory about something yet, I'll let you know.
+Everything I tell you comes directly from someone who knew and loved her — I'll always tell you who shared each note. I won't make anything up or pretend to know things I don't.
 
 What would you like to know about her?`,
       };
@@ -101,29 +103,27 @@ What would you like to know about her?`,
   // Show loading state while initializing
   if (!isInitialized) {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="flex flex-col h-[600px] bg-white/80 rounded-3xl shadow-sm border border-black/10 items-center justify-center">
-          <div className="animate-pulse text-[var(--ink-soft)]">Loading...</div>
-        </div>
+      <div className="flex flex-col h-[500px] bg-white/[0.03] rounded-2xl border border-white/10 items-center justify-center">
+        <div className="animate-pulse text-white/40">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div>
       {/* Memory count badge */}
       {memoryCount !== null && (
-        <div className="text-center mb-4">
-          <span className="inline-flex items-center gap-1.5 text-sm text-[var(--ink-soft)] bg-[color:var(--paper-deep)]/70 px-3 py-1 rounded-full border border-black/10">
-            <span className="w-2 h-2 bg-[var(--sage)] rounded-full"></span>
+        <div className="mb-4">
+          <span className="inline-flex items-center gap-2 text-sm text-white/50 bg-white/[0.05] px-3 py-1.5 rounded-full border border-white/10">
+            <span className="w-1.5 h-1.5 bg-[#7c8a78] rounded-full"></span>
             {memoryCount === 0
-              ? 'No memories shared yet'
-              : `${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} shared by family & friends`}
+              ? `No ${NOTE_LABEL_PLURAL} shared yet`
+              : formatNoteCount(memoryCount)}
           </span>
         </div>
       )}
 
-      <div className="flex flex-col h-[calc(100vh-280px)] min-h-[400px] max-h-[600px] bg-white/80 rounded-3xl shadow-sm border border-black/10">
+      <div className="flex flex-col h-[calc(100vh-340px)] min-h-[400px] max-h-[600px] bg-white/[0.03] rounded-2xl border border-white/10">
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map((message, index) => (
@@ -131,7 +131,7 @@ What would you like to know about her?`,
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-[color:var(--paper-deep)]/80 rounded-2xl px-4 py-3 text-[var(--ink-soft)]">
+              <div className="bg-white/[0.06] rounded-2xl px-4 py-3 text-white/50">
                 <span className="animate-pulse">Thinking...</span>
               </div>
             </div>
@@ -141,15 +141,15 @@ What would you like to know about her?`,
 
         {/* Suggested questions - show only at start */}
         {messages.length === 1 && !isLoading && (
-          <div className="px-4 pb-2">
-            <p className="text-xs text-[color:var(--ink-soft)] opacity-70 mb-2">Try asking:</p>
+          <div className="px-4 pb-3">
+            <p className="text-xs text-white/40 mb-2">Try asking:</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTED_QUESTIONS.map((q) => (
                 <button
                   key={q}
                   type="button"
                   onClick={() => sendMessage(q)}
-                  className="text-sm px-3 py-1.5 rounded-full border border-black/10 text-[var(--ink-soft)] hover:bg-white hover:border-black/20 transition-colors"
+                  className="text-sm px-3 py-1.5 rounded-full border border-white/10 text-white/50 hover:bg-white/[0.06] hover:text-white/70 hover:border-white/20 transition-colors"
                 >
                   {q}
                 </button>
@@ -159,20 +159,20 @@ What would you like to know about her?`,
         )}
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-black/10">
-          <div className="flex gap-2">
+        <form onSubmit={handleSubmit} className="p-4 border-t border-white/10">
+          <div className="flex gap-3">
             <input
               type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
-              placeholder="Ask about your mom..."
+              placeholder="Ask about Val..."
               disabled={isLoading}
-              className="flex-1 px-4 py-3 rounded-xl border border-black/10 focus:outline-none focus:ring-2 focus:ring-[var(--clay)]/40 focus:border-transparent disabled:bg-white/60 disabled:text-[var(--ink-soft)]"
+              className={`flex-1 ${formStyles.input} disabled:opacity-50`}
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="px-6 py-3 bg-[var(--ink)] text-[var(--paper)] rounded-xl hover:bg-black/80 disabled:bg-black/20 disabled:text-[var(--ink-soft)] disabled:cursor-not-allowed transition-colors"
+              className={`${formStyles.buttonPrimary} disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed`}
             >
               Send
             </button>
@@ -181,9 +181,9 @@ What would you like to know about her?`,
       </div>
 
       {/* Trust disclaimer */}
-      <p className="text-center text-xs text-[color:var(--ink-soft)] opacity-70 mt-3 px-4">
-        This is not your mom speaking. All responses draw only from memories shared by family and friends,
-        plus facts from her obituary. Nothing is invented or imagined.
+      <p className="text-xs text-white/30 mt-4 leading-relaxed">
+        This is not Val speaking. All responses draw only from notes shared by family and friends.
+        Nothing is invented or imagined.
       </p>
     </div>
   );

@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { SCORE_TITLE } from '@/lib/terminology';
 import InteractButton from '@/components/InteractButton';
-import EditSessionMenu from '@/components/EditSessionMenu';
 import UserMenuClient from '@/components/UserMenuClient';
 import DevTools from '@/components/DevTools';
 
@@ -48,17 +47,7 @@ export default async function ChaptersLayout({
               Add a note
             </Link>
             <InteractButton />
-            {editSession ? (
-              <EditSessionMenu name={editSession.name} token={editSession.token} />
-            ) : (
-              <Link
-                href="/edit"
-                className="text-white/50 hover:text-white transition-colors"
-              >
-                Link me
-              </Link>
-            )}
-            <UserMenuClient />
+            <UserMenuClient editToken={editSession?.token} />
           </div>
         </div>
       </nav>
