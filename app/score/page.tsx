@@ -724,7 +724,7 @@ export default function ChaptersPage() {
                     {/* Tooltip on hover */}
                     <div
                       className={`
-                        absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2
+                        absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 z-50
                         bg-white/10 backdrop-blur-sm rounded-lg
                         transition-all duration-200 pointer-events-none min-w-[160px] max-w-[260px]
                         ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
