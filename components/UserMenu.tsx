@@ -63,14 +63,14 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
-                Edit notes
+                My notes
               </Link>
               <Link
                 href="/people"
                 className="block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
-                View / edit links (people)
+                Connections
               </Link>
               <button
                 onClick={handleSignOut}

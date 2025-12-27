@@ -378,14 +378,23 @@ export default function ChaptersPage() {
             >
               Add a note
             </a>
-            <span
-              className="inline-flex items-center gap-2 rounded-full border border-white/20 text-white/70 px-6 py-3 text-xs uppercase tracking-[0.2em] cursor-pointer hover:border-white/40 hover:text-white transition-colors"
-              onMouseEnter={() => setShowComingSoon(true)}
-              onMouseLeave={() => setShowComingSoon(false)}
-              onClick={() => setShowComingSoon(true)}
-            >
-              Interact
-            </span>
+            <div className="relative">
+              <span
+                className="inline-flex items-center gap-2 rounded-full border border-white/20 text-white/70 px-6 py-3 text-xs uppercase tracking-[0.2em] cursor-pointer hover:border-white/40 hover:text-white transition-colors"
+                onMouseEnter={() => setShowComingSoon(true)}
+                onMouseLeave={() => setShowComingSoon(false)}
+                onClick={() => setShowComingSoon(true)}
+              >
+                Interact
+              </span>
+              <div
+                className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-black/80 rounded text-[10px] text-white/50 whitespace-nowrap transition-all duration-150 ${
+                  showComingSoon ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                Coming soon
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1304,14 +1313,6 @@ export default function ChaptersPage() {
         </div>
       )}
 
-      {/* Coming Soon Toast */}
-      <div
-        className={`fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-white/10 backdrop-blur-sm border border-white/10 rounded-full text-sm text-white/70 transition-all duration-200 ${
-          showComingSoon ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
-        }`}
-      >
-        Coming soon
-      </div>
     </div>
   );
 }
