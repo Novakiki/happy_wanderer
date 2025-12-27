@@ -12,7 +12,7 @@ export default function ContinueButton() {
     setIsLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/letter", { method: "POST" });
+      const response = await fetch("/api/why", { method: "POST" });
       if (!response.ok) {
         throw new Error("Failed to continue");
       }

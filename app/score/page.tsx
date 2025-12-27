@@ -349,7 +349,7 @@ export default function ChaptersPage() {
             style={{ animationDelay: '330ms', animationFillMode: 'both' }}
           >
             <a
-              href="/letter"
+              href="/why"
               className="text-sm text-white/60 hover:text-white transition-colors underline underline-offset-4"
             >
               Why this exists

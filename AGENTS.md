@@ -48,8 +48,8 @@ Happy Wanderer (site name / the song)
 - Cloudflare for hosting
 
 ### Key routes
-- `/` → redirects to `/letter`
-- `/letter` — note to her children (password gate + continue to score)
+- `/` → redirects to `/score`
+- `/why` — why this exists (continue to The Score)
 - `/score` — The Score (timeline visualization, dark theme)
 - `/share` — contributor portal
 - `/edit` — request magic link to edit submissions

@@ -4,7 +4,7 @@
 
 /**
  * Full immersive background with radial glows and gradient.
- * Used on: letter, memory detail, motifs, score pages.
+ * Used on: why, memory detail, score pages.
  */
 export const immersiveBackground = {
   backgroundImage: `

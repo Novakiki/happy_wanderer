@@ -194,7 +194,7 @@ export default function RespondPage() {
           )}
 
           <button
-            onClick={() => router.push('/letter')}
+            onClick={() => router.push('/why')}
             className={`${formStyles.buttonPrimary} mt-8`}
           >
             Read more memories
