@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/lib/database.types';
+import type { Database, EventReferenceWithContributor } from '@/lib/database.types';
 import { redactReferences } from '@/lib/references';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
@@ -11,6 +11,10 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 
 const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+
+type TimelineEventWithRefs = Database['public']['Tables']['timeline_events']['Row'] & {
+  references?: EventReferenceWithContributor[] | null;
+};
 
 export async function GET() {
   try {
@@ -50,10 +54,13 @@ export async function GET() {
     }
 
     // Redact private names before sending to client
-    const events = (eventsResult.data || []).map((event: any) => ({
-      ...event,
-      references: redactReferences(event.references),
-    }));
+    const events = (eventsResult.data || []).map((event) => {
+      const typedEvent = event as TimelineEventWithRefs;
+      return {
+        ...typedEvent,
+        references: redactReferences(typedEvent.references || []),
+      };
+    });
 
     return NextResponse.json({ events });
   } catch (error) {

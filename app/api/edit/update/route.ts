@@ -7,13 +7,29 @@ import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
   resolvePersonReferenceId,
-  type ReferenceRole,
+  type LinkReferenceInput,
+  type PersonReferenceInput,
 } from '@/lib/edit-references';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
 
 const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+
+type LinkReferencePayload = LinkReferenceInput;
+type PersonReferencePayload = PersonReferenceInput & {
+  id?: unknown;
+  role?: unknown;
+  relationship?: unknown;
+  relationship_to_subject?: unknown;
+  phone?: unknown;
+  name?: unknown;
+  display_name?: unknown;
+};
+type ReferencesPayload = {
+  links?: LinkReferencePayload[];
+  people?: PersonReferencePayload[];
+};
 
 export async function POST(request: Request) {
   try {
@@ -106,7 +122,7 @@ export async function POST(request: Request) {
         : [];
     const referencesPayload =
       references && typeof references === 'object'
-        ? (references as Record<string, unknown>)
+        ? (references as ReferencesPayload)
         : null;
     const hasSourcesPayload = Object.prototype.hasOwnProperty.call(body, 'sources');
     const hasReferencesPayload = Object.prototype.hasOwnProperty.call(body, 'references');
@@ -116,15 +132,15 @@ export async function POST(request: Request) {
     const hasPersonPayload =
       hasReferencesPayload && referencesPayload && Object.prototype.hasOwnProperty.call(referencesPayload, 'people');
     const referenceLinks =
-      referencesPayload && Array.isArray((referencesPayload as { links?: unknown }).links)
-        ? (referencesPayload as { links?: any[] }).links
+      referencesPayload && Array.isArray(referencesPayload.links)
+        ? referencesPayload.links
         : null;
     const referencePeople =
-      referencesPayload && Array.isArray((referencesPayload as { people?: unknown }).people)
-        ? (referencesPayload as { people?: any[] }).people
+      referencesPayload && Array.isArray(referencesPayload.people)
+        ? referencesPayload.people
         : null;
     const linkRefs = hasLinkPayload
-      ? referenceLinks ?? (Array.isArray(sources) ? sources : [])
+      ? referenceLinks ?? (Array.isArray(sources) ? (sources as LinkReferencePayload[]) : [])
       : null;
     const personRefs = hasPersonPayload
       ? referencePeople ?? []
@@ -169,28 +185,29 @@ export async function POST(request: Request) {
         ? `${trimmedContent.slice(0, 160).trimEnd()}...`
         : trimmedContent;
 
-    const { error: updateError } = await (admin
-      .from('timeline_events') as any)
-      .update({
-        year: parsedYear,
-        year_end: resolvedYearEnd,
-        type: eventType,
-        title: trimmedTitle,
-        full_entry: trimmedContent,
-        preview,
-        why_included: trimmedWhy,
-        source_name: trimmedSourceName,
-        source_url: String(source_url || '').trim() || null,
-        timing_certainty: normalizedTimingCertainty,
-        timing_input_type: normalizedTimingInputType,
-        age_start: resolvedAgeStart,
-        age_end: resolvedAgeEnd,
-        life_stage: normalizedLifeStage,
-        timing_note: String(timing_note || '').trim() || null,
-        location: String(location || '').trim() || null,
-        privacy_level: normalizedPrivacyLevel,
-        people_involved: normalizedPeople.length > 0 ? normalizedPeople : null,
-      } as any)
+    const updatePayload: Database['public']['Tables']['timeline_events']['Update'] = {
+      year: parsedYear,
+      year_end: resolvedYearEnd,
+      type: eventType,
+      title: trimmedTitle,
+      full_entry: trimmedContent,
+      preview,
+      why_included: trimmedWhy,
+      source_name: trimmedSourceName,
+      source_url: String(source_url || '').trim() || null,
+      timing_certainty: normalizedTimingCertainty,
+      timing_input_type: normalizedTimingInputType,
+      age_start: resolvedAgeStart,
+      age_end: resolvedAgeEnd,
+      life_stage: normalizedLifeStage,
+      timing_note: String(timing_note || '').trim() || null,
+      location: String(location || '').trim() || null,
+      privacy_level: normalizedPrivacyLevel,
+      people_involved: normalizedPeople.length > 0 ? normalizedPeople : null,
+    };
+    const { error: updateError } = await admin
+      .from('timeline_events')
+      .update(updatePayload)
       .eq('id', event_id);
 
     if (updateError) {
@@ -213,23 +230,8 @@ export async function POST(request: Request) {
 
       const linkKeepIds = new Set<string>();
       const personKeepIds = new Set<string>();
-      const linkRows: Array<{
-        event_id: string;
-        type: 'link';
-        display_name: string;
-        url: string;
-        role: ReferenceRole;
-        added_by: string | null;
-      }> = [];
-      const personRows: Array<{
-        event_id: string;
-        type: 'person';
-        person_id: string;
-        role: ReferenceRole;
-        relationship_to_subject: string | null;
-        visibility: 'pending';
-        added_by: string | null;
-      }> = [];
+      const linkRows: Database['public']['Tables']['event_references']['Insert'][] = [];
+      const personRows: Database['public']['Tables']['event_references']['Insert'][] = [];
 
       const canUsePersonIdCache = new Map<string, boolean>();
       const canUsePersonId = async (personId: string) => {
@@ -359,9 +361,12 @@ export async function POST(request: Request) {
         return cachedSubmitterName;
       };
 
-      const updateReference = async (id: string, updates: Record<string, unknown>) => {
+      const updateReference = async (
+        id: string,
+        updates: Database['public']['Tables']['event_references']['Update']
+      ) => {
         const { error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-          .update(updates as any)
+          .update(updates)
           .eq('id', id);
         if (error) {
           throw error;
@@ -370,11 +375,12 @@ export async function POST(request: Request) {
 
       if (hasLinkPayload) {
         for (const raw of linkRefs || []) {
+          if (!raw) continue;
           const rawId = typeof raw?.id === 'string' ? raw.id : null;
           const existing = rawId ? existingById.get(rawId) : null;
           const activeExisting = existing && existing.visibility !== 'removed' ? existing : null;
           const fallbackRole = normalizeReferenceRole(activeExisting?.role, 'source');
-          const normalized = normalizeLinkReferenceInput(raw || {}, fallbackRole);
+          const normalized = normalizeLinkReferenceInput(raw, fallbackRole);
 
           if (!normalized) {
             continue;
@@ -402,6 +408,7 @@ export async function POST(request: Request) {
 
       if (hasPersonPayload) {
         for (const raw of personRefs || []) {
+          if (!raw) continue;
           const rawId = typeof raw?.id === 'string' ? raw.id : null;
           const existing = rawId ? existingById.get(rawId) : null;
           const activeExisting = existing && existing.visibility !== 'removed' ? existing : null;
@@ -410,7 +417,7 @@ export async function POST(request: Request) {
           const relationship = String(raw?.relationship || raw?.relationship_to_subject || '').trim() || null;
 
           const personId = await resolvePersonReferenceId({
-            ref: raw || {},
+            ref: raw,
             existingPersonId: activeExisting?.person_id ?? undefined,
             canUsePersonId,
             resolvePersonIdByName,
@@ -480,10 +487,10 @@ export async function POST(request: Request) {
         }
       }
 
-      const allRows = [...linkRows, ...personRows];
+      const allRows: Database['public']['Tables']['event_references']['Insert'][] = [...linkRows, ...personRows];
       if (allRows.length > 0) {
         const { error: refError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-          .insert(allRows as any);
+          .insert(allRows);
         if (refError) {
           throw refError;
         }
@@ -518,8 +525,12 @@ export async function POST(request: Request) {
       }
     }
 
-    await (admin.from('edit_tokens') as any)
-      .update({ used_at: new Date().toISOString() } as any)
+    const tokenUpdate: Database['public']['Tables']['edit_tokens']['Update'] = {
+      used_at: new Date().toISOString(),
+    };
+    await admin
+      .from('edit_tokens')
+      .update(tokenUpdate)
       .eq('id', tokenRow.id);
 
     return NextResponse.json({ success: true });

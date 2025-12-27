@@ -84,7 +84,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   // Typeahead for person search
   const [personSearchResults, setPersonSearchResults] = useState<PersonSearchResult[]>([]);
   const [showPersonDropdown, setShowPersonDropdown] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const personInputRef = useRef<HTMLInputElement>(null);
 
   // Debounced search for people
@@ -96,7 +95,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
     }
 
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const res = await fetch(`/api/people/search?q=${encodeURIComponent(newPersonName)}&limit=5`);
         if (res.ok) {
@@ -106,8 +104,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         }
       } catch (e) {
         console.error('Person search error:', e);
-      } finally {
-        setIsSearching(false);
       }
     }, 200);
 

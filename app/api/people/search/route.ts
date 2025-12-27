@@ -203,7 +203,14 @@ export async function GET(request: NextRequest) {
 
     const results: PersonSearchResult[] = scored
       .slice(0, limit)
-      .map(({ _score, _name, ...rest }) => rest);
+      .map((item) => ({
+        person_id: item.person_id,
+        display_name: item.display_name,
+        relationship: item.relationship,
+        linked: item.linked,
+        mention_count: item.mention_count,
+        source: item.source,
+      }));
 
     return NextResponse.json({ results });
   } catch (error) {

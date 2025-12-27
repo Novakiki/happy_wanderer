@@ -66,9 +66,9 @@ export async function POST(request: NextRequest) {
         email: contributor_email?.trim() || null,
       };
 
-      const { data, error } = await (admin
-        .from("contributors") as unknown as ReturnType<typeof admin.from>)
-        .insert(newContributor as any)
+      const { data, error } = await admin
+        .from("contributors")
+        .insert(newContributor)
         .select("id")
         .single();
 
@@ -83,13 +83,14 @@ export async function POST(request: NextRequest) {
     const token = randomUUID();
     const expiresAt = new Date(Date.now() + Number(hours_valid) * 60 * 60 * 1000).toISOString();
 
-    const { error: insertError } = await (admin
-      .from("edit_tokens") as unknown as ReturnType<typeof admin.from>)
-      .insert({
-        token,
-        contributor_id: resolvedContributorId,
-        expires_at: expiresAt,
-      } as any);
+    const editToken: Database["public"]["Tables"]["edit_tokens"]["Insert"] = {
+      token,
+      contributor_id: resolvedContributorId,
+      expires_at: expiresAt,
+    };
+    const { error: insertError } = await admin
+      .from("edit_tokens")
+      .insert(editToken);
 
     if (insertError) {
       console.error("Failed to create edit token:", insertError);

@@ -21,3 +21,18 @@
 - Template: simple HTML email with entry summaries
 
 ---
+
+## Kid Safety & Guardian Controls (Future)
+
+**Goal:** Avoid subjective mood scoring. Keep control with kids and Derek using explicit, opt-in choices.
+
+**Building blocks:**
+- No filters baseline: show all kid-allowed notes.
+- Gentle Mode toggle: hide notes explicitly marked sensitive.
+- Ask-before-reveal prompt on sensitive notes.
+- Personal filters kids can set once (topics to hide).
+- Derek override per kid (hide/allow specific notes).
+
+**Notes:**
+- Sensitivity is manual (set by Derek/admin), not algorithmic.
+- Store kid preferences locally by default; only save to profiles if needed.

@@ -12,7 +12,7 @@ import { redactReferences } from "@/lib/references";
 type TimelineEvent = Database["public"]["Tables"]["timeline_events"]["Row"] & {
   contributor: { name: string; relation: string | null } | null;
   media?: { media: Database["public"]["Tables"]["media"]["Row"] }[];
-  references?: EventReferenceWithContributor[];
+  references?: EventReferenceWithContributor[] | ReturnType<typeof redactReferences>;
 };
 
 type LinkedStory = {
@@ -39,7 +39,7 @@ export default async function MemoryPage({
       : null;
 
   let event: TimelineEvent | null = null;
-  let linkedStories: LinkedStory[] = [];
+  const linkedStories: LinkedStory[] = [];
 
   if (admin) {
     const { data, error } = await admin
@@ -59,10 +59,10 @@ export default async function MemoryPage({
       console.error("Error fetching event:", error);
     } else {
       // Redact private names before rendering
-      const eventData = data as any;
+      const eventData = data as TimelineEvent;
       event = {
         ...eventData,
-        references: redactReferences(eventData.references),
+        references: redactReferences(eventData.references || []),
       } as TimelineEvent;
     }
 

@@ -67,11 +67,14 @@ export async function POST(request: Request) {
         ? new Date(Date.now() + MAGIC_LINK_TTL_DAYS * 24 * 60 * 60 * 1000)
         : null;
 
-    const { error: insertError } = await (admin.from('edit_tokens') as any).insert({
+    const insertPayload: Database['public']['Tables']['edit_tokens']['Insert'] = {
       token,
       contributor_id: contributor.id,
       expires_at: expiresAt ? expiresAt.toISOString() : null,
-    } as any);
+    };
+    const { error: insertError } = await admin
+      .from('edit_tokens')
+      .insert(insertPayload);
 
     if (insertError) {
       throw insertError;

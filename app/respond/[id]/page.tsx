@@ -56,7 +56,7 @@ export default function RespondPage() {
         const data = await res.json();
         setInvite(data.invite);
         setName(data.invite.recipient_name || '');
-      } catch (e) {
+      } catch {
         setError('Failed to load invitation.');
       } finally {
         setLoading(false);
@@ -90,7 +90,7 @@ export default function RespondPage() {
         setContributorId(result.contributor_id);
       }
       setIsSubmitted(true);
-    } catch (e) {
+    } catch {
       setError('Failed to submit your response. Please try again.');
     } finally {
       setIsSubmitting(false);

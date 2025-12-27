@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       return false;
     };
 
-    let resolvedPersonId: string | null = person_id || personId || null;
+    const resolvedPersonId: string | null = person_id || personId || null;
     if (resolvedPersonId && !(await canUsePersonId(resolvedPersonId))) {
       return NextResponse.json(
         { error: 'Invalid person reference' },

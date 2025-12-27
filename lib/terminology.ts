@@ -4,8 +4,8 @@ export const SITE_DESCRIPTION =
 export const GATE_DESCRIPTION =
   "A private room for family and friends, by invitation only.";
 
-export const SCORE_TITLE = "The Score";
-export const SCORE_TITLE_FULL = `${SITE_TITLE} — The Score`;
+export const SCORE_TITLE = "Happy Wanderer";
+export const SCORE_TITLE_FULL = SITE_TITLE;
 
 export const NOTE_LABEL = "note";
 export const NOTE_LABEL_PLURAL = "notes";

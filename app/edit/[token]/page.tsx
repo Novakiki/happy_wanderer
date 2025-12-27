@@ -81,8 +81,12 @@ export default async function EditTokenPage({
     );
   }
 
-  await (admin.from('edit_tokens') as any)
-    .update({ used_at: new Date().toISOString() } as any)
+  const tokenUpdate: Database['public']['Tables']['edit_tokens']['Update'] = {
+    used_at: new Date().toISOString(),
+  };
+  await admin
+    .from('edit_tokens')
+    .update(tokenUpdate)
     .eq('id', tokenRow.id);
 
   const { data: contributor }: { data: { name: string | null } | null } = await admin
