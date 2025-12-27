@@ -175,3 +175,10 @@ Most family stories are **retold, not witnessed**. The `heard_from` field makes 
 - New routes render without errors
 - Mobile layout is readable
 - Top-level routes are linked where needed (score layout)
+
+## LLM quick notes (keep aligned)
+- Nav anchor label: **Happy Wanderer**; score heading tag line: **Valerie Park Anderson**
+- Middleware: use **proxy.ts** only; `/respond/*` is public, most other routes gated
+- Entry types: `memory`, `milestone`, `origin` (synchronicity)
+- Reference roles: `heard_from`, `witness`, `source`, `related`
+- For more detail, see `docs/llm-notes.md` and `docs/routes.md`
