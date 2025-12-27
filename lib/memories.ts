@@ -152,9 +152,10 @@ export function normalizeLifeStage(value?: string): LifeStage | null {
  * Convert entry_type from form to database event type.
  */
 export function normalizeEntryType(entryType?: string): EventType {
-  if (entryType === 'synchronicity') {
-    return 'origin';
-  }
+  const normalized = (entryType || '').trim().toLowerCase();
+  if (normalized === 'origin' || normalized === 'synchronicity') return 'origin';
+  if (normalized === 'milestone') return 'milestone';
+  if (normalized === 'memory') return 'memory';
   return 'memory';
 }
 
