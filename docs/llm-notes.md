@@ -14,10 +14,11 @@
 ## Key routes
 - `/score` – timeline (The Score)
 - `/share` – add a note (requires auth)
+- `/submit` – contributor submission flow
 - `/respond/[id]` – invited responses (no auth required)
 - `/edit` and `/edit/[token]` – magic link editing
 - `/auth/*` – login/signup/reset/complete-profile
-- `/letter` – letter flow
+- `/why` – why this exists
 - `/emerging` – “What’s Emerging”
 
 ## Supabase

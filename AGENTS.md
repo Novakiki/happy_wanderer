@@ -56,6 +56,7 @@ Happy Wanderer (site name / the song)
 - Edit session cookie: `vals-memory-edit`
 - `/chat` — LLM chat (kids-facing assistant)
 - `/memory/:id` — single note view
+- Routes source of truth: `docs/routes.md`
 
 ### Route groups
 - `(main)` — share
