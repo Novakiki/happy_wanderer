@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ENTRY_TYPE_LABELS,
   ENTRY_TYPE_DESCRIPTIONS,
@@ -11,10 +11,20 @@ import {
 } from '@/lib/terminology';
 import { formStyles } from '@/lib/styles';
 import type { ReferenceVisibility } from '@/lib/references';
+import type { ProvenanceData, PersonReference, Reference } from '@/lib/form-types';
+import {
+  mapLegacyPersonRole,
+  mapToLegacyPersonRole,
+  deriveProvenanceFromSource,
+  provenanceToSource,
+} from '@/lib/form-types';
 import RichTextEditor from './RichTextEditor';
+import { ProvenanceSection } from './forms';
+import { PeopleSection } from './forms';
+import { ReferencesSection } from './forms';
 
-const toPlainText = (html?: string | null) =>
-  html ? html.replace(/<[^>]+>/g, '').trim() : '';
+const stripHtml = (html?: string | null): string =>
+  html ? html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() : '';
 
 type EditableEvent = {
   id: string;
@@ -28,6 +38,7 @@ type EditableEvent = {
   timing_note: string | null;
   location: string | null;
   people_involved?: string[] | null;
+  provenance: ProvenanceData;
   type: 'origin' | 'milestone' | 'memory';
   title: string;
   preview?: string | null;
@@ -36,8 +47,7 @@ type EditableEvent = {
   source_name: string | null;
   source_url: string | null;
   privacy_level: 'public' | 'family' | 'kids-only';
-  people_involved?: string[] | null;
-  sources: {
+  references: {
     id?: string;
     display_name: string;
     url: string;
@@ -47,12 +57,13 @@ type EditableEvent = {
     person_id?: string | null;
     name: string;
     relationship?: string | null;
-    role: 'witness' | 'heard_from' | 'source' | 'related';
+    role: 'was_there' | 'told_me' | 'might_remember';
     phone?: string;
   }[];
 };
 
-type IncomingEvent = Omit<EditableEvent, 'sources'> & {
+type IncomingEvent = Omit<EditableEvent, 'references'> & {
+  provenance?: 'firsthand' | 'secondhand' | 'from_references';
   references?: {
     id: string;
     type: 'person' | 'link';
@@ -73,10 +84,6 @@ type Props = {
   events: IncomingEvent[];
 };
 
-// Strip HTML tags for plain text preview
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
-}
 
 export default function EditNotesClient({ token, contributorName, events: initialEvents }: Props) {
   const [events, setEvents] = useState(initialEvents);
@@ -97,13 +104,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
           person_id: ref.person?.id || ref.person_id || undefined,
           name: ref.person?.canonical_name || ref.display_name || '',
           relationship: ref.relationship_to_subject || '',
-          role:
-            ref.role === 'heard_from' ||
-            ref.role === 'source' ||
-            ref.role === 'related' ||
-            ref.role === 'witness'
-              ? ref.role
-              : 'witness',
+          role: mapLegacyPersonRole(ref.role),
           phone: '',
         })) ?? [];
       acc[event.id] = {
@@ -118,14 +119,30 @@ export default function EditNotesClient({ token, contributorName, events: initia
         timing_note: event.timing_note ?? '',
         location: event.location ?? '',
         people_involved: event.people_involved ?? [],
+        provenance: deriveProvenanceFromSource(event.source_name, event.source_url),
         privacy_level: event.privacy_level || 'family',
-        sources: linkRefs,
+        references: linkRefs,
         person_refs: personRefs,
       };
       return acc;
     }, {} as Record<string, EditableEvent>)
   );
   const [status, setStatus] = useState<Record<string, string>>({});
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Warn user before leaving with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   const formatYearLabel = (event: EditableEvent) => {
     const isApproximate = event.timing_certainty !== 'exact';
@@ -176,6 +193,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
         nextValue = value.trim() === '' || Number.isNaN(parsed) ? null : parsed;
       }
 
+      setIsDirty(true);
       return {
         ...prev,
         [eventId]: {
@@ -191,7 +209,9 @@ export default function EditNotesClient({ token, contributorName, events: initia
     if (!payload) return;
 
     const trimmedWhy = (payload.why_included || '').trim();
-    const trimmedSourceName = (payload.source_name || '').trim() || 'Personal memory';
+    const derivedSource = provenanceToSource(payload.provenance);
+    const trimmedSourceName = derivedSource.source_name;
+    const trimmedSourceUrl = derivedSource.source_url;
 
     if (!trimmedWhy) {
       setStatus((prev) => ({ ...prev, [eventId]: 'Please add why this memory belongs.' }));
@@ -233,18 +253,27 @@ export default function EditNotesClient({ token, contributorName, events: initia
           timing_input_type: payload.timing_input_type,
           timing_note: payload.timing_note,
           location: payload.location,
-          people_involved: payload.people_involved,
+          // Sync people_involved: use person_refs if any have names, else preserve legacy
+          people_involved: (() => {
+            const namesFromRefs = (payload.person_refs || [])
+              .map((p) => p.name)
+              .filter((name) => name.trim());
+            return namesFromRefs.length > 0 ? namesFromRefs : payload.people_involved;
+          })(),
+          provenance: payload.provenance.type,
           entry_type: payload.type,
           title: payload.title,
           content: payload.full_entry,
           why_included: trimmedWhy,
           source_name: trimmedSourceName,
-          source_url: payload.source_url,
+          source_url: trimmedSourceUrl,
           privacy_level: payload.privacy_level,
-          sources: payload.sources,
           references: {
-            links: payload.sources,
-            people: payload.person_refs || [],
+            links: payload.references,
+            people: (payload.person_refs || []).map((p) => ({
+              ...p,
+              role: mapToLegacyPersonRole(p.role),
+            })),
           },
         }),
       });
@@ -255,6 +284,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
       }
 
       setStatus((prev) => ({ ...prev, [eventId]: 'saved' }));
+      setIsDirty(false);
       setTimeout(() => {
         setStatus((prev) => ({ ...prev, [eventId]: '' }));
       }, 1800);
@@ -264,7 +294,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
     }
   };
 
-  const updateSourceField = (
+  const updateReferenceField = (
     eventId: string,
     index: number,
     field: 'display_name' | 'url',
@@ -273,14 +303,15 @@ export default function EditNotesClient({ token, contributorName, events: initia
     setFormState((prev) => {
       const current = prev[eventId];
       if (!current) return prev;
-      const nextSources = [...current.sources];
-      nextSources[index] = {
-        ...nextSources[index],
+      const nextRefs = [...current.references];
+      nextRefs[index] = {
+        ...nextRefs[index],
         [field]: value,
       };
+      setIsDirty(true);
       return {
         ...prev,
-        [eventId]: { ...current, sources: nextSources },
+        [eventId]: { ...current, references: nextRefs },
       };
     });
   };
@@ -300,6 +331,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
         ...nextPeople[index],
         [field]: value,
       };
+      setIsDirty(true);
       return {
         ...prev,
         [eventId]: { ...current, person_refs: nextPeople },
@@ -311,13 +343,14 @@ export default function EditNotesClient({ token, contributorName, events: initia
     setFormState((prev) => {
       const current = prev[eventId];
       if (!current) return prev;
+      setIsDirty(true);
       return {
         ...prev,
         [eventId]: {
           ...current,
           person_refs: [
             ...(current.person_refs || []),
-            { name: '', relationship: '', role: 'witness', phone: '' },
+            { name: '', relationship: '', role: 'was_there' as const, phone: '' },
           ],
         },
       };
@@ -330,6 +363,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
       if (!current) return prev;
       const nextPeople = [...(current.person_refs || [])];
       nextPeople.splice(index, 1);
+      setIsDirty(true);
       return {
         ...prev,
         [eventId]: { ...current, person_refs: nextPeople },
@@ -337,29 +371,85 @@ export default function EditNotesClient({ token, contributorName, events: initia
     });
   };
 
-  const addSource = (eventId: string) => {
+  const addReference = (eventId: string) => {
     setFormState((prev) => {
       const current = prev[eventId];
       if (!current) return prev;
+      setIsDirty(true);
       return {
         ...prev,
         [eventId]: {
           ...current,
-          sources: [...current.sources, { display_name: '', url: '' }],
+          references: [...current.references, { display_name: '', url: '' }],
         },
       };
     });
   };
 
-  const removeSource = (eventId: string, index: number) => {
+  const removeReference = (eventId: string, index: number) => {
     setFormState((prev) => {
       const current = prev[eventId];
       if (!current) return prev;
-      const nextSources = [...current.sources];
-      nextSources.splice(index, 1);
+      const nextRefs = [...current.references];
+      nextRefs.splice(index, 1);
+      setIsDirty(true);
       return {
         ...prev,
-        [eventId]: { ...current, sources: nextSources },
+        [eventId]: { ...current, references: nextRefs },
+      };
+    });
+  };
+
+  // Shared component handlers
+  const updateProvenance = (eventId: string, provenance: ProvenanceData) => {
+    setFormState((prev) => {
+      const current = prev[eventId];
+      if (!current) return prev;
+      setIsDirty(true);
+      return {
+        ...prev,
+        [eventId]: { ...current, provenance },
+      };
+    });
+  };
+
+  const updatePeople = (eventId: string, people: PersonReference[]) => {
+    setFormState((prev) => {
+      const current = prev[eventId];
+      if (!current) return prev;
+      setIsDirty(true);
+      return {
+        ...prev,
+        [eventId]: {
+          ...current,
+          person_refs: people.map((p) => ({
+            id: p.id,
+            person_id: p.personId,
+            name: p.name,
+            relationship: p.relationship,
+            role: p.role,
+            phone: p.phone,
+          })),
+        },
+      };
+    });
+  };
+
+  const updateReferences = (eventId: string, refs: Reference[]) => {
+    setFormState((prev) => {
+      const current = prev[eventId];
+      if (!current) return prev;
+      setIsDirty(true);
+      return {
+        ...prev,
+        [eventId]: {
+          ...current,
+          references: refs.map((r) => ({
+            id: r.id,
+            display_name: r.displayName,
+            url: r.url,
+          })),
+        },
       };
     });
   };
@@ -417,7 +507,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   <p className="text-xs text-white/40">{formatYearLabel(summaryEvent)}</p>
                   <h3 className="text-lg font-serif text-white">{event.title}</h3>
                   <p className="text-white/50 text-sm mt-2 line-clamp-2">
-                    {toPlainText(event.full_entry) || 'No text added yet.'}
+                    {stripHtml(event.full_entry) || 'No text added yet.'}
                   </p>
                 </div>
                 <button
@@ -589,27 +679,6 @@ export default function EditNotesClient({ token, contributorName, events: initia
                 </div>
 
                 <div>
-                  <label className={formStyles.label}>People involved (optional)</label>
-                  <input
-                    type="text"
-                    value={(data.people_involved || []).join(', ')}
-                    onChange={(e) =>
-                      updateField(
-                        event.id,
-                        'people_involved',
-                        e.target.value
-                          .split(',')
-                          .map((name) => name.trim())
-                          .filter(Boolean)
-                      )
-                    }
-                    placeholder="Amy, Julie"
-                    className={formStyles.input}
-                  />
-                  <p className={formStyles.hint}>Comma-separated. This shows who was there.</p>
-                </div>
-
-                <div>
                   <label className={formStyles.label}>Title</label>
                   <input
                     type="text"
@@ -619,69 +688,11 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   />
                 </div>
 
-                {/* People references */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className={formStyles.label}>People (witnesses, sources)</label>
-                    <button
-                      type="button"
-                      onClick={() => addPersonRefRow(event.id)}
-                      className={formStyles.buttonGhost}
-                    >
-                      + Add person
-                    </button>
-                  </div>
-                  {(data.person_refs || []).length === 0 && (
-                    <p className={`${formStyles.hint} italic`}>No people added yet — include who was there or who told you.</p>
-                  )}
-                  {(data.person_refs || []).map((person, index) => (
-                    <div key={person.id || index} className="space-y-2 p-3 rounded-lg bg-white/5 border border-white/10">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs text-white/40">Person {index + 1}</label>
-                        <button
-                          type="button"
-                          onClick={() => removePersonRefRow(event.id, index)}
-                          className="text-xs text-white/40 hover:text-red-400 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        value={person.name}
-                        onChange={(e) => updatePersonField(event.id, index, 'name', e.target.value)}
-                        placeholder="Name"
-                        className={formStyles.input}
-                      />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          type="text"
-                          value={person.relationship || ''}
-                          onChange={(e) => updatePersonField(event.id, index, 'relationship', e.target.value)}
-                          placeholder="Relationship to Val (optional)"
-                          className={formStyles.input}
-                        />
-                        <select
-                          value={person.role}
-                          onChange={(e) => updatePersonField(event.id, index, 'role', e.target.value)}
-                          className={formStyles.select}
-                        >
-                          <option value="witness">Witness</option>
-                          <option value="heard_from">Heard from</option>
-                          <option value="source">Source</option>
-                          <option value="related">Related</option>
-                        </select>
-                      </div>
-                      <input
-                        type="tel"
-                        value={person.phone || ''}
-                        onChange={(e) => updatePersonField(event.id, index, 'phone', e.target.value)}
-                        placeholder="Phone (optional - to invite them)"
-                        className={formStyles.input}
-                      />
-                    </div>
-                  ))}
-                </div>
+                <ProvenanceSection
+                  value={data.provenance}
+                  onChange={(prov) => updateProvenance(event.id, prov)}
+                  compact
+                />
 
                 <div>
                   <label className={formStyles.label}>Your memory of Val</label>
@@ -721,89 +732,47 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   />
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={formStyles.label}>Source name</label>
-                    <input
-                      type="text"
-                      value={data.source_name || ''}
-                      onChange={(e) => updateField(event.id, 'source_name', e.target.value)}
-                      placeholder="e.g., Personal memory"
-                      className={formStyles.input}
-                    />
-                  </div>
-                  <div>
-                    <label className={formStyles.label}>Source link (optional)</label>
-                    <input
-                      type="url"
-                      value={data.source_url || ''}
-                      onChange={(e) => updateField(event.id, 'source_url', e.target.value)}
-                      placeholder="https://..."
-                      className={formStyles.input}
-                    />
-                  </div>
-                </div>
+                {/* People references */}
+                <PeopleSection
+                  value={(data.person_refs || []).map((p) => ({
+                    id: p.id,
+                    personId: p.person_id,
+                    name: p.name,
+                    relationship: p.relationship,
+                    role: p.role,
+                    phone: p.phone,
+                  }))}
+                  onChange={(people) => updatePeople(event.id, people)}
+                  mode="cards"
+                  showTypeahead={false}
+                />
 
-                <div>
-                  <label className={formStyles.label}>Privacy</label>
+                <div className="opacity-50">
+                  <div className="flex items-center gap-2">
+                    <label className={formStyles.label}>Privacy</label>
+                    <span className="text-[10px] px-2 py-0.5 bg-white/10 rounded text-white/40">Coming soon</span>
+                  </div>
                   <select
-                    value={data.privacy_level}
-                    onChange={(e) => updateField(event.id, 'privacy_level', e.target.value)}
-                    className={formStyles.select}
+                    disabled
+                    value="family"
+                    className={`${formStyles.select} cursor-not-allowed`}
                   >
                     <option value="family">Family (default)</option>
-                    <option value="kids-only">Kids only</option>
-                    <option value="public">Public</option>
                   </select>
                   <p className={formStyles.hint}>
-                    Keep visibility aligned with who should see this memory.
+                    Privacy settings are being finalized with family input.
                   </p>
                 </div>
 
-                {/* Sources */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className={formStyles.label}>Sources</label>
-                    <button
-                      type="button"
-                      onClick={() => addSource(event.id)}
-                      className={formStyles.buttonGhost}
-                    >
-                      + Add source
-                    </button>
-                  </div>
-                  {data.sources.length === 0 && (
-                    <p className={`${formStyles.hint} italic`}>No sources yet — add links that support this memory.</p>
-                  )}
-                  {data.sources.map((source, index) => (
-                    <div key={source.id || index} className="space-y-2 p-3 rounded-lg bg-white/5 border border-white/10">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs text-white/40">Source {index + 1}</label>
-                        <button
-                          type="button"
-                          onClick={() => removeSource(event.id, index)}
-                          className="text-xs text-white/40 hover:text-red-400 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <input
-                        type="text"
-                        value={source.display_name}
-                        onChange={(e) => updateSourceField(event.id, index, 'display_name', e.target.value)}
-                        placeholder="Display name (e.g. Wikipedia)"
-                        className={formStyles.input}
-                      />
-                      <input
-                        type="url"
-                        value={source.url}
-                        onChange={(e) => updateSourceField(event.id, index, 'url', e.target.value)}
-                        placeholder="https://..."
-                        className={formStyles.input}
-                      />
-                    </div>
-                  ))}
-                </div>
+                {/* References (external links) */}
+                <ReferencesSection
+                  value={data.references.map((r) => ({
+                    id: r.id,
+                    displayName: r.display_name,
+                    url: r.url,
+                  }))}
+                  onChange={(refs) => updateReferences(event.id, refs)}
+                />
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">

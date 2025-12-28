@@ -44,7 +44,48 @@ export const ENTRY_TYPE_CONTENT_LABELS = {
 export const formatNoteCount = (count: number) =>
   `${count} ${count === 1 ? NOTE_LABEL : NOTE_LABEL_PLURAL} in the score`;
 
-// Reference roles - for the chain mail system
+// =============================================================================
+// Memory Provenance - how the contributor knows this story
+// =============================================================================
+
+export const MEMORY_PROVENANCE = {
+  firsthand: "I was there",
+  secondhand: "Someone told me",
+  from_references: "From a record",
+  mixed: "Mixed / not sure",
+} as const;
+
+export const MEMORY_PROVENANCE_DESCRIPTIONS = {
+  firsthand: "You witnessed this memory yourself",
+  secondhand: "Someone else shared this story with you",
+  from_references: "Photo, letter, journal, email, article, etc.",
+  mixed: "Part memory, part story you've heard",
+} as const;
+
+export const MEMORY_PROVENANCE_SHORT = {
+  firsthand: "I was there",
+  secondhand: "I was told",
+  from_references: "I have a record",
+  mixed: "Mixed",
+} as const;
+
+// =============================================================================
+// Person Roles - who else was part of this memory
+// =============================================================================
+
+export const PERSON_ROLE_LABELS = {
+  was_there: "Was there",
+  told_me: "Told me this",
+  might_remember: "Might remember",
+} as const;
+
+export const PERSON_ROLE_DESCRIPTIONS = {
+  was_there: "They were physically present",
+  told_me: "They shared this story with you",
+  might_remember: "They might have more to add",
+} as const;
+
+// Reference roles - for the chain mail system (legacy, maps to new roles)
 export const REFERENCE_ROLE_LABELS = {
   heard_from: "Passed down from",
   witness: "Also there",

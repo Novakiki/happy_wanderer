@@ -9,13 +9,17 @@ import {
   LIFE_STAGE_DESCRIPTIONS,
   LIFE_STAGE_YEAR_RANGES,
   RELATIONSHIP_OPTIONS,
+  PERSON_ROLE_LABELS,
 } from '@/lib/terminology';
+import type { PersonRole } from '@/lib/form-types';
+import { mapToLegacyPersonRole } from '@/lib/form-types';
 import { validatePersonReference } from '@/lib/invites';
 import { useEffect, useRef, useState } from 'react';
 
 type PersonReference = {
   name: string;
   relationship: string;
+  role: PersonRole;
   personId?: string;
   phone?: string;
 };
@@ -34,7 +38,7 @@ type PersonSearchResult = {
   mention_count: number;
 };
 
-type ProvenanceType = 'firsthand' | 'told' | 'record' | 'mixed';
+import type { ProvenanceType } from '@/lib/form-types';
 
 type UserProfile = {
   name: string;
@@ -75,8 +79,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [personRefs, setPersonRefs] = useState<PersonReference[]>([]);
   const [newPersonName, setNewPersonName] = useState('');
   const [newPersonRelationship, setNewPersonRelationship] = useState('');
+  const [newPersonRole, setNewPersonRole] = useState<PersonRole>('was_there');
   const [newPersonId, setNewPersonId] = useState<string | null>(null);
   const [newPersonPhone, setNewPersonPhone] = useState('');
+
+  // Link references (external sources)
+  const [linkRefs, setLinkRefs] = useState<{ displayName: string; url: string }[]>([]);
+  const [newLinkName, setNewLinkName] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [showLinks, setShowLinks] = useState(false);
 
   // Invites created after submission (for "Text them" buttons)
   const [createdInvites, setCreatedInvites] = useState<CreatedInvite[]>([]);
@@ -151,11 +162,13 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
       setPersonRefs([...personRefs, {
         name: newPersonName.trim(),
         relationship: newPersonRelationship,
+        role: newPersonRole,
         personId: newPersonId || undefined,
         phone: newPersonPhone.trim() || undefined,
       }]);
       setNewPersonName('');
       setNewPersonRelationship('');
+      setNewPersonRole('was_there');
       setNewPersonId(null);
       setNewPersonPhone('');
       setShowPersonDropdown(false);
@@ -164,6 +177,20 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   const removePersonRef = (index: number) => {
     setPersonRefs(personRefs.filter((_, i) => i !== index));
+  };
+
+  const addLinkRef = () => {
+    const url = newLinkUrl.trim();
+    const name = newLinkName.trim();
+    if (url && name) {
+      setLinkRefs([...linkRefs, { displayName: name, url }]);
+      setNewLinkName('');
+      setNewLinkUrl('');
+    }
+  };
+
+  const removeLinkRef = (index: number) => {
+    setLinkRefs(linkRefs.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -238,12 +265,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
       if (provenanceType === 'firsthand') {
         sourceName = 'Personal memory';
-      } else if (provenanceType === 'told') {
-        sourceName = 'Told to me';
+      } else if (provenanceType === 'secondhand') {
+        // Embed toldByName in source_name for persistence (matches provenanceToSource)
+        sourceName = toldByName.trim()
+          ? `Told to me by ${toldByName.trim()}`
+          : 'Told to me';
         if (toldByName.trim()) {
           heardFrom = { name: toldByName.trim(), relationship: '', email: '', shouldInvite: false };
         }
-      } else if (provenanceType === 'record') {
+      } else if (provenanceType === 'from_references') {
         sourceName = recordSource.name.trim() || 'Record/document';
         sourceUrl = recordSource.url.trim();
       } else if (provenanceType === 'mixed') {
@@ -265,8 +295,14 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           prompted_by_event_id: respondingToEventId || null,
           provenance_type: provenanceType,
           references: {
-            links: [],
-            people: personRefs,
+            links: linkRefs.map((l) => ({
+              display_name: l.displayName,
+              url: l.url,
+            })),
+            people: personRefs.map((p) => ({
+              ...p,
+              role: mapToLegacyPersonRole(p.role),
+            })),
           },
           attachment_type: showAttachment && attachment.url.trim() ? attachment.type : 'none',
           attachment_url: showAttachment ? attachment.url : '',
@@ -359,6 +395,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             setProvenanceNote('');
             setPersonRefs([]);
             setNewPersonId(null);
+            setLinkRefs([]);
+            setShowLinks(false);
             setTimingMode(null);
             setShowTimingDetails(false);
             setShowLocation(false);
@@ -791,25 +829,25 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               {/* I was told about it */}
               <button
                 type="button"
-                onClick={() => setProvenanceType('told')}
+                onClick={() => setProvenanceType('secondhand')}
                 className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'told'
+                  provenanceType === 'secondhand'
                     ? 'border-[#e07a5f] bg-[#e07a5f]/10'
                     : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'told' ? 'border-[#e07a5f]' : 'border-white/30'
+                    provenanceType === 'secondhand' ? 'border-[#e07a5f]' : 'border-white/30'
                   }`}>
-                    {provenanceType === 'told' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
+                    {provenanceType === 'secondhand' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-white">I was told about it</p>
                     <p className="text-xs text-white/50">Someone shared this story with me</p>
                   </div>
                 </div>
-                {provenanceType === 'told' && (
+                {provenanceType === 'secondhand' && (
                   <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
                     <label htmlFor="told_by" className={formStyles.label}>
                       Told by
@@ -829,25 +867,25 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               {/* I have a record */}
               <button
                 type="button"
-                onClick={() => setProvenanceType('record')}
+                onClick={() => setProvenanceType('from_references')}
                 className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'record'
+                  provenanceType === 'from_references'
                     ? 'border-[#e07a5f] bg-[#e07a5f]/10'
                     : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'record' ? 'border-[#e07a5f]' : 'border-white/30'
+                    provenanceType === 'from_references' ? 'border-[#e07a5f]' : 'border-white/30'
                   }`}>
-                    {provenanceType === 'record' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
+                    {provenanceType === 'from_references' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-white">I have a record</p>
                     <p className="text-xs text-white/50">Photo, letter, journal, email, etc.</p>
                   </div>
                 </div>
-                {provenanceType === 'record' && (
+                {provenanceType === 'from_references' && (
                   <div className="mt-4 pt-4 border-t border-white/10 space-y-3" onClick={(e) => e.stopPropagation()}>
                     <div>
                       <label htmlFor="record_name" className={formStyles.label}>
@@ -1008,6 +1046,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                       ))}
                   </optgroup>
                 </select>
+                <select
+                  value={newPersonRole}
+                  onChange={(e) => setNewPersonRole(e.target.value as PersonRole)}
+                  className={`${formStyles.select} text-sm py-2`}
+                >
+                  {Object.entries(PERSON_ROLE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
               </div>
               {/* Phone input - shown when name is entered */}
               {newPersonName.trim() && (
@@ -1043,6 +1090,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                         ({RELATIONSHIP_OPTIONS[ref.relationship as keyof typeof RELATIONSHIP_OPTIONS] || ref.relationship})
                       </span>
                     )}
+                    <span className="text-[#e07a5f]/40 ml-1 text-xs">
+                      · {PERSON_ROLE_LABELS[ref.role]}
+                    </span>
                     {ref.phone && (
                       <span className="text-[#e07a5f]/60 ml-1" title={`Will invite: ${ref.phone}`}>
                         +
@@ -1060,6 +1110,77 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               </div>
             )}
           </div>
+        </div>
+
+        {/* External links (collapsed) */}
+        <div>
+          {!showLinks && linkRefs.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowLinks(true)}
+              className={formStyles.buttonGhost}
+            >
+              <span className={formStyles.disclosureArrow}>&#9654;</span>
+              Add external link (article, photo, etc.)
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <label className={formStyles.label}>External links</label>
+              <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
+                <input
+                  type="text"
+                  value={newLinkName}
+                  onChange={(e) => setNewLinkName(e.target.value)}
+                  placeholder="Display name (e.g., Wikipedia)"
+                  className={formStyles.inputSmall}
+                />
+                <input
+                  type="url"
+                  value={newLinkUrl}
+                  onChange={(e) => setNewLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addLinkRef();
+                    }
+                  }}
+                  placeholder="URL"
+                  className={formStyles.inputSmall}
+                />
+                <button
+                  type="button"
+                  onClick={addLinkRef}
+                  disabled={!newLinkName.trim() || !newLinkUrl.trim()}
+                  className={`${formStyles.buttonSecondary} text-sm py-2`}
+                >
+                  Add
+                </button>
+              </div>
+              {linkRefs.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {linkRefs.map((ref, i) => (
+                    <span key={i} className={formStyles.tag}>
+                      <a
+                        href={ref.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                      >
+                        {ref.displayName}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => removeLinkRef(i)}
+                        className={formStyles.tagRemove}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Attachment (collapsed) */}
