@@ -19,7 +19,7 @@ export const ENTRY_TYPE_LABELS = {
 export const ENTRY_TYPE_DESCRIPTIONS = {
   memory: "A memory shared by someone who knew her",
   milestone: "A dated milestone (birth, passing, historical pin)",
-  origin: "A synchronicity that frames her story",
+  origin: "A meaningful coincidence that adds melody or harmony",
 } as const;
 
 export const LEGEND_LABELS = {
