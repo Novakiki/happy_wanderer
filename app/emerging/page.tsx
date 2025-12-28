@@ -32,7 +32,7 @@ export default function EmergingPage() {
           </p>
 
           <p className="text-white/50 italic pt-4">
-            Connection is the inheritance.
+            In this sense, connection is the inheritance.
           </p>
         </div>
       </div>

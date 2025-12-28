@@ -84,9 +84,6 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 onClick={() => setIsOpen(false)}
               >
                 <span>Settings</span>
-                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
-                  Password, relationship, notifications
-                </span>
               </Link>
               <button
                 onClick={handleSignOut}

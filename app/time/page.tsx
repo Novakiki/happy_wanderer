@@ -28,16 +28,11 @@ export default function TimePage() {
 
           <p>
             But memories don&apos;t live that way. They cluster around people, emotions,
-            the stories that sparked other stories. Time is the skeleton. What lives
-            between the bones is something else.
+            the stories that sparked other stories. Time is the skeleton; what lives
+            between the bones is the story.
           </p>
 
-          <h2 className="text-xl font-serif text-white/90 pt-8">
-            Synchronized views
-            <span className="ml-3 text-[10px] uppercase tracking-[0.2em] text-white/40 border border-white/20 rounded-full px-2 py-0.5 align-middle">
-              Coming soon
-            </span>
-          </h2>
+          <h2 className="text-xl font-serif text-white/90 pt-8">Synchronized views — coming soon</h2>
 
           <p>
             The same fragments can be seen through different lenses:
@@ -45,10 +40,10 @@ export default function TimePage() {
 
           <ul className="space-y-3 text-white/50">
             <li>
-              <span className="text-white/80">By witness</span> — who was present across moments
+              <span className="text-white/80">By witness</span> — who was present
             </li>
             <li>
-              <span className="text-white/80">By storyteller</span> — whose voice is speaking
+              <span className="text-white/80">By storyteller</span> — whose voice
             </li>
             <li>
               <span className="text-white/80">By thread</span> — what sparked what
@@ -62,10 +57,6 @@ export default function TimePage() {
             As fragments are regrouped, the people connected to them come into view as well.
           </p>
 
-          <p className="text-white/50 pt-8 border-t border-white/10 mt-8">
-            This is what we mean by &ldquo;linear and synchronized storytelling — by design
-            and by metaphor.&rdquo; The timeline is one constellation. Not the only one.
-          </p>
         </div>
       </div>
     </div>
