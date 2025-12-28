@@ -1,20 +1,20 @@
 'use client';
 
-import { formStyles } from '@/lib/styles';
-import {
-  ENTRY_TYPE_LABELS,
-  ENTRY_TYPE_DESCRIPTIONS,
-  ENTRY_TYPE_CONTENT_LABELS,
-  LIFE_STAGES,
-  LIFE_STAGE_DESCRIPTIONS,
-  LIFE_STAGE_YEAR_RANGES,
-} from '@/lib/terminology';
 import type { PersonReference, ProvenanceData } from '@/lib/form-types';
 import {
   DEFAULT_PROVENANCE,
   mapToLegacyPersonRole,
   provenanceToSource,
 } from '@/lib/form-types';
+import { formStyles } from '@/lib/styles';
+import {
+  ENTRY_TYPE_CONTENT_LABELS,
+  ENTRY_TYPE_DESCRIPTIONS,
+  ENTRY_TYPE_LABELS,
+  LIFE_STAGES,
+  LIFE_STAGE_DESCRIPTIONS,
+  LIFE_STAGE_YEAR_RANGES,
+} from '@/lib/terminology';
 import { useRef, useState } from 'react';
 import { PeopleSection, ProvenanceSection } from './forms';
 
