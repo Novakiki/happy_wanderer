@@ -8,37 +8,21 @@ import {
   LIFE_STAGES,
   LIFE_STAGE_DESCRIPTIONS,
   LIFE_STAGE_YEAR_RANGES,
-  RELATIONSHIP_OPTIONS,
-  PERSON_ROLE_LABELS,
 } from '@/lib/terminology';
-import type { PersonRole } from '@/lib/form-types';
-import { mapToLegacyPersonRole } from '@/lib/form-types';
-import { validatePersonReference } from '@/lib/invites';
-import { useEffect, useRef, useState } from 'react';
-
-type PersonReference = {
-  name: string;
-  relationship: string;
-  role: PersonRole;
-  personId?: string;
-  phone?: string;
-};
+import type { PersonReference, ProvenanceData } from '@/lib/form-types';
+import {
+  DEFAULT_PROVENANCE,
+  mapToLegacyPersonRole,
+  provenanceToSource,
+} from '@/lib/form-types';
+import { useRef, useState } from 'react';
+import { PeopleSection, ProvenanceSection } from './forms';
 
 type CreatedInvite = {
   id: string;
   name: string;
   phone: string;
 };
-
-type PersonSearchResult = {
-  person_id: string;
-  display_name: string;
-  relationship: string | null;
-  linked: boolean;
-  mention_count: number;
-};
-
-import type { ProvenanceType } from '@/lib/form-types';
 
 type UserProfile = {
   name: string;
@@ -70,18 +54,10 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   });
 
   // Provenance - single source of truth for "how do you know this?"
-  const [provenanceType, setProvenanceType] = useState<ProvenanceType>('firsthand');
-  const [toldByName, setToldByName] = useState('');
-  const [recordSource, setRecordSource] = useState({ name: '', url: '' });
-  const [provenanceNote, setProvenanceNote] = useState('');
+  const [provenance, setProvenance] = useState<ProvenanceData>(DEFAULT_PROVENANCE);
 
   // People references
   const [personRefs, setPersonRefs] = useState<PersonReference[]>([]);
-  const [newPersonName, setNewPersonName] = useState('');
-  const [newPersonRelationship, setNewPersonRelationship] = useState('');
-  const [newPersonRole, setNewPersonRole] = useState<PersonRole>('was_there');
-  const [newPersonId, setNewPersonId] = useState<string | null>(null);
-  const [newPersonPhone, setNewPersonPhone] = useState('');
 
   // Link references (external sources)
   const [linkRefs, setLinkRefs] = useState<{ displayName: string; url: string }[]>([]);
@@ -91,44 +67,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   // Invites created after submission (for "Text them" buttons)
   const [createdInvites, setCreatedInvites] = useState<CreatedInvite[]>([]);
-
-  // Typeahead for person search
-  const [personSearchResults, setPersonSearchResults] = useState<PersonSearchResult[]>([]);
-  const [showPersonDropdown, setShowPersonDropdown] = useState(false);
-  const personInputRef = useRef<HTMLInputElement>(null);
-
-  // Debounced search for people
-  useEffect(() => {
-    if (newPersonName.length < 2) {
-      setPersonSearchResults([]);
-      setShowPersonDropdown(false);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/people/search?q=${encodeURIComponent(newPersonName)}&limit=5`);
-        if (res.ok) {
-          const data = await res.json();
-          setPersonSearchResults(data.results || []);
-          setShowPersonDropdown(data.results?.length > 0);
-        }
-      } catch (e) {
-        console.error('Person search error:', e);
-      }
-    }, 200);
-
-    return () => clearTimeout(timer);
-  }, [newPersonName]);
-
-  const selectPerson = (person: PersonSearchResult) => {
-    setNewPersonName(person.display_name);
-    setNewPersonId(person.person_id);
-    // Always set relationship (or clear if none) to avoid stale values
-    setNewPersonRelationship(person.relationship || '');
-    setShowPersonDropdown(false);
-    setPersonSearchResults([]);
-  };
 
   // Attachment (collapsed by default)
   const [showAttachment, setShowAttachment] = useState(false);
@@ -150,34 +88,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const addPersonRef = () => {
-    const ref = {
-      name: newPersonName,
-      relationship: newPersonRelationship,
-    };
-    const { valid } = validatePersonReference(ref);
-
-    if (valid) {
-      setPersonRefs([...personRefs, {
-        name: newPersonName.trim(),
-        relationship: newPersonRelationship,
-        role: newPersonRole,
-        personId: newPersonId || undefined,
-        phone: newPersonPhone.trim() || undefined,
-      }]);
-      setNewPersonName('');
-      setNewPersonRelationship('');
-      setNewPersonRole('was_there');
-      setNewPersonId(null);
-      setNewPersonPhone('');
-      setShowPersonDropdown(false);
-    }
-  };
-
-  const removePersonRef = (index: number) => {
-    setPersonRefs(personRefs.filter((_, i) => i !== index));
-  };
 
   const addLinkRef = () => {
     const url = newLinkUrl.trim();
@@ -258,26 +168,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
     setIsSubmitting(true);
 
     try {
-      // Derive source_name and heard_from based on provenance type
-      let sourceName = 'Personal memory';
-      let sourceUrl = '';
+      // Derive source_name and heard_from based on provenance data
+      const derivedSource = provenanceToSource(provenance);
+      const sourceName = derivedSource.source_name;
+      const sourceUrl = derivedSource.source_url;
       let heardFrom = null;
 
-      if (provenanceType === 'firsthand') {
-        sourceName = 'Personal memory';
-      } else if (provenanceType === 'secondhand') {
-        // Embed toldByName in source_name for persistence (matches provenanceToSource)
-        sourceName = toldByName.trim()
-          ? `Told to me by ${toldByName.trim()}`
-          : 'Told to me';
-        if (toldByName.trim()) {
-          heardFrom = { name: toldByName.trim(), relationship: '', email: '', shouldInvite: false };
-        }
-      } else if (provenanceType === 'from_references') {
-        sourceName = recordSource.name.trim() || 'Record/document';
-        sourceUrl = recordSource.url.trim();
-      } else if (provenanceType === 'mixed') {
-        sourceName = provenanceNote.trim() || 'Mixed / not sure';
+      if (provenance.type === 'secondhand' && provenance.toldByName?.trim()) {
+        const toldBy = provenance.toldByName.trim();
+        heardFrom = { name: toldBy, relationship: '', email: '', shouldInvite: false };
       }
 
       const response = await fetch('/api/memories', {
@@ -293,7 +192,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           source_url: sourceUrl,
           heard_from: heardFrom,
           prompted_by_event_id: respondingToEventId || null,
-          provenance_type: provenanceType,
+          provenance_type: provenance.type,
           references: {
             links: linkRefs.map((l) => ({
               display_name: l.displayName,
@@ -389,12 +288,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               privacy_level: 'family',
               why_included: '',
             });
-            setProvenanceType('firsthand');
-            setToldByName('');
-            setRecordSource({ name: '', url: '' });
-            setProvenanceNote('');
+            setProvenance(DEFAULT_PROVENANCE);
             setPersonRefs([]);
-            setNewPersonId(null);
             setLinkRefs([]);
             setShowLinks(false);
             setTimingMode(null);
@@ -797,319 +692,20 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           <p className={formStyles.sectionLabel}>The Chain</p>
           <p className={`${formStyles.hint} mb-4`}>These fields help keep memories connected without turning them into a single official story.</p>
 
-          {/* Provenance - single selector */}
           <div className="mb-6">
-            <label className={formStyles.label}>
-              How do you know this? <span className={formStyles.required}>*</span>
-            </label>
-            <div className="space-y-3 mt-3">
-              {/* I remember it firsthand */}
-              <button
-                type="button"
-                onClick={() => setProvenanceType('firsthand')}
-                className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'firsthand'
-                    ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                    : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'firsthand' ? 'border-[#e07a5f]' : 'border-white/30'
-                  }`}>
-                    {provenanceType === 'firsthand' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">I remember it firsthand</p>
-                    <p className="text-xs text-white/50">I was there or experienced this directly</p>
-                  </div>
-                </div>
-              </button>
-
-              {/* I was told about it */}
-              <button
-                type="button"
-                onClick={() => setProvenanceType('secondhand')}
-                className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'secondhand'
-                    ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                    : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'secondhand' ? 'border-[#e07a5f]' : 'border-white/30'
-                  }`}>
-                    {provenanceType === 'secondhand' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">I was told about it</p>
-                    <p className="text-xs text-white/50">Someone shared this story with me</p>
-                  </div>
-                </div>
-                {provenanceType === 'secondhand' && (
-                  <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-                    <label htmlFor="told_by" className={formStyles.label}>
-                      Told by
-                    </label>
-                    <input
-                      type="text"
-                      id="told_by"
-                      value={toldByName}
-                      onChange={(e) => setToldByName(e.target.value)}
-                      placeholder="e.g., Uncle John, my mother"
-                      className={formStyles.input}
-                    />
-                  </div>
-                )}
-              </button>
-
-              {/* I have a record */}
-              <button
-                type="button"
-                onClick={() => setProvenanceType('from_references')}
-                className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'from_references'
-                    ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                    : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'from_references' ? 'border-[#e07a5f]' : 'border-white/30'
-                  }`}>
-                    {provenanceType === 'from_references' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">I have a record</p>
-                    <p className="text-xs text-white/50">Photo, letter, journal, email, etc.</p>
-                  </div>
-                </div>
-                {provenanceType === 'from_references' && (
-                  <div className="mt-4 pt-4 border-t border-white/10 space-y-3" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      <label htmlFor="record_name" className={formStyles.label}>
-                        What is it?
-                      </label>
-                      <input
-                        type="text"
-                        id="record_name"
-                        value={recordSource.name}
-                        onChange={(e) => setRecordSource({ ...recordSource, name: e.target.value })}
-                        placeholder="e.g., Her journal, family photo album"
-                        className={formStyles.input}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="record_url" className={formStyles.labelMuted}>
-                        Link <span className="text-white/40">(optional)</span>
-                      </label>
-                      <input
-                        type="url"
-                        id="record_url"
-                        value={recordSource.url}
-                        onChange={(e) => setRecordSource({ ...recordSource, url: e.target.value })}
-                        placeholder="https://..."
-                        className={formStyles.inputSmall}
-                      />
-                    </div>
-                  </div>
-                )}
-              </button>
-
-              {/* Mixed / not sure */}
-              <button
-                type="button"
-                onClick={() => setProvenanceType('mixed')}
-                className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                  provenanceType === 'mixed'
-                    ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                    : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                    provenanceType === 'mixed' ? 'border-[#e07a5f]' : 'border-white/30'
-                  }`}>
-                    {provenanceType === 'mixed' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">Mixed / not sure</p>
-                    <p className="text-xs text-white/50">Part memory, part story I&apos;ve heard</p>
-                  </div>
-                </div>
-                {provenanceType === 'mixed' && (
-                  <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-                    <label htmlFor="provenance_note" className={formStyles.labelMuted}>
-                      Note <span className="text-white/40">(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      id="provenance_note"
-                      value={provenanceNote}
-                      onChange={(e) => setProvenanceNote(e.target.value)}
-                      placeholder="e.g., I think I was there but I'm not certain"
-                      className={formStyles.input}
-                    />
-                  </div>
-                )}
-              </button>
-            </div>
+            <ProvenanceSection
+              value={provenance}
+              onChange={setProvenance}
+              required
+            />
           </div>
 
-          {/* People who were there */}
-          <div>
-            <label className={formStyles.label}>
-              Who else was there?
-            </label>
-            <div className="space-y-3">
-              <div className="grid gap-2 sm:grid-cols-[1fr,auto,auto]">
-                <div className="relative">
-                  <input
-                    ref={personInputRef}
-                    type="text"
-                    value={newPersonName}
-                    onChange={(e) => {
-                      setNewPersonName(e.target.value);
-                      setNewPersonId(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        addPersonRef();
-                      } else if (e.key === 'Escape') {
-                        setShowPersonDropdown(false);
-                      }
-                    }}
-                    onFocus={() => {
-                      if (personSearchResults.length > 0) {
-                        setShowPersonDropdown(true);
-                      }
-                    }}
-                    onBlur={() => {
-                      // Delay to allow click on dropdown
-                      setTimeout(() => setShowPersonDropdown(false), 150);
-                    }}
-                    placeholder="Name"
-                    className={formStyles.inputSmall}
-                    autoComplete="off"
-                  />
-                  {/* Typeahead dropdown */}
-                  {showPersonDropdown && personSearchResults.length > 0 && (
-                    <div className="absolute z-10 left-0 right-0 mt-1 rounded-xl border border-white/10 bg-[#1a1a1a] shadow-lg overflow-hidden">
-                      {personSearchResults.map((person) => (
-                        <button
-                          key={person.person_id}
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => selectPerson(person)}
-                          className="w-full px-3 py-2 text-left hover:bg-white/10 transition-colors flex items-center justify-between gap-2"
-                        >
-                          <span className="text-sm text-white truncate">{person.display_name}</span>
-                          <span className="text-xs text-white/40 flex-shrink-0">
-                            {person.relationship && RELATIONSHIP_OPTIONS[person.relationship as keyof typeof RELATIONSHIP_OPTIONS]}
-                            {person.linked && <span className="ml-1 text-green-400">✓</span>}
-                            {!person.linked && person.mention_count > 0 && (
-                              <span className="ml-1">{person.mention_count}×</span>
-                            )}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <select
-                  value={newPersonRelationship}
-                  onChange={(e) => setNewPersonRelationship(e.target.value)}
-                  className={`${formStyles.select} text-sm py-2`}
-                >
-                  <option value="">Relationship to Val</option>
-                  <optgroup label="Family">
-                    {Object.entries(RELATIONSHIP_OPTIONS)
-                      .filter(([key]) => ['parent', 'child', 'sibling', 'cousin', 'aunt_uncle', 'niece_nephew', 'grandparent', 'grandchild', 'in_law', 'spouse'].includes(key))
-                      .map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                  </optgroup>
-                  <optgroup label="Social">
-                    {Object.entries(RELATIONSHIP_OPTIONS)
-                      .filter(([key]) => ['friend', 'neighbor', 'coworker', 'classmate'].includes(key))
-                      .map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                  </optgroup>
-                  <optgroup label="Other">
-                    {Object.entries(RELATIONSHIP_OPTIONS)
-                      .filter(([key]) => ['acquaintance', 'other', 'unknown'].includes(key))
-                      .map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                  </optgroup>
-                </select>
-                <select
-                  value={newPersonRole}
-                  onChange={(e) => setNewPersonRole(e.target.value as PersonRole)}
-                  className={`${formStyles.select} text-sm py-2`}
-                >
-                  {Object.entries(PERSON_ROLE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </div>
-              {/* Phone input - shown when name is entered */}
-              {newPersonName.trim() && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="tel"
-                    value={newPersonPhone}
-                    onChange={(e) => setNewPersonPhone(e.target.value)}
-                    placeholder="Phone (optional - to invite them)"
-                    className={`flex-1 ${formStyles.inputSmall}`}
-                  />
-                  <span className="text-xs text-white/40 whitespace-nowrap">
-                    They can add their side
-                  </span>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={addPersonRef}
-                disabled={!newPersonName.trim() || !newPersonRelationship}
-                className={formStyles.buttonSecondary}
-              >
-                Add
-              </button>
-            </div>
-            {personRefs.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3">
-                {personRefs.map((ref, i) => (
-                  <span key={i} className={formStyles.tag}>
-                    {ref.name}
-                    {ref.relationship && ref.relationship !== 'unknown' && (
-                      <span className="text-[#e07a5f]/60 ml-1">
-                        ({RELATIONSHIP_OPTIONS[ref.relationship as keyof typeof RELATIONSHIP_OPTIONS] || ref.relationship})
-                      </span>
-                    )}
-                    <span className="text-[#e07a5f]/40 ml-1 text-xs">
-                      · {PERSON_ROLE_LABELS[ref.role]}
-                    </span>
-                    {ref.phone && (
-                      <span className="text-[#e07a5f]/60 ml-1" title={`Will invite: ${ref.phone}`}>
-                        +
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removePersonRef(i)}
-                      className={formStyles.tagRemove}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          <PeopleSection
+            value={personRefs}
+            onChange={setPersonRefs}
+            label="Who else was there?"
+            mode="inline"
+          />
         </div>
 
         {/* External links (collapsed) */}

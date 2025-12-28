@@ -306,6 +306,17 @@ export default function PeopleSection({
                 ))}
             </optgroup>
           </select>
+          <select
+            value={newRole}
+            onChange={(e) => setNewRole(e.target.value as PersonRole)}
+            className={`${formStyles.select} text-sm py-2`}
+          >
+            {Object.entries(PERSON_ROLE_LABELS).map(([val, lbl]) => (
+              <option key={val} value={val}>
+                {lbl}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Phone input - shown when name is entered */}
@@ -349,6 +360,9 @@ export default function PeopleSection({
                   )
                 </span>
               )}
+              <span className="text-[#e07a5f]/40 ml-1 text-xs">
+                &middot; {PERSON_ROLE_LABELS[person.role]}
+              </span>
               {person.phone && (
                 <span
                   className="text-[#e07a5f]/60 ml-1"
