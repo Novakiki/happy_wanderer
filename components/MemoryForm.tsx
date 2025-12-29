@@ -6,17 +6,20 @@ import {
   mapToLegacyPersonRole,
   provenanceToSource,
 } from '@/lib/form-types';
+import { parseYear, parseYearFromDate, validateYearRange } from '@/lib/form-validation';
+import { buildSmsLink } from '@/lib/invites';
 import { formStyles } from '@/lib/styles';
 import {
   ENTRY_TYPE_CONTENT_LABELS,
   ENTRY_TYPE_DESCRIPTIONS,
   ENTRY_TYPE_LABELS,
-  LIFE_STAGES,
-  LIFE_STAGE_DESCRIPTIONS,
   LIFE_STAGE_YEAR_RANGES,
+  THREAD_RELATIONSHIP_DESCRIPTIONS,
+  THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
 import { useRef, useState } from 'react';
-import { PeopleSection, ProvenanceSection } from './forms';
+import { PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
+import type { TimingMode } from './forms';
 
 type CreatedInvite = {
   id: string;
@@ -36,6 +39,8 @@ type Props = {
   storytellerName?: string;
   userProfile: UserProfile;
 };
+
+type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
 export default function MemoryForm({ respondingToEventId, storytellerName, userProfile }: Props) {
   const [formData, setFormData] = useState({
@@ -68,21 +73,25 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   // Invites created after submission (for "Text them" buttons)
   const [createdInvites, setCreatedInvites] = useState<CreatedInvite[]>([]);
 
+  const [threadRelationship, setThreadRelationship] = useState<ThreadRelationship>('perspective');
+  const [threadNote, setThreadNote] = useState('');
+
   // Attachment (collapsed by default)
   const [showAttachment, setShowAttachment] = useState(false);
   const [attachment, setAttachment] = useState({
-    type: 'image' as 'image' | 'audio' | 'link',
+    type: 'image' as 'image' | 'audio',
     url: '',
     caption: '',
   });
 
   // Timing mode: which method user chooses to enter timing (null = none selected yet)
-  const [timingMode, setTimingMode] = useState<'exact' | 'year' | 'chapter' | null>(null);
+  const [timingMode, setTimingMode] = useState<TimingMode>(null);
 
   // Show optional timing details (location, timing note)
   const [showTimingDetails, setShowTimingDetails] = useState(false);
   const [showLocation, setShowLocation] = useState(false);
   const [showWhyMeaningful, setShowWhyMeaningful] = useState(false);
+  const [showPeople, setShowPeople] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -118,7 +127,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setError('Please select a date.');
         return;
       }
-      year = Number.parseInt(formData.exact_date.split('-')[0], 10);
+      year = parseYearFromDate(formData.exact_date);
       timingInputType = 'date';
     }
     // Memory uses the timing mode cards
@@ -130,17 +139,18 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setError('Please select a date.');
         return;
       }
-      year = Number.parseInt(formData.exact_date.split('-')[0], 10);
+      year = parseYearFromDate(formData.exact_date);
       timingInputType = 'date';
     } else if (timingMode === 'year') {
-      year = Number.parseInt(formData.year, 10);
-      if (Number.isNaN(year)) {
+      year = parseYear(formData.year);
+      if (!year) {
         setError('Please enter a year.');
         return;
       }
-      yearEnd = formData.year_end ? Number.parseInt(formData.year_end, 10) : null;
-      if (yearEnd !== null && yearEnd < year) {
-        setError('End year must be the same or later than the start year.');
+      yearEnd = parseYear(formData.year_end);
+      const rangeValidation = validateYearRange(year, yearEnd);
+      if (!rangeValidation.valid) {
+        setError(rangeValidation.error);
         return;
       }
       timingInputType = yearEnd ? 'year_range' : 'year';
@@ -163,6 +173,17 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
     if (!year) {
       setError('Please provide timing information.');
       return;
+    }
+
+    // Require an attachment for synchronicity/origin entries
+    if (formData.entry_type === 'origin') {
+      const hasAttachment = attachment.url.trim().length > 0;
+      const hasLinkRefs = linkRefs.length > 0;
+      if (!hasAttachment && !hasLinkRefs) {
+        setShowAttachment(true);
+        setError('Please add an attachment (image/audio) or an external link for a synchronicity.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -192,6 +213,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           source_url: sourceUrl,
           heard_from: heardFrom,
           prompted_by_event_id: respondingToEventId || null,
+          relationship: respondingToEventId ? threadRelationship : null,
+          relationship_note: respondingToEventId ? threadNote.trim() : null,
           provenance_type: provenance.type,
           references: {
             links: linkRefs.map((l) => ({
@@ -250,8 +273,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             </p>
             <div className="space-y-2">
               {createdInvites.map((invite) => {
-                const message = `Hey ${invite.name}! I shared a memory about you on Val's memorial. Add your side of the story: ${baseUrl}/respond/${invite.id}`;
-                const smsUrl = `sms:${invite.phone}?body=${encodeURIComponent(message)}`;
+                const smsUrl = buildSmsLink(invite.phone, invite.name, invite.id, baseUrl);
                 return (
                   <a
                     key={invite.id}
@@ -298,6 +320,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             setShowWhyMeaningful(false);
             setShowAttachment(false);
             setAttachment({ type: 'image', url: '', caption: '' });
+            setThreadRelationship('perspective');
+            setThreadNote('');
           }}
           className={formStyles.buttonPrimary}
         >
@@ -467,153 +491,32 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             <>
               <p className={`${formStyles.hint} mb-4`}>Choose one way to place this memory in time <span className={formStyles.required}>*</span></p>
 
-              <div className="space-y-3">
-                {/* Exact date card */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimingMode('exact');
-                    setFormData({ ...formData, is_approximate: false });
-                  }}
-                  className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                    timingMode === 'exact'
-                      ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                      : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                      timingMode === 'exact' ? 'border-[#e07a5f]' : 'border-white/30'
-                    }`}>
-                      {timingMode === 'exact' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white">Exact date</p>
-                      <p className="text-xs text-white/50">I know the specific day</p>
-                    </div>
-                  </div>
-                  {timingMode === 'exact' && (
-                    <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="date"
-                        id="exact_date_memory"
-                        value={formData.exact_date}
-                        onChange={(e) => {
-                          const date = e.target.value;
-                          const year = date ? date.split('-')[0] : '';
-                          setFormData({ ...formData, exact_date: date, year });
-                        }}
-                        className={formStyles.input}
-                        required
-                      />
-                    </div>
-                  )}
-                </button>
-
-                {/* Year/range card */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimingMode('year');
-                    setFormData({ ...formData, is_approximate: true });
-                  }}
-                  className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                    timingMode === 'year'
-                      ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                      : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                      timingMode === 'year' ? 'border-[#e07a5f]' : 'border-white/30'
-                    }`}>
-                      {timingMode === 'year' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white">Around a year</p>
-                      <p className="text-xs text-white/50">I know roughly when</p>
-                    </div>
-                  </div>
-                  {timingMode === 'year' && (
-                    <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          type="number"
-                          id="year"
-                          min="1900"
-                          max="2030"
-                          inputMode="numeric"
-                          value={formData.year}
-                          onChange={(e) => setFormData({ ...formData, year: e.target.value })}
-                          placeholder="Year, e.g. 1996"
-                          className={formStyles.input}
-                          required
-                        />
-                        <input
-                          type="number"
-                          id="year_end"
-                          min="1900"
-                          max="2030"
-                          inputMode="numeric"
-                          value={formData.year_end}
-                          onChange={(e) => setFormData({ ...formData, year_end: e.target.value })}
-                          placeholder="End year (optional)"
-                          className={formStyles.input}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </button>
-
-                {/* Chapter card */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTimingMode('chapter');
-                    setFormData({ ...formData, is_approximate: true });
-                  }}
-                  className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-                    timingMode === 'chapter'
-                      ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-                      : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                      timingMode === 'chapter' ? 'border-[#e07a5f]' : 'border-white/30'
-                    }`}>
-                      {timingMode === 'chapter' && <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-white">Chapter of her life</p>
-                      <p className="text-xs text-white/50">I remember the era, not the year</p>
-                    </div>
-                  </div>
-                  {timingMode === 'chapter' && (
-                    <div className="mt-4 pt-4 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
-                      <select
-                        id="life_stage"
-                        value={formData.life_stage}
-                        onChange={(e) => setFormData({ ...formData, life_stage: e.target.value })}
-                        className={formStyles.select}
-                        required
-                      >
-                        <option value="">Select a chapter...</option>
-                        {Object.entries(LIFE_STAGES).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                      {formData.life_stage && (
-                        <p className={`${formStyles.hint} mt-2`}>
-                          {LIFE_STAGE_DESCRIPTIONS[formData.life_stage as keyof typeof LIFE_STAGE_DESCRIPTIONS]}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </button>
-              </div>
+              <TimingModeSelector
+                mode={timingMode}
+                onModeChange={(mode) => {
+                  setTimingMode(mode);
+                  setFormData({ ...formData, is_approximate: mode !== 'exact' });
+                }}
+                data={{
+                  exactDate: formData.exact_date,
+                  year: formData.year,
+                  yearEnd: formData.year_end,
+                  lifeStage: formData.life_stage,
+                }}
+                onDataChange={(field, value) => {
+                  if (field === 'exactDate') {
+                    const date = value as string;
+                    const year = date ? date.split('-')[0] : '';
+                    setFormData({ ...formData, exact_date: date, year });
+                  } else if (field === 'year') {
+                    setFormData({ ...formData, year: value?.toString() ?? '' });
+                  } else if (field === 'yearEnd') {
+                    setFormData({ ...formData, year_end: value?.toString() ?? '' });
+                  } else if (field === 'lifeStage') {
+                    setFormData({ ...formData, life_stage: value as string });
+                  }
+                }}
+              />
             </>
           )}
 
@@ -687,6 +590,51 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           )}
         </div>
 
+        {/* Connection to the original note */}
+        {respondingToEventId && (
+          <div className={formStyles.section}>
+            <p className={formStyles.sectionLabel}>Connection</p>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="thread_relationship" className={formStyles.label}>
+                  How does your note connect?
+                </label>
+                <select
+                  id="thread_relationship"
+                  value={threadRelationship}
+                  onChange={(e) => setThreadRelationship(e.target.value as ThreadRelationship)}
+                  className={formStyles.select}
+                >
+                  {Object.entries(THREAD_RELATIONSHIP_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <p className={formStyles.hint}>
+                  {THREAD_RELATIONSHIP_DESCRIPTIONS[threadRelationship]}
+                </p>
+              </div>
+              <div>
+                <label htmlFor="thread_note" className={formStyles.label}>
+                  Short note (optional)
+                </label>
+                <textarea
+                  id="thread_note"
+                  rows={2}
+                  value={threadNote}
+                  onChange={(e) => setThreadNote(e.target.value)}
+                  placeholder="e.g., I remember this in 1989, not 1990"
+                  className={formStyles.textarea}
+                />
+                <p className={formStyles.hint}>
+                  This appears with the link between notes.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* THE CHAIN - provenance and social connections */}
         <div className={formStyles.section}>
           <p className={formStyles.sectionLabel}>The Chain</p>
@@ -700,84 +648,121 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             />
           </div>
 
-          <PeopleSection
-            value={personRefs}
-            onChange={setPersonRefs}
-            label="Who else was there?"
-            mode="inline"
-          />
-        </div>
-
-        {/* External links (collapsed) */}
-        <div>
-          {!showLinks && linkRefs.length === 0 ? (
+          {!showPeople && personRefs.length === 0 ? (
             <button
               type="button"
-              onClick={() => setShowLinks(true)}
+              onClick={() => setShowPeople(true)}
               className={formStyles.buttonGhost}
             >
               <span className={formStyles.disclosureArrow}>&#9654;</span>
-              Add external link (article, photo, etc.)
+              Add who was there
             </button>
           ) : (
-            <div className="space-y-3">
-              <label className={formStyles.label}>External links</label>
-              <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
-                <input
-                  type="text"
-                  value={newLinkName}
-                  onChange={(e) => setNewLinkName(e.target.value)}
-                  placeholder="Display name (e.g., Wikipedia)"
-                  className={formStyles.inputSmall}
-                />
-                <input
-                  type="url"
-                  value={newLinkUrl}
-                  onChange={(e) => setNewLinkUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addLinkRef();
-                    }
-                  }}
-                  placeholder="URL"
-                  className={formStyles.inputSmall}
-                />
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className={formStyles.sectionLabel}>Who else was there?</p>
                 <button
                   type="button"
-                  onClick={addLinkRef}
-                  disabled={!newLinkName.trim() || !newLinkUrl.trim()}
-                  className={`${formStyles.buttonSecondary} text-sm py-2`}
+                  onClick={() => setShowPeople(false)}
+                  className="text-xs text-white/40 hover:text-white transition-colors"
                 >
-                  Add
+                  Hide
                 </button>
               </div>
-              {linkRefs.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {linkRefs.map((ref, i) => (
-                    <span key={i} className={formStyles.tag}>
-                      <a
-                        href={ref.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline"
-                      >
-                        {ref.displayName}
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => removeLinkRef(i)}
-                        className={formStyles.tagRemove}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
+              <PeopleSection
+                value={personRefs}
+                onChange={setPersonRefs}
+                label="Who else was there?"
+                mode="inline"
+              />
             </div>
           )}
         </div>
+
+        {/* External links: show for synchronicity, or when links exist; hide for memories/milestones when unused */}
+        {(() => {
+          const canAddLinks = formData.entry_type === 'origin';
+          const hasLinks = linkRefs.length > 0;
+          const shouldShowLinksSection = canAddLinks || hasLinks || showLinks;
+
+          if (!shouldShowLinksSection) return null;
+
+          return (
+            <div>
+              {canAddLinks && !showLinks && !hasLinks ? (
+                <button
+                  type="button"
+                  onClick={() => setShowLinks(true)}
+                  className={formStyles.buttonGhost}
+                >
+                  <span className={formStyles.disclosureArrow}>&#9654;</span>
+                  Add external link (article, photo, etc.)
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <label className={formStyles.label}>External links</label>
+
+                  {canAddLinks && (
+                    <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
+                      <input
+                        type="text"
+                        value={newLinkName}
+                        onChange={(e) => setNewLinkName(e.target.value)}
+                        placeholder="Display name (e.g., Wikipedia)"
+                        className={formStyles.inputSmall}
+                      />
+                      <input
+                        type="url"
+                        value={newLinkUrl}
+                        onChange={(e) => setNewLinkUrl(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addLinkRef();
+                          }
+                        }}
+                        placeholder="URL"
+                        className={formStyles.inputSmall}
+                      />
+                      <button
+                        type="button"
+                        onClick={addLinkRef}
+                        disabled={!newLinkName.trim() || !newLinkUrl.trim()}
+                        className={`${formStyles.buttonSecondary} text-sm py-2`}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
+                  {hasLinks && (
+                    <div className="flex flex-wrap gap-2">
+                      {linkRefs.map((ref, i) => (
+                        <span key={i} className={formStyles.tag}>
+                          <a
+                            href={ref.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                          >
+                            {ref.displayName}
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => removeLinkRef(i)}
+                            className={formStyles.tagRemove}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Attachment (collapsed) */}
         <div>
@@ -812,12 +797,11 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                   <select
                     id="attachment_type"
                     value={attachment.type}
-                    onChange={(e) => setAttachment({ ...attachment, type: e.target.value as 'image' | 'audio' | 'link' })}
+                    onChange={(e) => setAttachment({ ...attachment, type: e.target.value as 'image' | 'audio' })}
                     className={formStyles.select}
                   >
                     <option value="image">Image</option>
                     <option value="audio">Audio</option>
-                    <option value="link">Link</option>
                   </select>
                 </div>
                 <div>

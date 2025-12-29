@@ -9,6 +9,7 @@ import {
   TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
 import type { TimingData, TimingMode, LifeStage, EntryType } from '@/lib/form-types';
+import { YearInput } from './YearInput';
 
 type Props = {
   value: TimingData;
@@ -297,33 +298,17 @@ export default function TimingSection({
               className="mt-4 pt-4 border-t border-white/10"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <input
-                  type="number"
-                  min="1900"
-                  max="2030"
-                  inputMode="numeric"
-                  value={value.year || ''}
-                  onChange={(e) => updateField('year', parseInt(e.target.value, 10) || undefined)}
-                  placeholder="Year, e.g. 1996"
-                  className={formStyles.input}
-                  required
-                />
-                <input
-                  type="number"
-                  min="1900"
-                  max="2030"
-                  inputMode="numeric"
-                  value={value.yearEnd ?? ''}
-                  onChange={(e) => {
-                    const yearEnd = parseInt(e.target.value, 10) || null;
-                    updateField('yearEnd', yearEnd);
-                    if (yearEnd) updateMode('year_range');
-                  }}
-                  placeholder="End year (optional)"
-                  className={formStyles.input}
-                />
-              </div>
+              <YearInput
+                year={value.year}
+                yearEnd={value.yearEnd}
+                onYearChange={(y) => updateField('year', y ?? undefined)}
+                onYearEndChange={(y) => {
+                  updateField('yearEnd', y);
+                  if (y) updateMode('year_range');
+                }}
+                layout="grid"
+                required
+              />
             </div>
           )}
         </button>

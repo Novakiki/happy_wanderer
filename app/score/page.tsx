@@ -1,6 +1,8 @@
 'use client';
 
+import { YearInput } from '@/components/forms/YearInput';
 import { ReferencesList } from '@/components/ReferencesList';
+import { RelationGraphPeek } from '@/components/RelationGraphPeek';
 import {
   applyScoreEventOverrides,
   groupEventsIntoBundles,
@@ -12,11 +14,11 @@ import { scoreBackground } from '@/lib/styles';
 import { getTimelineEvents } from '@/lib/supabase';
 import {
   LEGEND_LABELS,
-  LIFE_STAGES,
   MODAL_LABELS,
   SCORE_TITLE,
 } from '@/lib/terminology';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 // Minimal HTML decoder for stored rich text
 function decodeHtml(input: string) {
@@ -32,9 +34,11 @@ export default function ChaptersPage() {
   const [bundles, setBundles] = useState<StoryBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredEvent, setHoveredEvent] = useState<TimelineEvent | null>(null);
+  const [hoveredBundle, setHoveredBundle] = useState<StoryBundle | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
   const [selectedBundle, setSelectedBundle] = useState<StoryBundle | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [shareMode, setShareMode] = useState<'link' | 'invite'>('link');
   const [isReady, setIsReady] = useState(false);
 
   // Share panel state
@@ -49,10 +53,34 @@ export default function ChaptersPage() {
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
-  const [activeTab, setActiveTab] = useState<'time' | 'witness' | 'storyteller' | 'thread' | 'coincidence'>('time');
+
+  // Inline edit mode for note detail modal
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    content: '',
+    why_included: '',
+    location: '',
+    year: 0,
+    year_end: null as number | null,
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'time' | 'witness' | 'storyteller' | 'thread' | 'synchronicity'>('time');
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const lastTouchDistance = useRef<number | null>(null);
+
+  // Graph connections for the selected event
+  type GraphPerson = {
+    id: string;
+    name?: string;
+    relationship?: string;
+    role: 'wrote' | 'responded' | 'invited' | 'mentioned';
+    isViewer?: boolean;
+  };
+  const [connectedPeople, setConnectedPeople] = useState<GraphPerson[]>([]);
 
   // Gesture zoom handlers
   const handleWheel = useCallback((e: WheelEvent) => {
@@ -125,29 +153,13 @@ export default function ChaptersPage() {
     return isApproximate ? `~${event.year}` : String(event.year);
   };
 
-  const formatTimingLabel = (event: TimelineEvent) => {
-    if (
-      event.timingInputType === 'age_range'
-      && event.ageStart !== null
-      && event.ageEnd !== null
-    ) {
-      return `Ages ${event.ageStart}–${event.ageEnd}`;
-    }
-    if (event.timingInputType === 'life_stage' && event.lifeStage) {
-      const label = LIFE_STAGES[event.lifeStage];
-      return label ? `Life stage: ${label}` : 'Life stage';
-    }
-    if (event.timingCertainty && event.timingCertainty !== 'exact') {
-      return `Timing: ${event.timingCertainty === 'approximate' ? 'Approximate' : 'Vague'}`;
-    }
-    return null;
-  };
-
   // Fetch current user session
   useEffect(() => {
     fetch('/api/session')
       .then(res => res.json())
-      .then(data => setCurrentUserName(data.name))
+    .then(data => {
+      if (data?.name) setCurrentUserName(data.name);
+    })
       .catch(() => {});
   }, []);
 
@@ -199,10 +211,12 @@ export default function ChaptersPage() {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isShareOpen]);
 
-  // Reset share state when modal closes
+  // Reset state when modal closes
   useEffect(() => {
     if (!selectedEvent) {
       setIsShareOpen(false);
+      setShareMode('link');
+      setIsEditMode(false);
       setSelectedBundle(null);
       setWitnesses([]);
       setNewWitness('');
@@ -210,7 +224,43 @@ export default function ChaptersPage() {
       setInviteContact('');
       setPersonalMessage('');
       setInviteSent(false);
+      setConnectedPeople([]);
+      setSaveError(null);
     }
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent || selectedEvent.type !== 'memory') {
+      setShareMode('link');
+    }
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (isShareOpen) {
+      setInviteSent(false);
+      setInviteError(null);
+    }
+  }, [isShareOpen, shareMode]);
+
+  // Fetch people connected to selected event (for the graph)
+  useEffect(() => {
+    if (!selectedEvent || selectedEvent.type !== 'memory') {
+      setConnectedPeople([]);
+      return;
+    }
+
+    async function fetchConnections() {
+      try {
+        const res = await fetch(`/api/respond/connections?event_id=${selectedEvent!.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setConnectedPeople(data.people || []);
+        }
+      } catch {
+        // Silently fail - graph is enhancement, not critical
+      }
+    }
+    fetchConnections();
   }, [selectedEvent]);
 
   const addWitness = () => {
@@ -267,6 +317,92 @@ export default function ChaptersPage() {
     setTimeout(() => setInviteSent(false), 2000);
   };
 
+  // Enter edit mode - populate form with current values
+  const enterEditMode = () => {
+    if (!selectedEvent) return;
+    setEditForm({
+      title: selectedEvent.title || '',
+      content: selectedEvent.fullEntry || '',
+      why_included: selectedEvent.whyIncluded || '',
+      location: selectedEvent.location || '',
+      year: selectedEvent.year || 0,
+      year_end: selectedEvent.yearEnd ?? null,
+    });
+    setSaveError(null);
+    setIsEditMode(true);
+  };
+
+  // Cancel edit mode
+  const cancelEditMode = () => {
+    setIsEditMode(false);
+    setSaveError(null);
+  };
+
+  // Save inline edits
+  const saveInlineEdits = async () => {
+    if (!selectedEvent) return;
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const res = await fetch(`/api/events/${selectedEvent.id}/update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editForm.title,
+          content: editForm.content,
+          why_included: editForm.why_included,
+          location: editForm.location,
+          year: editForm.year,
+          year_end: editForm.year_end,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save');
+      }
+
+      // Update the local state with new values
+      const updatedEvent = {
+        ...selectedEvent,
+        title: editForm.title,
+        fullEntry: editForm.content,
+        preview: editForm.content.length > 160
+          ? `${editForm.content.slice(0, 160).trimEnd()}...`
+          : editForm.content,
+        whyIncluded: editForm.why_included,
+        location: editForm.location,
+        year: editForm.year,
+        yearEnd: editForm.year_end,
+      };
+
+      // Update bundles to reflect the change
+      setBundles(prevBundles =>
+        prevBundles.map(bundle => {
+          if (bundle.rootEvent.id === selectedEvent.id) {
+            return { ...bundle, rootEvent: updatedEvent };
+          }
+          return {
+            ...bundle,
+            perspectives: bundle.perspectives.map(p =>
+              p.id === selectedEvent.id ? updatedEvent : p
+            ),
+          };
+        })
+      );
+
+      setSelectedEvent(updatedEvent);
+      setIsEditMode(false);
+    } catch (error) {
+      console.error('Save error:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to save');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Position bundles evenly across the timeline (index-based, not time-based)
   const getBundlePosition = (index: number) => {
     if (bundles.length <= 1) return 50;
@@ -319,7 +455,7 @@ export default function ChaptersPage() {
 
   return (
     <div
-      className="min-h-screen text-white overflow-hidden bg-[#0b0b0b]"
+      className="min-h-screen text-white overflow-x-hidden bg-[#0b0b0b]"
       style={scoreBackground}
     >
       {/* Intro Section */}
@@ -359,12 +495,6 @@ export default function ChaptersPage() {
               className="text-sm text-white/60 hover:text-white transition-colors underline underline-offset-4"
             >
               What&apos;s emerging
-            </a>
-            <a
-              href="/time"
-              className="text-sm text-white/60 hover:text-white transition-colors underline underline-offset-4"
-            >
-              It&apos;s about time
             </a>
           </div>
           <div
@@ -406,11 +536,11 @@ export default function ChaptersPage() {
 
         {/* Tabbed card */}
         <div
-          className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden animate-fade-in-up"
+          className="rounded-2xl border border-white/10 bg-white/[0.02] animate-fade-in-up overflow-visible"
           style={{ animationDelay: '720ms', animationFillMode: 'both' }}
         >
           {/* Tabs */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-white/5">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-white/5 relative z-10">
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setActiveTab('time')}
@@ -424,7 +554,7 @@ export default function ChaptersPage() {
                 { id: 'witness' as const, label: 'Witness', desc: 'who was present' },
                 { id: 'storyteller' as const, label: 'Storyteller', desc: 'whose voice' },
                 { id: 'thread' as const, label: 'Thread', desc: 'what sparked what' },
-                { id: 'coincidence' as const, label: 'Coincidence', desc: 'patterns that rhyme' },
+                { id: 'synchronicity' as const, label: 'Synchronicity', desc: 'A meaningful coincidence that adds melody or harmony' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -461,7 +591,7 @@ export default function ChaptersPage() {
           </div>
 
           {/* Tab content */}
-          <div className="p-4">
+          <div className="p-4 overflow-visible relative z-20">
             {activeTab === 'time' ? (
               <>
                 {/* Key toggle */}
@@ -498,7 +628,7 @@ export default function ChaptersPage() {
                 </div>
 
                 {/* Timeline container with fixed repeat signs */}
-                <div className="relative h-[280px] flex">
+                <div className="relative h-[280px] flex overflow-visible">
                   {/* Left repeat sign - fixed */}
                   <div className="flex-shrink-0 w-4 relative">
                     <div className="absolute flex items-center gap-0.5" style={{ left: '0%', top: '28%', height: '32%' }}>
@@ -514,7 +644,7 @@ export default function ChaptersPage() {
                   {/* Scrollable timeline content */}
                   <div
                     ref={timelineRef}
-                    className="flex-1 overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent touch-pan-x"
+                    className="flex-1 overflow-x-auto overflow-y-visible scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent touch-pan-x"
                   >
                     <div
                       className="relative h-full"
@@ -566,7 +696,6 @@ export default function ChaptersPage() {
                 const isApproximate = event.timingCertainty === 'approximate';
                 const isVague = event.timingCertainty === 'vague';
                 const yearLabel = formatYearLabel(event);
-                const timingLabel = formatTimingLabel(event);
                 const baseHeight = isOrigin ? 'h-36' : isMilestone ? 'h-28' : 'h-16';
                 const baseColor = isOrigin
                   ? 'bg-white/80'
@@ -609,10 +738,19 @@ export default function ChaptersPage() {
                 return (
                   <div
                     key={event.id || `${event.year}-${event.title}`}
-                    className="absolute bottom-12 group cursor-pointer z-10"
+                    className={`absolute bottom-12 group cursor-pointer ${isHovered ? 'z-[100]' : 'z-10'}`}
                     style={{ left: `${getBundlePosition(i)}%` }}
-                    onMouseEnter={() => setHoveredEvent(event)}
-                    onMouseLeave={() => setHoveredEvent(null)}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+                      setHoveredEvent(event);
+                      setHoveredBundle(bundle);
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredEvent(null);
+                      setHoveredBundle(null);
+                      setTooltipPos(null);
+                    }}
                     onClick={() => {
                       if (hasMore) {
                         setSelectedEvent(event);
@@ -720,43 +858,7 @@ export default function ChaptersPage() {
                       {yearLabel}
                     </span>
 
-                    {/* Tooltip on hover */}
-                    <div
-                      className={`
-                        absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 z-50
-                        bg-white/10 backdrop-blur-sm rounded-lg
-                        transition-all duration-200 pointer-events-none min-w-[160px] max-w-[260px]
-                        ${isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
-                      `}
-                    >
-                      <p className="text-white text-sm font-medium" style={{ textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}>{event.title}</p>
-                      {perspectiveCount > 0 && (
-                        <p className="text-[#e07a5f] text-xs mt-1" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
-                          +{perspectiveCount} perspective{perspectiveCount > 1 ? 's' : ''}
-                        </p>
-                      )}
-                      {event.preview && (
-                        <div
-                          className="text-white/70 text-xs mt-1 leading-relaxed prose prose-sm prose-invert max-w-none"
-                          style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
-                          dangerouslySetInnerHTML={{ __html: decodeHtml(event.preview) }}
-                        />
-                      )}
-                      {timingLabel && (
-                        <p className="text-white/50 text-xs mt-1" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
-                          {timingLabel}
-                        </p>
-                      )}
-                      {event.whyIncluded && (
-                        <p
-                          className="text-white/50 text-xs mt-2 italic border-t border-white/10 pt-2"
-                          style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}
-                          dangerouslySetInnerHTML={{
-                            __html: `"${decodeHtml(event.whyIncluded).replace(/<\/?p>/g, '')}"`
-                          }}
-                        />
-                      )}
-                    </div>
+                    {/* Tooltip rendered via portal */}
                   </div>
                 );
               })}
@@ -852,7 +954,7 @@ export default function ChaptersPage() {
                     </p>
                   </>
                 )}
-                {activeTab === 'coincidence' && (
+                {activeTab === 'synchronicity' && (
                   <>
                     {/* Visual hint: parallel lines suggesting rhyming patterns */}
                     <div className="flex gap-8 mb-6">
@@ -865,8 +967,9 @@ export default function ChaptersPage() {
                         <div className="w-8 h-1 rounded-full bg-white/15" />
                       </div>
                     </div>
-                    <p className="text-white/50 text-sm max-w-sm">
-                      Patterns that echo across decades — <em>meaningful coincidences</em> that weren&apos;t planned.
+                    <p className="text-white/40 text-sm max-w-md leading-relaxed text-center mx-auto font-light italic">
+                      <span className="block">Patterns that echo across time.</span>
+                      <span className="block mt-1 text-white/30">Meaningful coincidences that add melody or harmony.</span>
                     </p>
                   </>
                 )}
@@ -925,30 +1028,88 @@ export default function ChaptersPage() {
           >
             {/* Header */}
             <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-white/40 text-sm">{formatYearLabel(selectedEvent)}</p>
-                <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
+              <div className="flex-1 min-w-0">
+                {isEditMode ? (
+                  <>
+                    <YearInput
+                      year={editForm.year}
+                      yearEnd={editForm.year_end}
+                      onYearChange={(y) => setEditForm({ ...editForm, year: y ?? 0 })}
+                      onYearEndChange={(y) => setEditForm({ ...editForm, year_end: y })}
+                      layout="inline"
+                      label="Year"
+                      className="mb-2"
+                    />
+                    <label className="text-xs text-white/40 uppercase tracking-wider block mt-2">Title</label>
+                    <input
+                      type="text"
+                      value={editForm.title}
+                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                      className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-lg font-serif focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40"
+                      placeholder="Title"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-white/40 text-sm">{formatYearLabel(selectedEvent)}</p>
+                    <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
+                    {selectedBundle && selectedBundle.totalCount > 1 && (
+                      <span className="inline-flex items-center mt-2 px-2 py-0.5 rounded-full bg-[#e07a5f]/15 text-[#e07a5f] text-[10px] uppercase tracking-[0.2em]">
+                        Other perspectives
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="text-white/40 hover:text-white transition-colors p-1"
-              >
-                <span className="text-xl">×</span>
-              </button>
+              <div className="flex items-center gap-2 ml-4">
+                {/* Edit button for owner */}
+                {!isEditMode && currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase() && (
+                  <button
+                    onClick={enterEditMode}
+                    className="text-white/40 hover:text-white transition-colors p-1 text-sm"
+                    title="Edit this note"
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    if (isEditMode) {
+                      cancelEditMode();
+                    } else {
+                      setSelectedEvent(null);
+                    }
+                  }}
+                  className="text-white/40 hover:text-white transition-colors p-1"
+                >
+                  <span className="text-xl">×</span>
+                </button>
+              </div>
             </div>
 
             {selectedBundle && selectedBundle.totalCount > 1 && (
               <div className="mb-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/50">
-                Root story · Depth {selectedEvent.chainDepth ?? 0} · {selectedBundle.totalCount} perspectives
+                Root note · Depth {selectedEvent.chainDepth ?? 0} · {selectedBundle.totalCount} notes
               </div>
             )}
 
             {/* Content */}
             <div className="text-white/70 leading-relaxed space-y-4">
-              {selectedEvent.type === 'origin' && selectedEvent.fullEntry && (
+              {selectedEvent.type === 'origin' && selectedEvent.fullEntry && !isEditMode && (
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{MODAL_LABELS.originContent}</p>
               )}
-              {selectedEvent.fullEntry ? (
+              {isEditMode ? (
+                <>
+                  <label className="text-xs text-white/40 uppercase tracking-wider">Content</label>
+                  <textarea
+                    value={editForm.content}
+                    onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
+                    rows={8}
+                    className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 resize-y"
+                    placeholder="What happened..."
+                  />
+                </>
+              ) : selectedEvent.fullEntry ? (
                 <div
                   className="prose prose-sm prose-invert max-w-none"
                   dangerouslySetInnerHTML={{ __html: decodeHtml(selectedEvent.fullEntry) }}
@@ -997,7 +1158,18 @@ export default function ChaptersPage() {
             )}
 
             {/* Why this note */}
-            {selectedEvent.whyIncluded && (
+            {isEditMode ? (
+              <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/10">
+                <label className="text-xs text-white/40 uppercase tracking-wider">{MODAL_LABELS.whyIncluded}</label>
+                <textarea
+                  value={editForm.why_included}
+                  onChange={(e) => setEditForm({ ...editForm, why_included: e.target.value })}
+                  rows={3}
+                  className="w-full mt-2 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white/60 text-sm italic leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 resize-y"
+                  placeholder="Why is this meaningful..."
+                />
+              </div>
+            ) : selectedEvent.whyIncluded ? (
               <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/10">
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{MODAL_LABELS.whyIncluded}</p>
                 <div
@@ -1011,16 +1183,27 @@ export default function ChaptersPage() {
                   )}
                 </p>
               </div>
-            )}
+            ) : null}
 
-            {/* Context */}
-            {(selectedEvent.location
+            {/* Context / Location */}
+            {isEditMode ? (
+              <div className="mt-4">
+                <label className="text-xs text-white/40 uppercase tracking-wider">Location</label>
+                <input
+                  type="text"
+                  value={editForm.location}
+                  onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                  className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40"
+                  placeholder="Where did this happen?"
+                />
+              </div>
+            ) : (selectedEvent.location
               || selectedEvent.date
               || (selectedEvent.timingCertainty && selectedEvent.timingCertainty !== 'exact')
               || (selectedEvent.timingInputType === 'age_range'
                 && selectedEvent.ageStart !== null
                 && selectedEvent.ageEnd !== null)
-            ) && (
+            ) ? (
               <div className="mt-4 flex flex-wrap gap-3 text-xs text-white/40">
                 {selectedEvent.date && (
                   <span>{selectedEvent.date}, {formatYearLabel(selectedEvent)}</span>
@@ -1039,13 +1222,13 @@ export default function ChaptersPage() {
                   <span>Ages {selectedEvent.ageStart}–{selectedEvent.ageEnd}</span>
                 )}
               </div>
-            )}
+            ) : null}
 
             {/* Other perspectives in this story */}
             {selectedBundle && selectedBundle.totalCount > 1 && (
               <div className="mt-6 pt-4 border-t border-white/10">
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-3">
-                  Perspectives on this story ({selectedBundle.totalCount})
+                  Other perspectives ({selectedBundle.totalCount})
                 </p>
                 <div className="space-y-2">
                   {/* Show root event if currently viewing a perspective */}
@@ -1100,40 +1283,76 @@ export default function ChaptersPage() {
               )}
             </div>
 
+            {/* Constellation graph - only for memories with connections */}
+            {selectedEvent.type === 'memory' && connectedPeople.length > 0 && (
+              <RelationGraphPeek
+                className="mt-6"
+                story={{
+                  id: selectedEvent.id,
+                  title: selectedEvent.title,
+                  type: selectedEvent.type,
+                }}
+                people={connectedPeople}
+              />
+            )}
+
             {/* Action buttons */}
             <div className="mt-6 space-y-3">
-              {/* Edit button - only for the contributor */}
-              {currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase() && (
-                <a
-                  href={`/edit?event_id=${selectedEvent.id}`}
-                  className="w-full py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors flex items-center justify-center gap-2"
-                >
-                  <span>Edit this note</span>
-                </a>
+              {/* Save/Cancel buttons when in edit mode */}
+              {isEditMode ? (
+                <>
+                  {saveError && (
+                    <p className="text-sm text-red-400 text-center">{saveError}</p>
+                  )}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={cancelEditMode}
+                      disabled={isSaving}
+                      className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveInlineEdits}
+                      disabled={isSaving || !editForm.title.trim() || !editForm.content.trim()}
+                      className="flex-1 py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isSaving ? 'Saving...' : 'Save changes'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Add your perspective - only for memories and not the contributor */}
+                  {selectedEvent.type === 'memory' &&
+                    !(currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase()) && (
+                    <a
+                      href={`/share?responding_to=${selectedEvent.id}`}
+                      className="w-full py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors flex items-center justify-center gap-2"
+                    >
+                      <span>Add your perspective</span>
+                    </a>
+                  )}
+
+                  {/* Share button - for all event types */}
+                  <button
+                    onClick={() => {
+                      setShareMode('link');
+                      setIsShareOpen(true);
+                    }}
+                    className="w-full py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>Share this note</span>
+                    <span>→</span>
+                  </button>
+                </>
               )}
-
-              {/* Add to this - for everyone */}
-              <a
-                href={`/share?responding_to=${selectedEvent.id}`}
-                className="w-full py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors flex items-center justify-center gap-2"
-              >
-                <span>Add to this story</span>
-              </a>
-
-              {/* Share button */}
-              <button
-                onClick={() => setIsShareOpen(true)}
-                className="w-full py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors flex items-center justify-center gap-2"
-              >
-                <span>Share this note</span>
-                <span>→</span>
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Share Panel */}
+      {/* Share / Invite Panel */}
       {isShareOpen && selectedEvent && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fade-in"
@@ -1145,7 +1364,7 @@ export default function ChaptersPage() {
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h2 className="text-lg font-medium text-white">Share Note</h2>
+              <h2 className="text-lg font-medium text-white">Share this note</h2>
               <button
                 onClick={() => setIsShareOpen(false)}
                 className="text-white/40 hover:text-white transition-colors"
@@ -1154,162 +1373,248 @@ export default function ChaptersPage() {
               </button>
             </div>
 
-            {/* Memory Card Preview */}
-            <div className="p-6 bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f]">
-              <div className="bg-[#1f1f1f] rounded-xl p-4 border border-white/5">
-                <p className="text-white/40 text-xs">{formatYearLabel(selectedEvent)}</p>
-                <h3 className="text-white font-serif text-lg mt-1">{selectedEvent.title}</h3>
-                {selectedEvent.preview && (
-                  <p className="text-white/60 text-sm mt-2 leading-relaxed">{selectedEvent.preview}</p>
-                )}
-                <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-xs text-white/30">
-                    Added by {selectedEvent.contributor}
-                    {selectedEvent.contributorRelation && selectedEvent.contributorRelation !== 'synthesized' && (
-                      <span> ({selectedEvent.contributorRelation})</span>
+            {/* Mode toggle */}
+            {selectedEvent.type === 'memory' && (
+              <div className="px-6 py-4 border-b border-white/10">
+                <p className="text-sm text-white/60">How do you want to share this note?</p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => setShareMode('link')}
+                    className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
+                      shareMode === 'link'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/10 text-white/50 hover:bg-white/15'
+                    }`}
+                  >
+                    View-only link
+                  </button>
+                  <button
+                    onClick={() => setShareMode('invite')}
+                    className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
+                      shareMode === 'invite'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/10 text-white/50 hover:bg-white/15'
+                    }`}
+                  >
+                    Invite to contribute
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Share link */}
+            {(selectedEvent.type !== 'memory' || shareMode === 'link') && (
+              <>
+                <div className="p-6 bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f]">
+                  <div className="bg-[#1f1f1f] rounded-xl p-4 border border-white/5">
+                    <p className="text-white/40 text-xs">{formatYearLabel(selectedEvent)}</p>
+                    <h3 className="text-white font-serif text-lg mt-1">{selectedEvent.title}</h3>
+                    {selectedEvent.preview && (
+                      <p className="text-white/60 text-sm mt-2 leading-relaxed line-clamp-3">{selectedEvent.preview}</p>
                     )}
-                  </span>
-                  <a
-                    href={`/share?responding_to=${selectedEvent.id}`}
-                    className="text-xs text-[#e07a5f] hover:text-white transition-colors"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    Were you there? Add your perspective →
-                  </a>
+                    <p className="text-xs text-white/30 mt-3 pt-3 border-t border-white/5">
+                      Added by {selectedEvent.contributor}
+                      {selectedEvent.contributorRelation && selectedEvent.contributorRelation !== 'synthesized' && (
+                        <span> ({selectedEvent.contributorRelation})</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Who was there? */}
-            <div className="px-6 py-4 border-t border-white/10">
-              <label className="text-sm text-white/60 block mb-3">
-                Who else was there? They might add their link to the chain.
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newWitness}
-                  onChange={(e) => setNewWitness(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && addWitness()}
-                  placeholder="Name (e.g., Aunt Susan)"
-                  className="flex-1 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent"
-                />
-                <button
-                  onClick={addWitness}
-                  className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition-colors"
-                >
-                  Add
-                </button>
-              </div>
-              {witnesses.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {witnesses.map((name) => (
-                    <span
-                      key={name}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#e07a5f]/20 text-[#e07a5f] text-sm"
+                <div className="px-6 py-4">
+                  <button
+                    onClick={copyShareLink}
+                    className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                      inviteSent
+                        ? 'bg-green-600 text-white'
+                        : 'bg-[#e07a5f] text-white hover:bg-[#d06a4f]'
+                    }`}
+                  >
+                    {inviteSent ? (
+                      <>
+                        <span>✓</span>
+                        <span>Link copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Copy link to share</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-white/30 text-center mt-3">
+                    Anyone with access can view this note
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Invite to contribute */}
+            {selectedEvent.type === 'memory' && shareMode === 'invite' && (
+              <>
+                <div className="px-6 py-4 border-b border-white/10">
+                  <p className="text-sm text-white/60">
+                    Invite someone who was there to add their perspective to:
+                  </p>
+                  <p className="text-white font-medium mt-2">{selectedEvent.title}</p>
+                  <p className="text-xs text-white/40 mt-1">{formatYearLabel(selectedEvent)}</p>
+                </div>
+
+                <div className="px-6 py-4 border-b border-white/10">
+                  <label className="text-sm text-white/60 block mb-3">
+                    Who was there?
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newWitness}
+                      onChange={(e) => setNewWitness(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && addWitness()}
+                      placeholder="Name (e.g., Aunt Susan)"
+                      className="flex-1 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent"
+                    />
+                    <button
+                      onClick={addWitness}
+                      className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition-colors"
                     >
-                      {name}
+                      Add
+                    </button>
+                  </div>
+                  {witnesses.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {witnesses.map((name) => (
+                        <span
+                          key={name}
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#e07a5f]/20 text-[#e07a5f] text-sm"
+                        >
+                          {name}
+                          <button
+                            onClick={() => removeWitness(name)}
+                            className="ml-1 hover:text-white transition-colors"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-6 py-4 border-b border-white/10">
+                  <label className="text-sm text-white/60 block mb-3">
+                    How do you want to reach them?
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setInviteMethod('link')}
+                      className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
+                        inviteMethod === 'link'
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white/10 text-white/50 hover:bg-white/15'
+                      }`}
+                    >
+                      🔗 Copy Link
+                    </button>
+                    <div className="relative flex-1 group">
                       <button
-                        onClick={() => removeWitness(name)}
-                        className="ml-1 hover:text-white transition-colors"
+                        disabled
+                        className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
                       >
-                        ×
+                        📧 Email
                       </button>
-                    </span>
-                  ))}
+                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        Coming soon
+                      </span>
+                    </div>
+                    <div className="relative flex-1 group">
+                      <button
+                        disabled
+                        className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
+                      >
+                        💬 SMS
+                      </button>
+                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        Coming soon
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Invite method */}
-            <div className="px-6 py-4 border-t border-white/10">
-              <label className="text-sm text-white/60 block mb-3">
-                How do you want to share?
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setInviteMethod('link')}
-                  className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                    inviteMethod === 'link'
-                      ? 'bg-white/20 text-white'
-                      : 'bg-white/10 text-white/50 hover:bg-white/15'
-                  }`}
-                >
-                  🔗 Copy Link
-                </button>
-                <div className="relative flex-1 group">
+                <div className="px-6 py-4">
                   <button
-                    disabled
-                    className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
+                    onClick={handleSendInvite}
+                    disabled={witnesses.length === 0 || inviteSending}
+                    className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                      inviteSent
+                        ? 'bg-green-600 text-white'
+                        : 'bg-[#e07a5f] text-white hover:bg-[#d06a4f] disabled:opacity-50 disabled:cursor-not-allowed'
+                    }`}
                   >
-                    📧 Email
+                    {inviteSent ? (
+                      <>
+                        <span>✓</span>
+                        <span>Invite created!</span>
+                      </>
+                    ) : inviteSending ? (
+                      <span>Creating invite…</span>
+                    ) : (
+                      <>
+                        <span>{inviteMethod === 'link' ? 'Create invite link' : 'Send invite'}</span>
+                        <span>→</span>
+                      </>
+                    )}
                   </button>
-                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    Coming soon
-                  </span>
+                  {inviteError && (
+                    <p className="text-xs text-red-300 text-left mt-2">{inviteError}</p>
+                  )}
+                  <p className="text-xs text-white/30 text-center mt-3">
+                    {witnesses.length > 0
+                      ? `Will create an invite for ${witnesses.length} person${witnesses.length > 1 ? 's' : ''} to add their perspective`
+                      : 'Add at least one person to invite'}
+                  </p>
                 </div>
-                <div className="relative flex-1 group">
-                  <button
-                    disabled
-                    className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
-                  >
-                    💬 SMS
-                  </button>
-                  <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    Coming soon
-                  </span>
-                </div>
-              </div>
-
-              {inviteMethod !== 'link' && (
-                <textarea
-                  value={personalMessage}
-                  onChange={(e) => setPersonalMessage(e.target.value)}
-                  placeholder="Add a personal note (optional)"
-                  rows={2}
-                  className="w-full mt-3 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent resize-none"
-                />
-              )}
-            </div>
-
-            {/* Send button */}
-            <div className="px-6 py-4 border-t border-white/10">
-              <button
-                onClick={inviteMethod === 'link' ? copyShareLink : handleSendInvite}
-                disabled={(inviteMethod !== 'link' && !inviteContact) || inviteSending}
-                className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-                  inviteSent
-                    ? 'bg-green-600 text-white'
-                    : 'bg-[#e07a5f] text-white hover:bg-[#d06a4f] disabled:opacity-50 disabled:cursor-not-allowed'
-                }`}
-              >
-                {inviteSent ? (
-                  <>
-                    <span>✓</span>
-                    <span>{inviteMethod === 'link' ? 'Link copied!' : 'Invite sent!'}</span>
-                  </>
-                ) : inviteSending ? (
-                  <>
-                    <span>Sending…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>{inviteMethod === 'link' ? 'Copy share link' : 'Send invite'}</span>
-                    <span>→</span>
-                  </>
-                )}
-              </button>
-              {inviteError && (
-                <p className="text-xs text-red-300 text-left mt-2">{inviteError}</p>
-              )}
-              <p className="text-xs text-white/30 text-left mt-3">
-                {witnesses.length > 0
-                  ? `${witnesses.length} witness${witnesses.length > 1 ? 'es' : ''} will be tagged`
-                  : 'Tag witnesses to start a note cascade'}
-              </p>
-            </div>
+              </>
+            )}
           </div>
         </div>
+      )}
+
+      {/* Portal tooltip for timeline hover */}
+      {hoveredEvent && tooltipPos && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed z-[9999] px-3 py-2.5 bg-black/95 backdrop-blur-sm rounded-lg pointer-events-none min-w-[180px] max-w-[280px] animate-fade-in border border-white/10"
+          style={{
+            left: tooltipPos.x,
+            top: tooltipPos.y - 8,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <p className="text-white/50 text-[10px] tracking-wide">
+            {hoveredEvent.year}{hoveredEvent.yearEnd && hoveredEvent.yearEnd !== hoveredEvent.year ? `–${hoveredEvent.yearEnd}` : ''}
+            {hoveredEvent.location && ` · ${hoveredEvent.location}`}
+          </p>
+          <p className="text-white text-sm font-medium mt-0.5">{hoveredEvent.title}</p>
+          {hoveredEvent.preview && (
+            <p className="text-white/60 text-xs mt-1.5 leading-relaxed line-clamp-3">
+              {hoveredEvent.preview.replace(/<[^>]*>/g, '').slice(0, 150)}
+              {hoveredEvent.preview.replace(/<[^>]*>/g, '').length > 150 ? '…' : ''}
+            </p>
+          )}
+          <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
+            <p className="text-white/40 text-[10px]">
+              {hoveredEvent.contributor}
+              {hoveredEvent.contributorRelation && hoveredEvent.contributorRelation !== 'synthesized' && (
+                <span className="text-white/30"> ({hoveredEvent.contributorRelation})</span>
+              )}
+            </p>
+            {hoveredBundle && hoveredBundle.totalCount > 1 && (
+              <span className="text-[#e07a5f] text-[10px]">
+                +{hoveredBundle.totalCount - 1} other perspective{hoveredBundle.totalCount > 2 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <p className="text-white/30 text-[10px] mt-1.5 italic">Click to read more</p>
+        </div>,
+        document.body
       )}
 
     </div>

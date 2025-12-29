@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import {
   ENTRY_TYPE_LABELS,
   ENTRY_TYPE_DESCRIPTIONS,
-  LIFE_STAGE_DESCRIPTIONS,
-  LIFE_STAGES,
+  LIFE_STAGE_YEAR_RANGES,
+  THREAD_RELATIONSHIP_LABELS,
   TIMING_CERTAINTY,
   TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
@@ -22,6 +22,9 @@ import RichTextEditor from './RichTextEditor';
 import { ProvenanceSection } from './forms';
 import { PeopleSection } from './forms';
 import { ReferencesSection } from './forms';
+import { TimingModeSelector } from './forms/TimingModeSelector';
+import type { TimingMode } from './forms/TimingModeSelector';
+import { validateYearRange } from '@/lib/form-validation';
 
 const stripHtml = (html?: string | null): string =>
   html ? html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() : '';
@@ -29,6 +32,7 @@ const stripHtml = (html?: string | null): string =>
 type EditableEvent = {
   id: string;
   year: number;
+  date: string | null;
   year_end: number | null;
   age_start: number | null;
   age_end: number | null;
@@ -84,6 +88,7 @@ type Props = {
   events: IncomingEvent[];
 };
 
+type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
 export default function EditNotesClient({ token, contributorName, events: initialEvents }: Props) {
   const [events, setEvents] = useState(initialEvents);
@@ -116,6 +121,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
         life_stage: event.life_stage ?? null,
         timing_certainty: event.timing_certainty ?? 'approximate',
         timing_input_type: event.timing_input_type ?? 'year',
+        date: event.date ?? null,
         timing_note: event.timing_note ?? '',
         location: event.location ?? '',
         people_involved: event.people_involved ?? [],
@@ -129,6 +135,42 @@ export default function EditNotesClient({ token, contributorName, events: initia
   );
   const [status, setStatus] = useState<Record<string, string>>({});
   const [isDirty, setIsDirty] = useState(false);
+  const [timingMode, setTimingMode] = useState<Record<string, TimingMode>>(() =>
+    initialEvents.reduce((acc, event) => {
+      const inputType = event.timing_input_type;
+      if (inputType === 'date') acc[event.id] = 'exact';
+      else if (inputType === 'life_stage') acc[event.id] = 'chapter';
+      else acc[event.id] = 'year';
+      return acc;
+    }, {} as Record<string, TimingMode>)
+  );
+  const [whyOpen, setWhyOpen] = useState<Record<string, boolean>>(() =>
+    initialEvents.reduce((acc, event) => {
+      acc[event.id] = Boolean(event.why_included);
+      return acc;
+    }, {} as Record<string, boolean>)
+  );
+  const [attachments, setAttachments] = useState<Record<string, { type: 'image' | 'audio' | 'link'; url: string; caption: string }>>(
+    () =>
+      initialEvents.reduce((acc, event) => {
+        acc[event.id] = { type: 'image', url: '', caption: '' };
+        return acc;
+      }, {} as Record<string, { type: 'image' | 'audio' | 'link'; url: string; caption: string }>)
+  );
+  const [linkRelationships, setLinkRelationships] = useState<Record<string, ThreadRelationship>>(
+    () =>
+      initialEvents.reduce((acc, event) => {
+        acc[event.id] = 'perspective';
+        return acc;
+      }, {} as Record<string, ThreadRelationship>)
+  );
+  const [linkNotes, setLinkNotes] = useState<Record<string, string>>(
+    () =>
+      initialEvents.reduce((acc, event) => {
+        acc[event.id] = '';
+        return acc;
+      }, {} as Record<string, string>)
+  );
 
   // Warn user before leaving with unsaved changes
   useEffect(() => {
@@ -218,13 +260,57 @@ export default function EditNotesClient({ token, contributorName, events: initia
       return;
     }
 
-    if (
-      payload.year_end !== null
-      && payload.timing_input_type === 'year_range'
-      && payload.year_end < payload.year
-    ) {
-      setStatus((prev) => ({ ...prev, [eventId]: 'Year range end must be later.' }));
-      return;
+    // Derive timing from card selection
+    const mode = timingMode[eventId] ?? 'year';
+    let timingInputType = payload.timing_input_type;
+    let timingCertainty = payload.timing_certainty || 'approximate';
+    let year = payload.year;
+    let year_end = payload.year_end;
+    let life_stage = payload.life_stage;
+    let date = payload.date;
+
+    if (mode === 'exact') {
+      if (!date) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Please select a date.' }));
+        return;
+      }
+      const derivedYear = Number.parseInt(date.split('-')[0], 10);
+      if (Number.isNaN(derivedYear)) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Date must include a year.' }));
+        return;
+      }
+      year = derivedYear;
+      year_end = null;
+      life_stage = null;
+      timingInputType = 'date';
+      timingCertainty = 'exact';
+    } else if (mode === 'year') {
+      if (!year || Number.isNaN(Number(year))) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Please enter a year.' }));
+        return;
+      }
+      timingInputType = year_end ? 'year_range' : 'year';
+      timingCertainty = timingCertainty || 'approximate';
+      life_stage = null;
+      date = null;
+      const rangeValidation = validateYearRange(year, year_end);
+      if (!rangeValidation.valid) {
+        setStatus((prev) => ({ ...prev, [eventId]: rangeValidation.error }));
+        return;
+      }
+    } else if (mode === 'chapter') {
+      if (!life_stage) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Select a life stage.' }));
+        return;
+      }
+      const stageRange = LIFE_STAGE_YEAR_RANGES[life_stage as keyof typeof LIFE_STAGE_YEAR_RANGES];
+      if (stageRange) {
+        year = stageRange[0];
+        year_end = stageRange[1];
+      }
+      timingInputType = 'life_stage';
+      timingCertainty = 'approximate';
+      date = null;
     }
 
     if (
@@ -238,19 +324,26 @@ export default function EditNotesClient({ token, contributorName, events: initia
 
     setStatus((prev) => ({ ...prev, [eventId]: 'saving' }));
     try {
+      const attachment = attachments[eventId];
+      const attachment_type =
+        attachment && attachment.url.trim() ? attachment.type : 'none';
+      const attachment_url = attachment?.url?.trim() || '';
+      const attachment_caption = attachment?.caption?.trim() || '';
+
       const response = await fetch('/api/edit/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
           event_id: eventId,
-          year: payload.year,
-          year_end: payload.year_end,
+          year,
+          year_end,
+          date,
           age_start: payload.age_start,
           age_end: payload.age_end,
-          life_stage: payload.life_stage,
-          timing_certainty: payload.timing_certainty,
-          timing_input_type: payload.timing_input_type,
+          life_stage,
+          timing_certainty: timingCertainty,
+          timing_input_type: timingInputType,
           timing_note: payload.timing_note,
           location: payload.location,
           // Sync people_involved: use person_refs if any have names, else preserve legacy
@@ -268,6 +361,9 @@ export default function EditNotesClient({ token, contributorName, events: initia
           source_name: trimmedSourceName,
           source_url: trimmedSourceUrl,
           privacy_level: payload.privacy_level,
+          attachment_type,
+          attachment_url,
+          attachment_caption,
           references: {
             links: payload.references,
             people: (payload.person_refs || []).map((p) => ({
@@ -291,6 +387,149 @@ export default function EditNotesClient({ token, contributorName, events: initia
     } catch (err) {
       console.error(err);
       setStatus((prev) => ({ ...prev, [eventId]: 'error' }));
+    }
+  };
+
+  const saveAsLinkedNote = async (eventId: string) => {
+    const payload = formState[eventId];
+    if (!payload) return;
+
+    const trimmedWhy = (payload.why_included || '').trim();
+    const derivedSource = provenanceToSource(payload.provenance);
+    const trimmedSourceName = derivedSource.source_name;
+    const trimmedSourceUrl = derivedSource.source_url;
+
+    if (!trimmedWhy) {
+      setStatus((prev) => ({ ...prev, [eventId]: 'Please add why this memory belongs.' }));
+      return;
+    }
+
+    const mode = timingMode[eventId] ?? 'year';
+    let timingInputType = payload.timing_input_type;
+    let timingCertainty = payload.timing_certainty || 'approximate';
+    let year = payload.year;
+    let year_end = payload.year_end;
+    let life_stage = payload.life_stage;
+    let date = payload.date;
+
+    if (mode === 'exact') {
+      if (!date) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Please select a date.' }));
+        return;
+      }
+      const derivedYear = Number.parseInt(date.split('-')[0], 10);
+      if (Number.isNaN(derivedYear)) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Date must include a year.' }));
+        return;
+      }
+      year = derivedYear;
+      year_end = null;
+      life_stage = null;
+      timingInputType = 'date';
+      timingCertainty = 'exact';
+    } else if (mode === 'year') {
+      if (!year || Number.isNaN(Number(year))) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Please enter a year.' }));
+        return;
+      }
+      timingInputType = year_end ? 'year_range' : 'year';
+      timingCertainty = timingCertainty || 'approximate';
+      life_stage = null;
+      date = null;
+      const rangeValidation = validateYearRange(year, year_end);
+      if (!rangeValidation.valid) {
+        setStatus((prev) => ({ ...prev, [eventId]: rangeValidation.error }));
+        return;
+      }
+    } else if (mode === 'chapter') {
+      if (!life_stage) {
+        setStatus((prev) => ({ ...prev, [eventId]: 'Select a life stage.' }));
+        return;
+      }
+      const stageRange = LIFE_STAGE_YEAR_RANGES[life_stage as keyof typeof LIFE_STAGE_YEAR_RANGES];
+      if (stageRange) {
+        year = stageRange[0];
+        year_end = stageRange[1];
+      }
+      timingInputType = 'life_stage';
+      timingCertainty = 'approximate';
+      date = null;
+    }
+
+    if (
+      payload.age_start !== null
+      && payload.age_end !== null
+      && payload.age_end < payload.age_start
+    ) {
+      setStatus((prev) => ({ ...prev, [eventId]: 'Age range end must be later.' }));
+      return;
+    }
+
+    setStatus((prev) => ({ ...prev, [eventId]: 'linking' }));
+    try {
+      const attachment = attachments[eventId];
+      const attachment_type =
+        attachment && attachment.url.trim() ? attachment.type : 'none';
+      const attachment_url = attachment?.url?.trim() || '';
+      const attachment_caption = attachment?.caption?.trim() || '';
+
+          const response = await fetch('/api/edit/linked', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          event_id: eventId,
+          relationship: linkRelationships[eventId] || 'perspective',
+          relationship_note: linkNotes[eventId] || '',
+          year,
+          year_end,
+          date,
+          age_start: payload.age_start,
+          age_end: payload.age_end,
+          life_stage,
+          timing_certainty: timingCertainty,
+          timing_input_type: timingInputType,
+          timing_note: payload.timing_note,
+          location: payload.location,
+          people_involved: (() => {
+            const namesFromRefs = (payload.person_refs || [])
+              .map((p) => p.name)
+              .filter((name) => name.trim());
+            return namesFromRefs.length > 0 ? namesFromRefs : payload.people_involved;
+          })(),
+          provenance: payload.provenance.type,
+          entry_type: payload.type,
+          title: payload.title,
+          content: payload.full_entry,
+          why_included: trimmedWhy,
+          source_name: trimmedSourceName,
+          source_url: trimmedSourceUrl,
+          privacy_level: payload.privacy_level,
+          attachment_type,
+          attachment_url,
+          attachment_caption,
+          references: {
+            links: payload.references,
+            people: (payload.person_refs || []).map((p) => ({
+              ...p,
+              role: mapToLegacyPersonRole(p.role),
+            })),
+          },
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Linked note failed');
+      }
+
+      setStatus((prev) => ({ ...prev, [eventId]: 'linked' }));
+      setTimeout(() => {
+        setStatus((prev) => ({ ...prev, [eventId]: '' }));
+      }, 1800);
+    } catch (err) {
+      console.error(err);
+      setStatus((prev) => ({ ...prev, [eventId]: 'link-error' }));
     }
   };
 
@@ -572,9 +811,44 @@ export default function EditNotesClient({ token, contributorName, events: initia
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
                   <p className={formStyles.sectionLabel}>Timing</p>
+                  <p className={formStyles.hint}>Choose one way to place this memory in time</p>
+
+                  <TimingModeSelector
+                    mode={timingMode[event.id] ?? 'year'}
+                    onModeChange={(mode) => {
+                      setTimingMode((prev) => ({ ...prev, [event.id]: mode }));
+                      if (mode === 'exact') {
+                        updateField(event.id, 'timing_certainty', 'exact');
+                        updateField(event.id, 'timing_input_type', 'date');
+                      } else if (mode === 'year') {
+                        updateField(event.id, 'timing_input_type', data.year_end ? 'year_range' : 'year');
+                      } else if (mode === 'chapter') {
+                        updateField(event.id, 'timing_input_type', 'life_stage');
+                        updateField(event.id, 'timing_certainty', 'approximate');
+                      }
+                    }}
+                    data={{
+                      exactDate: data.date ?? '',
+                      year: data.year,
+                      yearEnd: data.year_end,
+                      lifeStage: data.life_stage ?? '',
+                    }}
+                    onDataChange={(field, value) => {
+                      if (field === 'exactDate') {
+                        updateField(event.id, 'date', value as string);
+                      } else if (field === 'year') {
+                        updateField(event.id, 'year', value?.toString() ?? '');
+                      } else if (field === 'yearEnd') {
+                        updateField(event.id, 'year_end', value?.toString() ?? '');
+                      } else if (field === 'lifeStage') {
+                        updateField(event.id, 'life_stage', value as string);
+                      }
+                    }}
+                  />
+
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
-                      <label className={formStyles.label}>How sure are you?</label>
+                      <label className={formStyles.label}>Timing certainty</label>
                       <select
                         value={data.timing_certainty}
                         onChange={(e) => updateField(event.id, 'timing_certainty', e.target.value)}
@@ -593,88 +867,14 @@ export default function EditNotesClient({ token, contributorName, events: initia
                       </p>
                     </div>
                     <div>
-                      <label className={formStyles.label}>How do you remember it?</label>
-                      <select
-                        value={data.timing_input_type}
-                        onChange={(e) => updateField(event.id, 'timing_input_type', e.target.value)}
-                        className={formStyles.select}
-                      >
-                        <option value="year">Year</option>
-                        <option value="year_range">Year range</option>
-                        <option value="age_range">Age range</option>
-                        <option value="life_stage">Life stage</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {data.timing_input_type === 'year_range' && (
-                    <div>
-                      <label className={formStyles.label}>Year range end</label>
-                      <input
-                        type="number"
-                        value={data.year_end ?? ''}
-                        onChange={(e) => updateField(event.id, 'year_end', e.target.value)}
-                        className={formStyles.input}
+                      <label className={formStyles.label}>Timing note (optional)</label>
+                      <textarea
+                        value={data.timing_note || ''}
+                        onChange={(e) => updateField(event.id, 'timing_note', e.target.value)}
+                        rows={2}
+                        className={formStyles.textarea}
                       />
                     </div>
-                  )}
-
-                  {data.timing_input_type === 'age_range' && (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className={formStyles.label}>Age start</label>
-                        <input
-                          type="number"
-                          value={data.age_start ?? ''}
-                          onChange={(e) => updateField(event.id, 'age_start', e.target.value)}
-                          className={formStyles.input}
-                        />
-                      </div>
-                      <div>
-                        <label className={formStyles.label}>Age end</label>
-                        <input
-                          type="number"
-                          value={data.age_end ?? ''}
-                          onChange={(e) => updateField(event.id, 'age_end', e.target.value)}
-                          className={formStyles.input}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {data.timing_input_type === 'life_stage' && (
-                    <div>
-                      <label className={formStyles.label}>Life stage</label>
-                      <select
-                        value={data.life_stage ?? ''}
-                        onChange={(e) => updateField(event.id, 'life_stage', e.target.value)}
-                        className={formStyles.select}
-                      >
-                        <option value="">Select a stage</option>
-                        {Object.entries(LIFE_STAGES).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                      {data.life_stage && (
-                        <p className={formStyles.hint}>
-                          {LIFE_STAGE_DESCRIPTIONS[
-                            data.life_stage as keyof typeof LIFE_STAGE_DESCRIPTIONS
-                          ]}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className={formStyles.label}>Timing note (optional)</label>
-                    <textarea
-                      value={data.timing_note || ''}
-                      onChange={(e) => updateField(event.id, 'timing_note', e.target.value)}
-                      rows={2}
-                      className={formStyles.textarea}
-                    />
                   </div>
                 </div>
 
@@ -691,7 +891,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
                 <ProvenanceSection
                   value={data.provenance}
                   onChange={(prov) => updateProvenance(event.id, prov)}
-                  compact
+                  required
                 />
 
                 <div>
@@ -721,15 +921,40 @@ export default function EditNotesClient({ token, contributorName, events: initia
                 </div>
 
                 <div>
-                  <label className={formStyles.label}>
-                    Why this memory belongs (timeline hover)
-                  </label>
-                  <RichTextEditor
-                    value={data.why_included || ''}
-                    onChange={(val) => updateField(event.id, 'why_included', val)}
-                    placeholder="Explain the connection or significance"
-                    minHeight="80px"
-                  />
+                  {!whyOpen[event.id] && !data.why_included ? (
+                    <button
+                      type="button"
+                      onClick={() => setWhyOpen((prev) => ({ ...prev, [event.id]: true }))}
+                      className={formStyles.buttonGhost}
+                    >
+                      <span className={formStyles.disclosureArrow}>▶</span>
+                      Add why it&apos;s meaningful
+                    </button>
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className={formStyles.label}>
+                          Why this memory belongs <span className={formStyles.required}>*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWhyOpen((prev) => ({ ...prev, [event.id]: false }));
+                            updateField(event.id, 'why_included', '');
+                          }}
+                          className="text-xs text-white/40 hover:text-white transition-colors"
+                        >
+                          Hide
+                        </button>
+                      </div>
+                      <RichTextEditor
+                        value={data.why_included || ''}
+                        onChange={(val) => updateField(event.id, 'why_included', val)}
+                        placeholder="Explain the connection or significance"
+                        minHeight="80px"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* People references */}
@@ -774,6 +999,80 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   onChange={(refs) => updateReferences(event.id, refs)}
                 />
 
+                {/* Attachments */}
+                <div className={formStyles.section}>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className={formStyles.sectionLabel}>Attachment</p>
+                    {attachments[event.id]?.url ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAttachments((prev) => ({
+                            ...prev,
+                            [event.id]: { type: 'image', url: '', caption: '' },
+                          }))
+                        }
+                        className="text-xs text-white/40 hover:text-white transition-colors"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className={formStyles.label}>Type</label>
+                      <select
+                        value={attachments[event.id]?.type || 'image'}
+                        onChange={(e) =>
+                          setAttachments((prev) => ({
+                            ...prev,
+                            [event.id]: {
+                              ...(prev[event.id] || { type: 'image', url: '', caption: '' }),
+                              type: e.target.value as 'image' | 'audio' | 'link',
+                            },
+                          }))
+                        }
+                        className={formStyles.select}
+                      >
+                        <option value="image">Image</option>
+                        <option value="audio">Audio</option>
+                        <option value="link">Link</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={formStyles.label}>URL</label>
+                      <input
+                        type="url"
+                        value={attachments[event.id]?.url || ''}
+                        onChange={(e) =>
+                          setAttachments((prev) => ({
+                            ...prev,
+                            [event.id]: { ...(prev[event.id] || { type: 'image', url: '', caption: '' }), url: e.target.value },
+                          }))
+                        }
+                        placeholder="https://..."
+                        className={formStyles.input}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <label className={formStyles.label}>Caption (optional)</label>
+                    <input
+                      type="text"
+                      value={attachments[event.id]?.caption || ''}
+                      onChange={(e) =>
+                        setAttachments((prev) => ({
+                          ...prev,
+                          [event.id]: { ...(prev[event.id] || { type: 'image', url: '', caption: '' }), caption: e.target.value },
+                        }))
+                      }
+                      placeholder="A short description"
+                      className={formStyles.input}
+                    />
+                  </div>
+                  <p className={formStyles.hint}>Leave URL blank if you don&apos;t want to attach anything.</p>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <button
@@ -789,10 +1088,19 @@ export default function EditNotesClient({ token, contributorName, events: initia
                     {statusText === 'saved' && (
                       <span className={formStyles.success}>Saved.</span>
                     )}
+                    {statusText === 'linking' && (
+                      <span className="text-xs text-white/50">Saving linked note...</span>
+                    )}
+                    {statusText === 'linked' && (
+                      <span className={formStyles.success}>Linked note saved.</span>
+                    )}
                     {statusText === 'error' && (
                       <span className={formStyles.error}>Could not save.</span>
                     )}
-                    {statusText && statusText !== 'saving' && statusText !== 'saved' && statusText !== 'error' && statusText !== 'deleting' && statusText !== 'delete-error' && (
+                    {statusText === 'link-error' && (
+                      <span className={formStyles.error}>Could not save linked note.</span>
+                    )}
+                    {statusText && statusText !== 'saving' && statusText !== 'saved' && statusText !== 'linking' && statusText !== 'linked' && statusText !== 'error' && statusText !== 'link-error' && statusText !== 'deleting' && statusText !== 'delete-error' && (
                       <span className={formStyles.error}>{statusText}</span>
                     )}
                   </div>

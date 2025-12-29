@@ -10,6 +10,7 @@ import {
   type ParentEventInfo,
 } from '@/lib/memories';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
+import { createPersonLookupHelpers } from '@/lib/person-lookup';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -54,6 +55,8 @@ export async function POST(request: NextRequest) {
       references,
       heard_from,
       prompted_by_event_id,
+      relationship,
+      relationship_note,
     } = body;
 
     const trimmedSourceName = source_name?.trim() || 'Personal memory';
@@ -205,119 +208,8 @@ export async function POST(request: NextRequest) {
     // TODO: Enable geocoding when map feature is implemented
     // See lib/migrations/006_add_coordinates.sql and lib/claude.ts geocodeLocation()
 
-    const canUsePersonIdCache = new Map<string, boolean>();
-    const canUsePersonId = async (personId: string) => {
-      if (canUsePersonIdCache.has(personId)) {
-        return canUsePersonIdCache.get(personId) ?? false;
-      }
-
-      const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
-        .select('id, visibility, created_by')
-        .eq('id', personId)
-        .limit(1);
-      const personRow = personRows?.[0] as { visibility?: string | null; created_by?: string | null } | undefined;
-
-      if (!personRow) {
-        canUsePersonIdCache.set(personId, false);
-        return false;
-      }
-
-      const baseVisibility = (personRow.visibility ?? 'pending') as 'approved' | 'pending' | 'anonymized' | 'blurred' | 'removed';
-      if (baseVisibility === 'approved') {
-        canUsePersonIdCache.set(personId, true);
-        return true;
-      }
-      if (baseVisibility === 'removed') {
-        canUsePersonIdCache.set(personId, false);
-        return false;
-      }
-
-      if (contributorId && personRow.created_by === contributorId) {
-        canUsePersonIdCache.set(personId, true);
-        return true;
-      }
-
-      const { data: claimRows } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
-        .select('id')
-        .eq('person_id', personId)
-        .eq('status', 'approved')
-        .limit(1);
-      if (claimRows && claimRows.length > 0) {
-        canUsePersonIdCache.set(personId, true);
-        return true;
-      }
-
-      if (contributorId) {
-        const { data: referenceRows } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-          .select('id')
-          .eq('person_id', personId)
-          .eq('added_by', contributorId)
-          .limit(1);
-        if (referenceRows && referenceRows.length > 0) {
-          canUsePersonIdCache.set(personId, true);
-          return true;
-        }
-      }
-
-      canUsePersonIdCache.set(personId, false);
-      return false;
-    };
-
-    const resolvePersonIdByName = async (name: string) => {
-      const trimmedName = name.trim();
-      if (!trimmedName) return null;
-
-      const { data: aliasRows } = await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
-        .select('person_id')
-        .ilike('alias', trimmedName)
-        .limit(5);
-      if (aliasRows && aliasRows.length > 0) {
-        for (const row of aliasRows as Array<{ person_id?: string | null }>) {
-          if (row.person_id && await canUsePersonId(row.person_id)) {
-            return row.person_id;
-          }
-        }
-      }
-
-      const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
-        .select('id')
-        .ilike('canonical_name', trimmedName)
-        .limit(5);
-      if (personRows && personRows.length > 0) {
-        for (const row of personRows as Array<{ id?: string | null }>) {
-          if (row.id && await canUsePersonId(row.id)) {
-            await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
-              .insert({
-                person_id: row.id,
-                alias: trimmedName,
-                created_by: contributorId,
-              });
-            return row.id;
-          }
-        }
-      }
-
-      const { data: newPerson } = await (admin.from('people') as ReturnType<typeof admin.from>)
-        .insert({
-          canonical_name: trimmedName,
-          visibility: 'pending',
-          created_by: contributorId,
-        })
-        .select('id')
-        .single();
-
-      const newPersonId = (newPerson as { id?: string } | null)?.id ?? null;
-      if (!newPersonId) return null;
-
-      await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
-        .insert({
-          person_id: newPersonId,
-          alias: trimmedName,
-          created_by: contributorId,
-        });
-
-      return newPersonId;
-    };
+    // Create person lookup helpers scoped to this contributor
+    const { canUsePersonId, resolvePersonIdByName } = createPersonLookupHelpers(admin, contributorId);
 
     if (references && eventId) {
       const linkRefs = references.links || [];
@@ -446,10 +338,15 @@ export async function POST(request: NextRequest) {
 
     // If this is a response to another story, create memory_threads link
     if (prompted_by_event_id && eventId) {
+      const allowedRelationships = new Set(['perspective', 'addition', 'correction', 'related']);
+      const normalizedRelationship = allowedRelationships.has(relationship) ? relationship : 'perspective';
+      const trimmedRelationshipNote = typeof relationship_note === 'string' ? relationship_note.trim() : '';
+
       await (admin.from('memory_threads') as ReturnType<typeof admin.from>).insert({
         original_event_id: prompted_by_event_id,
         response_event_id: eventId,
-        relationship: 'perspective',
+        relationship: normalizedRelationship,
+        note: trimmedRelationshipNote ? trimmedRelationshipNote : null,
       });
     }
 

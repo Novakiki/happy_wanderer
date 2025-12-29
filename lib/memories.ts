@@ -3,6 +3,7 @@
  * Extracted for testability - no database or HTTP dependencies.
  */
 
+import { validateYearRange, validateAgeRange } from './form-validation';
 import { LIFE_STAGE_YEAR_RANGES, SUBJECT_BIRTH_YEAR } from './terminology';
 
 // =============================================================================
@@ -216,29 +217,22 @@ export function resolveTiming(input: {
   const ageEnd = parseYear(input.ageEnd);
 
   // Validate year range
-  if (
-    timingInputType === 'year_range' &&
-    year !== null &&
-    yearEnd !== null &&
-    yearEnd < year
-  ) {
-    return {
-      success: false,
-      error: {
-        field: 'year_end',
-        message: 'Year range end must be the same or later than the start year',
-      },
-    };
+  if (timingInputType === 'year_range') {
+    const yearRangeResult = validateYearRange(year, yearEnd);
+    if (!yearRangeResult.valid) {
+      return {
+        success: false,
+        error: { field: 'year_end', message: yearRangeResult.error },
+      };
+    }
   }
 
   // Validate age range
-  if (ageStart !== null && ageEnd !== null && ageEnd < ageStart) {
+  const ageRangeResult = validateAgeRange(ageStart, ageEnd);
+  if (!ageRangeResult.valid) {
     return {
       success: false,
-      error: {
-        field: 'age_end',
-        message: 'Age range end must be the same or older than the start age',
-      },
+      error: { field: 'age_end', message: ageRangeResult.error },
     };
   }
 

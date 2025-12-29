@@ -10,3 +10,7 @@ export { default as TimingSection } from './TimingSection';
 export { default as PeopleSection } from './PeopleSection';
 export { default as ReferencesSection } from './ReferencesSection';
 export { default as NoteContentSection } from './NoteContentSection';
+export { YearInput } from './YearInput';
+export { YEAR_CONSTRAINTS } from '@/lib/form-validation';
+export { TimingModeSelector } from './TimingModeSelector';
+export type { TimingMode, TimingModeData, TimingModeSelectorProps } from './TimingModeSelector';
