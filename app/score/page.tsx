@@ -541,7 +541,13 @@ export default function ChaptersPage() {
         >
           {/* Tabs */}
           <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-white/5 relative z-10">
-            <div className="flex items-center gap-1">
+            <div
+              className="flex items-center gap-1 overflow-x-auto scrollbar-hide pr-8 -mr-8"
+              style={{
+                maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+              }}
+            >
               <button
                 onClick={() => setActiveTab('time')}
                 className={`px-4 py-2 text-xs rounded-lg transition-colors ${
@@ -568,9 +574,9 @@ export default function ChaptersPage() {
               ))}
             </div>
 
-            {/* Zoom controls */}
+            {/* Zoom controls - hidden on mobile since pinch gestures work */}
             {activeTab === 'time' && (
-              <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}
@@ -751,10 +757,25 @@ export default function ChaptersPage() {
                       setHoveredBundle(null);
                       setTooltipPos(null);
                     }}
-                    onClick={() => {
-                      if (hasMore) {
+                    onClick={(e) => {
+                      if (!hasMore) return;
+
+                      // Two-tap pattern for mobile:
+                      // If already showing preview for this event, open full detail
+                      // Otherwise, show preview first
+                      if (hoveredEvent?.id === event.id) {
                         setSelectedEvent(event);
                         setSelectedBundle(bundle);
+                        // Clear preview
+                        setHoveredEvent(null);
+                        setHoveredBundle(null);
+                        setTooltipPos(null);
+                      } else {
+                        // Show preview (mobile tap = hover equivalent)
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+                        setHoveredEvent(event);
+                        setHoveredBundle(bundle);
                       }
                     }}
                   >
@@ -1578,42 +1599,66 @@ export default function ChaptersPage() {
         </div>
       )}
 
-      {/* Portal tooltip for timeline hover */}
+      {/* Portal tooltip for timeline hover/tap preview */}
       {hoveredEvent && tooltipPos && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed z-[9999] px-3 py-2.5 bg-black/95 backdrop-blur-sm rounded-lg pointer-events-none min-w-[180px] max-w-[280px] animate-fade-in border border-white/10"
-          style={{
-            left: tooltipPos.x,
-            top: tooltipPos.y - 8,
-            transform: 'translate(-50%, -100%)',
-          }}
-        >
-          <p className="text-white/50 text-[10px] tracking-wide">
-            {hoveredEvent.year}{hoveredEvent.yearEnd && hoveredEvent.yearEnd !== hoveredEvent.year ? `–${hoveredEvent.yearEnd}` : ''}
-            {hoveredEvent.location && ` · ${hoveredEvent.location}`}
-          </p>
-          <p className="text-white text-sm font-medium mt-0.5">{hoveredEvent.title}</p>
-          {hoveredEvent.preview && (
-            <p className="text-white/60 text-xs mt-1.5 leading-relaxed line-clamp-3">
-              {hoveredEvent.preview.replace(/<[^>]*>/g, '').slice(0, 150)}
-              {hoveredEvent.preview.replace(/<[^>]*>/g, '').length > 150 ? '…' : ''}
+        <>
+          {/* Invisible backdrop to dismiss on mobile tap-away */}
+          <div
+            className="fixed inset-0 z-[9998] md:hidden"
+            onClick={() => {
+              setHoveredEvent(null);
+              setHoveredBundle(null);
+              setTooltipPos(null);
+            }}
+          />
+          <div
+            className="fixed z-[9999] px-3 py-2.5 bg-black/95 backdrop-blur-sm rounded-lg min-w-[180px] max-w-[280px] animate-fade-in border border-white/10 cursor-pointer md:pointer-events-none"
+            style={{
+              left: tooltipPos.x,
+              top: tooltipPos.y - 8,
+              transform: 'translate(-50%, -100%)',
+            }}
+            onClick={() => {
+              // Tap on tooltip opens full detail (mobile)
+              if (hoveredEvent.fullEntry || hoveredEvent.preview) {
+                setSelectedEvent(hoveredEvent);
+                setSelectedBundle(hoveredBundle);
+                setHoveredEvent(null);
+                setHoveredBundle(null);
+                setTooltipPos(null);
+              }
+            }}
+          >
+            <p className="text-white/50 text-[10px] tracking-wide">
+              {hoveredEvent.year}{hoveredEvent.yearEnd && hoveredEvent.yearEnd !== hoveredEvent.year ? `–${hoveredEvent.yearEnd}` : ''}
+              {hoveredEvent.location && ` · ${hoveredEvent.location}`}
             </p>
-          )}
-          <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
-            <p className="text-white/40 text-[10px]">
-              {hoveredEvent.contributor}
-              {hoveredEvent.contributorRelation && hoveredEvent.contributorRelation !== 'synthesized' && (
-                <span className="text-white/30"> ({hoveredEvent.contributorRelation})</span>
-              )}
-            </p>
-            {hoveredBundle && hoveredBundle.totalCount > 1 && (
-              <span className="text-[#e07a5f] text-[10px]">
-                +{hoveredBundle.totalCount - 1} other perspective{hoveredBundle.totalCount > 2 ? 's' : ''}
-              </span>
+            <p className="text-white text-sm font-medium mt-0.5">{hoveredEvent.title}</p>
+            {hoveredEvent.preview && (
+              <p className="text-white/60 text-xs mt-1.5 leading-relaxed line-clamp-3">
+                {hoveredEvent.preview.replace(/<[^>]*>/g, '').slice(0, 150)}
+                {hoveredEvent.preview.replace(/<[^>]*>/g, '').length > 150 ? '…' : ''}
+              </p>
             )}
+            <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
+              <p className="text-white/40 text-[10px]">
+                {hoveredEvent.contributor}
+                {hoveredEvent.contributorRelation && hoveredEvent.contributorRelation !== 'synthesized' && (
+                  <span className="text-white/30"> ({hoveredEvent.contributorRelation})</span>
+                )}
+              </p>
+              {hoveredBundle && hoveredBundle.totalCount > 1 && (
+                <span className="text-[#e07a5f] text-[10px]">
+                  +{hoveredBundle.totalCount - 1} other perspective{hoveredBundle.totalCount > 2 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <p className="text-white/30 text-[10px] mt-1.5 italic">
+              <span className="hidden md:inline">Click to read more</span>
+              <span className="md:hidden">Tap to read more</span>
+            </p>
           </div>
-          <p className="text-white/30 text-[10px] mt-1.5 italic">Click to read more</p>
-        </div>,
+        </>,
         document.body
       )}
 
