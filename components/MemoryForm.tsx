@@ -17,9 +17,19 @@ import {
   THREAD_RELATIONSHIP_DESCRIPTIONS,
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
+import RichTextEditor from './RichTextEditor';
 import type { TimingMode } from './forms';
+
+/**
+ * Check if HTML content has meaningful text (not just empty tags).
+ */
+function hasContent(html: string): boolean {
+  // Strip HTML tags and check if any text remains
+  const text = html.replace(/<[^>]*>/g, '').trim();
+  return text.length > 0;
+}
 
 type CreatedInvite = {
   id: string;
@@ -96,7 +106,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const addLinkRef = () => {
     const url = newLinkUrl.trim();
@@ -403,24 +412,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             </div>
 
             <div>
-              <label htmlFor="content" className={formStyles.label}>
+              <label className={formStyles.label}>
                 {ENTRY_TYPE_CONTENT_LABELS[formData.entry_type as keyof typeof ENTRY_TYPE_CONTENT_LABELS] || 'The memory'} <span className={formStyles.required}>*</span>
               </label>
-              <textarea
-                ref={textareaRef}
-                id="content"
-                required
-                rows={6}
+              <RichTextEditor
                 value={formData.content}
-                onChange={e => setFormData({ ...formData, content: e.target.value })}
+                onChange={(val) => setFormData({ ...formData, content: val })}
                 placeholder="Share a story, a moment, or a note..."
-                className={formStyles.textarea}
+                minHeight="120px"
               />
-              <div className="flex justify-end mt-1">
-                <span className={`text-xs ${formData.content.length > 2000 ? formStyles.required : 'text-white/40'}`}>
-                  {formData.content.length} characters
-                </span>
-              </div>
             </div>
 
             {!showWhyMeaningful && !formData.why_included && (
@@ -448,13 +448,11 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 <p className={formStyles.hint}>
                   Appears as an italic quote beneath your note
                 </p>
-                <textarea
-                  id="why_included"
-                  rows={2}
+                <RichTextEditor
                   value={formData.why_included}
-                  onChange={(e) => setFormData({ ...formData, why_included: e.target.value })}
+                  onChange={(val) => setFormData({ ...formData, why_included: val })}
                   placeholder="What it shows about her, why it matters to you..."
-                  className={`${formStyles.textarea} mt-2`}
+                  minHeight="80px"
                 />
               </div>
             )}
@@ -846,7 +844,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
         <button
           type="submit"
-          disabled={isSubmitting || !formData.content.trim()}
+          disabled={isSubmitting || !hasContent(formData.content)}
           className={formStyles.buttonPrimaryFull}
         >
           {isSubmitting ? 'Adding...' : 'Add This Memory'}
