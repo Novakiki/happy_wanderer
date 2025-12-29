@@ -5,6 +5,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+/**
+ * Escape SQL wildcards for safe use in ilike queries.
+ * Prevents user input containing % or _ from acting as wildcards.
+ */
+function escapeIlikePattern(str: string): string {
+  return str.replace(/[%_\\]/g, '\\$&');
+}
+
 type PersonVisibility = 'approved' | 'pending' | 'anonymized' | 'blurred' | 'removed';
 
 export type PersonLookupHelpers = {
@@ -114,10 +122,11 @@ export function createPersonLookupHelpers(
     const trimmedName = name.trim();
     if (!trimmedName) return null;
 
-    // Search by alias first
+    // Search by alias first (case-insensitive exact match)
+    const escapedName = escapeIlikePattern(trimmedName);
     const { data: aliasRows } = await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
       .select('person_id')
-      .ilike('alias', trimmedName)
+      .ilike('alias', escapedName)
       .limit(5);
     if (aliasRows && aliasRows.length > 0) {
       for (const row of aliasRows as Array<{ person_id?: string | null }>) {
@@ -127,10 +136,10 @@ export function createPersonLookupHelpers(
       }
     }
 
-    // Search by canonical name
+    // Search by canonical name (case-insensitive exact match)
     const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
       .select('id')
-      .ilike('canonical_name', trimmedName)
+      .ilike('canonical_name', escapedName)
       .limit(5);
     if (personRows && personRows.length > 0) {
       for (const row of personRows as Array<{ id?: string | null }>) {
