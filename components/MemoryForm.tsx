@@ -21,15 +21,7 @@ import { useState } from 'react';
 import { DisclosureSection, PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
 import RichTextEditor from './RichTextEditor';
 import type { TimingMode } from './forms';
-
-/**
- * Check if HTML content has meaningful text (not just empty tags).
- */
-function hasContent(html: string): boolean {
-  // Strip HTML tags and check if any text remains
-  const text = html.replace(/<[^>]*>/g, '').trim();
-  return text.length > 0;
-}
+import { hasContent } from '@/lib/html-utils';
 
 type CreatedInvite = {
   id: string;

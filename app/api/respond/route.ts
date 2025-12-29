@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
+import { stripHtml } from '@/lib/html-utils';
 
 // GET: Fetch invite details for the response page
 export async function GET(request: NextRequest) {
@@ -16,7 +17,15 @@ export async function GET(request: NextRequest) {
     id: string;
     recipient_name: string;
     status: string;
-    event: { id: string; title: string; content: string; year: number; year_end: number | null } | null;
+    event: {
+      id: string;
+      title: string;
+      type: string;
+      content: string;
+      year: number;
+      year_end: number | null;
+      contributor_id: string | null;
+    } | null;
     sender: { name: string } | null;
   };
 
@@ -26,7 +35,7 @@ export async function GET(request: NextRequest) {
       id,
       recipient_name,
       status,
-      event:timeline_events(id, title, full_entry, year, year_end),
+      event:timeline_events(id, title, type, full_entry, year, year_end, contributor_id),
       sender:contributors!invites_sender_id_fkey(name)
     `)
     .eq('id', inviteId)
@@ -79,10 +88,12 @@ export async function GET(request: NextRequest) {
       recipient_name: typedInvite.recipient_name,
       sender_name: typedInvite.sender?.name || 'Someone',
       relationship_to_subject: relationshipToSubject,
-      event: typedInvite.event ? {
-        ...typedInvite.event,
-        content: (typedInvite.event as unknown as { full_entry?: string }).full_entry || '',
-      } : null,
+      event: typedInvite.event
+        ? {
+            ...typedInvite.event,
+            content: (typedInvite.event as unknown as { full_entry?: string }).full_entry || '',
+          }
+        : null,
     },
   });
 }
@@ -91,7 +102,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { invite_id, name, content } = body;
+    const { invite_id, name, content, relationship, relationship_note } = body;
 
     if (!invite_id || !name?.trim() || !content?.trim()) {
       return NextResponse.json(
@@ -151,12 +162,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const allowedRelationships = new Set(['perspective', 'addition', 'correction', 'related']);
+    const normalizedRelationship = allowedRelationships.has(relationship) ? relationship : 'perspective';
+    const trimmedRelationshipNote = typeof relationship_note === 'string' ? relationship_note.trim() : '';
+
     // Create the response as a new event linked to the original
+    const previewText = stripHtml(content).slice(0, 200);
     const { data: newEvent, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
       .insert({
-        title: `Re: ${name.trim()}'s perspective`,
+        title: `Re: ${name.trim()}'s note`,
         full_entry: content.trim(),
-        preview: content.trim().slice(0, 200),
+        preview: previewText,
         type: 'memory',
         status: 'published',
         year: typedEvent?.year || new Date().getFullYear(),
@@ -187,7 +203,8 @@ export async function POST(request: NextRequest) {
     await (admin.from('memory_threads') as ReturnType<typeof admin.from>).insert({
       original_event_id: typedInvite.event_id,
       response_event_id: typedNewEvent.id,
-      relationship: 'perspective',
+      relationship: normalizedRelationship,
+      note: trimmedRelationshipNote ? trimmedRelationshipNote : null,
     });
 
     // Mark invite as contributed

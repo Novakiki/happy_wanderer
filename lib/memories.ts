@@ -4,6 +4,7 @@
  */
 
 import { validateYearRange, validateAgeRange } from './form-validation';
+import { hasContent, stripHtml } from './html-utils';
 import { LIFE_STAGE_YEAR_RANGES, SUBJECT_BIRTH_YEAR } from './terminology';
 
 // =============================================================================
@@ -69,7 +70,8 @@ export type ParentEventInfo = {
 export function validateMemoryInput(input: MemoryInput): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  if (!input.content?.trim()) {
+  // Use hasContent for HTML-aware validation (handles <p></p>, &nbsp;, etc.)
+  if (!input.content || !hasContent(input.content)) {
     errors.push({ field: 'content', message: 'Note content is required' });
   }
 
@@ -286,14 +288,21 @@ export function resolveTiming(input: {
 
 /**
  * Generate preview text from content.
- * Truncates to 160 characters with ellipsis if needed.
+ * Strips HTML tags and truncates to 160 characters with ellipsis if needed.
  */
 export function generatePreview(content: string): string {
-  const trimmed = content.trim();
-  if (trimmed.length <= 160) {
-    return trimmed;
+  // Strip HTML to generate clean preview text
+  const text = stripHtml(content);
+  if (text.length <= 160) {
+    return text;
   }
-  return `${trimmed.slice(0, 160).trimEnd()}...`;
+  // Truncate at word boundary if possible
+  const truncated = text.slice(0, 160);
+  const lastSpace = truncated.lastIndexOf(' ');
+  if (lastSpace > 110) {
+    return truncated.slice(0, lastSpace) + '...';
+  }
+  return truncated.trimEnd() + '...';
 }
 
 // =============================================================================
