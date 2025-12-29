@@ -96,20 +96,6 @@ export default function ProvenanceSection({
           </div>
         )}
 
-        {value.type === 'mixed' && (
-          <div className="mt-3">
-            <label className={formStyles.labelMuted}>
-              Note <span className="text-white/40">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={value.note || ''}
-              onChange={(e) => updateField('note', e.target.value)}
-              placeholder="e.g., I think I was there but I'm not certain"
-              className={formStyles.input}
-            />
-          </div>
-        )}
       </div>
     );
   }
@@ -259,53 +245,6 @@ export default function ProvenanceSection({
           )}
         </button>
 
-        {/* Mixed / not sure */}
-        <button
-          type="button"
-          onClick={() => updateType('mixed')}
-          className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-            value.type === 'mixed'
-              ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-              : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                value.type === 'mixed' ? 'border-[#e07a5f]' : 'border-white/30'
-              }`}
-            >
-              {value.type === 'mixed' && (
-                <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-white">
-                {MEMORY_PROVENANCE.mixed}
-              </p>
-              <p className="text-xs text-white/50">
-                {MEMORY_PROVENANCE_DESCRIPTIONS.mixed}
-              </p>
-            </div>
-          </div>
-          {value.type === 'mixed' && (
-            <div
-              className="mt-4 pt-4 border-t border-white/10"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <label className={formStyles.labelMuted}>
-                Note <span className="text-white/40">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={value.note || ''}
-                onChange={(e) => updateField('note', e.target.value)}
-                placeholder="e.g., I think I was there but I'm not certain"
-                className={formStyles.input}
-              />
-            </div>
-          )}
-        </button>
       </div>
     </div>
   );

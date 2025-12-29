@@ -1,8 +1,9 @@
 'use client';
 
-import type { PersonReference, ProvenanceData } from '@/lib/form-types';
+import type { EntryType, PersonReference, ProvenanceData } from '@/lib/form-types';
 import {
   DEFAULT_PROVENANCE,
+  getDefaultProvenanceForEntryType,
   mapToLegacyPersonRole,
   provenanceToSource,
 } from '@/lib/form-types';
@@ -111,6 +112,13 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   const removeLinkRef = (index: number) => {
     setLinkRefs(linkRefs.filter((_, i) => i !== index));
+  };
+
+  // Handle entry type change - update provenance default
+  const handleEntryTypeChange = (newEntryType: string) => {
+    setFormData({ ...formData, entry_type: newEntryType });
+    // Set appropriate default provenance for this entry type
+    setProvenance(getDefaultProvenanceForEntryType(newEntryType as EntryType));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -370,7 +378,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           <select
             id="entry_type"
             value={formData.entry_type}
-            onChange={(e) => setFormData({ ...formData, entry_type: e.target.value })}
+            onChange={(e) => handleEntryTypeChange(e.target.value)}
             className={formStyles.select}
           >
             <option value="memory">{ENTRY_TYPE_LABELS.memory}</option>
@@ -583,42 +591,53 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           <p className={formStyles.sectionLabel}>The Chain</p>
           <p className={`${formStyles.hint} mb-4`}>These fields help keep memories connected without turning them into a single official story.</p>
 
-          <div className="mb-6">
-            <ProvenanceSection
-              value={provenance}
-              onChange={setProvenance}
-              required
-            />
-          </div>
-
-          {!showPeople && personRefs.length === 0 ? (
-            <button
-              type="button"
-              onClick={() => setShowPeople(true)}
-              className={formStyles.buttonGhost}
-            >
-              <span className={formStyles.disclosureArrow}>&#9654;</span>
-              Add who was there
-            </button>
+          {formData.entry_type === 'origin' ? (
+            <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
+              <p className={formStyles.hint}>
+                This synchronicity will be recorded as your personal observation.
+              </p>
+            </div>
           ) : (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className={formStyles.sectionLabel}>Who else was there?</p>
-                <button
-                  type="button"
-                  onClick={() => setShowPeople(false)}
-                  className="text-xs text-white/40 hover:text-white transition-colors"
-                >
-                  Hide
-                </button>
-              </div>
-              <PeopleSection
-                value={personRefs}
-                onChange={setPersonRefs}
-                label="Who else was there?"
-                mode="inline"
+            <div className="mb-6">
+              <ProvenanceSection
+                value={provenance}
+                onChange={setProvenance}
+                required
               />
             </div>
+          )}
+
+          {/* People section - only for memories, not milestones or synchronicities */}
+          {formData.entry_type === 'memory' && (
+            !showPeople && personRefs.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowPeople(true)}
+                className={formStyles.buttonGhost}
+              >
+                <span className={formStyles.disclosureArrow}>&#9654;</span>
+                Add who was there
+              </button>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className={formStyles.sectionLabel}>Who else was there?</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowPeople(false)}
+                    className="text-xs text-white/40 hover:text-white transition-colors"
+                  >
+                    Hide
+                  </button>
+                </div>
+                <PeopleSection
+                  value={personRefs}
+                  onChange={setPersonRefs}
+                  label="Who else was there?"
+                  mode="inline"
+                />
+              </div>
+            )
           )}
         </div>
 

@@ -4,7 +4,7 @@
  */
 
 import { validateYearRange, validateAgeRange } from './form-validation';
-import { hasContent, stripHtml } from './html-utils';
+import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from './html-utils';
 import { LIFE_STAGE_YEAR_RANGES, SUBJECT_BIRTH_YEAR } from './terminology';
 
 // =============================================================================
@@ -13,7 +13,7 @@ import { LIFE_STAGE_YEAR_RANGES, SUBJECT_BIRTH_YEAR } from './terminology';
 
 export type TimingCertainty = 'exact' | 'approximate' | 'vague';
 export type TimingInputType = 'date' | 'year' | 'year_range' | 'age_range' | 'life_stage';
-export type PrivacyLevel = 'public' | 'family' | 'kids-only';
+export type PrivacyLevel = 'public' | 'family';
 export type EventType = 'origin' | 'milestone' | 'memory';
 export type LifeStage = 'childhood' | 'teens' | 'college' | 'young_family' | 'beyond';
 
@@ -128,9 +128,10 @@ export function normalizeTimingInputType(value?: string): TimingInputType {
  * Defaults to 'family' for invalid/missing values.
  */
 export function normalizePrivacyLevel(value?: string): PrivacyLevel {
-  if (value === 'public' || value === 'family' || value === 'kids-only') {
+  if (value === 'public' || value === 'family') {
     return value;
   }
+  // Collapse any legacy values to family by default.
   return 'family';
 }
 
@@ -291,18 +292,7 @@ export function resolveTiming(input: {
  * Strips HTML tags and truncates to 160 characters with ellipsis if needed.
  */
 export function generatePreview(content: string): string {
-  // Strip HTML to generate clean preview text
-  const text = stripHtml(content);
-  if (text.length <= 160) {
-    return text;
-  }
-  // Truncate at word boundary if possible
-  const truncated = text.slice(0, 160);
-  const lastSpace = truncated.lastIndexOf(' ');
-  if (lastSpace > 110) {
-    return truncated.slice(0, lastSpace) + '...';
-  }
-  return truncated.trimEnd() + '...';
+  return generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
 }
 
 // =============================================================================

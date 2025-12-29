@@ -71,21 +71,29 @@ export function buildInviteData(
     recipient_name: ref.name.trim(),
     recipient_contact: phone,
     method: isEmail ? 'email' : 'sms',
-    message: `${senderName} shared a memory that mentions you. Add your perspective!`,
+    message: `${senderName} shared a memory of Val that includes you. Want to add to it or share your version?`,
   };
 }
 
 /**
  * Builds the SMS deep link URL for inviting someone
  */
+export function buildSmsMessage(
+  recipientName: string,
+  inviteId: string,
+  baseUrl: string
+): string {
+  const respondUrl = `${baseUrl}/respond/${inviteId}`;
+  return `Hey ${recipientName}! A memory of Val includes you. Want to add to it or share your version? ${respondUrl}`;
+}
+
 export function buildSmsLink(
   phone: string,
   recipientName: string,
   inviteId: string,
   baseUrl: string
 ): string {
-  const respondUrl = `${baseUrl}/respond/${inviteId}`;
-  const message = `Hey ${recipientName}! I shared a memory about you on Val's memorial. Add your side of the story: ${respondUrl}`;
+  const message = buildSmsMessage(recipientName, inviteId, baseUrl);
   return `sms:${phone}?body=${encodeURIComponent(message)}`;
 }
 

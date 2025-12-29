@@ -10,7 +10,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 // QUERY HELPERS
 // =============================================================================
 
-type PrivacyLevel = 'public' | 'family' | 'kids-only';
+type PrivacyLevel = 'public' | 'family';
 
 export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel[] }) {
   const privacyLevels = options?.privacyLevels;
@@ -23,7 +23,7 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
       media:event_media(media:media(*))
     `)
     .eq('status', 'published')
-    .in('privacy_level', privacyLevels && privacyLevels.length ? privacyLevels : ['public', 'family', 'kids-only'])
+    .in('privacy_level', privacyLevels && privacyLevels.length ? privacyLevels : ['public', 'family'])
     .order('year', { ascending: true });
 
   if (error) {
@@ -70,7 +70,7 @@ export async function createTimelineEvent(event: {
   contributor_id: string;
   location?: string;
   people_involved?: string[];
-  privacy_level?: 'public' | 'family' | 'kids-only';
+  privacy_level?: 'public' | 'family';
 }) {
   const { data, error } = await (supabase.from('timeline_events') as ReturnType<typeof supabase.from>)
     .insert({

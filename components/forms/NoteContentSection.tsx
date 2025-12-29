@@ -5,6 +5,7 @@ import { formStyles } from '@/lib/styles';
 import { ENTRY_TYPE_CONTENT_LABELS } from '@/lib/terminology';
 import type { EntryType } from '@/lib/form-types';
 import RichTextEditor from '@/components/RichTextEditor';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 
 type Props = {
   title: string;
@@ -19,9 +20,6 @@ type Props = {
   preview?: string;
   showWhyMeaningful?: boolean; // For add form - progressive disclosure
 };
-
-const stripHtml = (html?: string | null): string =>
-  html ? html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() : '';
 
 export default function NoteContentSection({
   title,
@@ -102,8 +100,7 @@ export default function NoteContentSection({
           <textarea
             readOnly
             value={(() => {
-              const text = stripHtml(content || preview || '');
-              return text.length > 160 ? `${text.slice(0, 160).trimEnd()}...` : text;
+              return generatePreviewFromHtml(content || preview || '', PREVIEW_MAX_LENGTH);
             })()}
             rows={3}
             className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm cursor-not-allowed"

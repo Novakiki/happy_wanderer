@@ -1,13 +1,21 @@
-import { cookies } from 'next/headers';
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from '@/lib/database.types';
-import EditRequestForm from '@/components/EditRequestForm';
 import EditNotesClient from '@/components/EditNotesClient';
+import EditRequestForm from '@/components/EditRequestForm';
 import Nav from '@/components/Nav';
-import { subtleBackground, formStyles } from '@/lib/styles';
+import { redactReferences } from '@/lib/references';
+import { formStyles, subtleBackground } from '@/lib/styles';
+import { createAdminClient, createClient as createServerClient } from '@/lib/supabase/server';
+import { randomUUID } from 'crypto';
+import { cookies } from 'next/headers';
 
-const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
+const MAGIC_LINK_TTL_DAYS = Number(process.env.MAGIC_LINK_TTL_DAYS || 30);
+
+function getMaxAgeSeconds() {
+  if (!MAGIC_LINK_TTL_DAYS || Number.isNaN(MAGIC_LINK_TTL_DAYS)) {
+    return undefined;
+  }
+  if (MAGIC_LINK_TTL_DAYS <= 0) return undefined;
+  return Math.floor(MAGIC_LINK_TTL_DAYS * 24 * 60 * 60);
+}
 
 type EditSession = {
   token: string;
@@ -29,7 +37,7 @@ function readEditSession(value?: string): EditSession | null {
 
 // Get a specific event by ID if the user has permission to edit it
 async function getEventById(eventId: string, contributorName: string) {
-  const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+  const admin = createAdminClient();
 
   const { data: eventData } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
     .select(`
@@ -86,11 +94,16 @@ async function getEventById(eventId: string, contributorName: string) {
   // Return without the contributor field to match expected format
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { contributor, ...eventWithoutContributor } = event;
-  return eventWithoutContributor;
+  return {
+    ...eventWithoutContributor,
+    references: redactReferences((eventWithoutContributor as { references?: unknown }).references as any || [], {
+      includeAuthorPayload: true,
+    }),
+  };
 }
 
 async function getEventsForToken(token: string, contributorName?: string) {
-  const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+  const admin = createAdminClient();
 
   // Get contributor from token
   const { data: tokenRow }: {
@@ -197,7 +210,143 @@ async function getEventsForToken(token: string, contributorName?: string) {
     }
   }
 
-  return events || [];
+  return (events || []).map((evt) => ({
+    ...evt,
+    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+      includeAuthorPayload: true,
+    }),
+  }));
+}
+
+async function getEventForContributor(eventId: string, contributorId: string) {
+  const admin = createAdminClient();
+
+  const { data: event } = await admin
+    .from('timeline_events')
+    .select(`
+      id,
+      year,
+      year_end,
+      age_start,
+      age_end,
+      life_stage,
+      timing_certainty,
+      timing_input_type,
+      timing_note,
+      location,
+      type,
+      title,
+      preview,
+      full_entry,
+      why_included,
+      source_name,
+      source_url,
+      privacy_level,
+      people_involved,
+      references:event_references(
+        id,
+        type,
+        url,
+        display_name,
+        role,
+        visibility,
+        relationship_to_subject,
+        person_id,
+        person:people(id, canonical_name)
+      )
+    `)
+    .eq('id', eventId)
+    .eq('contributor_id', contributorId)
+    .single();
+
+  return event
+    ? {
+        ...event,
+        references: redactReferences((event as { references?: unknown }).references as any || [], {
+          includeAuthorPayload: true,
+        }),
+      }
+    : null;
+}
+
+async function getEventsForContributor(contributorId: string) {
+  const admin = createAdminClient();
+
+  const { data: events } = await admin
+    .from('timeline_events')
+    .select(`
+      id,
+      year,
+      year_end,
+      age_start,
+      age_end,
+      life_stage,
+      timing_certainty,
+      timing_input_type,
+      timing_note,
+      location,
+      type,
+      title,
+      preview,
+      full_entry,
+      why_included,
+      source_name,
+      source_url,
+      privacy_level,
+      people_involved,
+      references:event_references(
+        id,
+        type,
+        url,
+        display_name,
+        role,
+        visibility,
+        relationship_to_subject,
+        person_id,
+        person:people(id, canonical_name)
+      )
+    `)
+    .eq('contributor_id', contributorId)
+    .order('year', { ascending: true });
+
+  return (events || []).map((evt) => ({
+    ...evt,
+    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+      includeAuthorPayload: true,
+    }),
+  }));
+}
+
+async function getOrCreateEditTokenForContributor(contributorId: string) {
+  const admin = createAdminClient();
+
+  const { data: existingTokens } = await admin
+    .from('edit_tokens')
+    .select('token, expires_at')
+    .eq('contributor_id', contributorId)
+    .order('expires_at', { ascending: false })
+    .limit(1);
+
+  const candidate = existingTokens?.[0];
+  if (candidate?.token) {
+    const expiresAt = candidate.expires_at ? new Date(candidate.expires_at) : null;
+    if (!expiresAt || expiresAt > new Date()) {
+      return candidate.token;
+    }
+  }
+
+  const token = randomUUID();
+  const expiresAt = MAGIC_LINK_TTL_DAYS > 0
+    ? new Date(Date.now() + MAGIC_LINK_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  await admin.from('edit_tokens').insert({
+    token,
+    contributor_id: contributorId,
+    expires_at: expiresAt,
+  });
+
+  return token;
 }
 
 export default async function EditPage({
@@ -208,6 +357,20 @@ export default async function EditPage({
   const cookieStore = await cookies();
   const editSession = readEditSession(cookieStore.get('vals-memory-edit')?.value);
   const { event_id: eventId } = await searchParams;
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Pull the profile for logged-in users to see if we can link directly to their contributor record
+  const { data: profile } = user
+    ? await supabase
+        .from('profiles')
+        .select('name, contributor_id')
+        .eq('id', user.id)
+        .single()
+    : { data: null };
+  const contributorToken = profile?.contributor_id
+    ? await getOrCreateEditTokenForContributor(profile.contributor_id)
+    : null;
 
   // If user has a valid session, show their notes
   if (editSession?.token) {
@@ -264,6 +427,68 @@ export default async function EditPage({
               <EditNotesClient
                 token={editSession.token}
                 contributorName={editSession.name}
+                events={events}
+              />
+            </div>
+          </section>
+        </div>
+      );
+    }
+  }
+
+  // If authenticated and mapped to a contributor, show their notes without requiring the edit-session cookie
+  if (profile?.contributor_id && contributorToken) {
+    if (eventId) {
+      const event = await getEventForContributor(eventId, profile.contributor_id);
+      if (event) {
+        return (
+          <div
+            className={formStyles.pageContainer}
+            style={subtleBackground}
+          >
+            <Nav />
+            <section className={formStyles.contentWrapper}>
+              <p className={formStyles.subLabel}>
+                Edit your notes
+              </p>
+              <h1 className={formStyles.pageTitle}>
+                Edit note
+              </h1>
+
+              <div className="mt-8">
+                <EditNotesClient
+                  token={contributorToken}
+                  contributorName={profile.name || 'Your notes'}
+                  events={[event] as Parameters<typeof EditNotesClient>[0]['events']}
+                />
+              </div>
+            </section>
+          </div>
+        );
+      }
+    }
+
+    const events = await getEventsForContributor(profile.contributor_id);
+
+    if (events && events.length > 0) {
+      return (
+        <div
+          className={formStyles.pageContainer}
+          style={subtleBackground}
+        >
+          <Nav />
+          <section className={formStyles.contentWrapper}>
+            <p className={formStyles.subLabel}>
+              Edit your notes
+            </p>
+            <h1 className={formStyles.pageTitle}>
+              Your contributions
+            </h1>
+
+            <div className="mt-8">
+              <EditNotesClient
+                token={contributorToken}
+                contributorName={profile.name || 'Your notes'}
                 events={events}
               />
             </div>

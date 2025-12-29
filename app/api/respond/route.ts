@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { stripHtml } from '@/lib/html-utils';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 
 // GET: Fetch invite details for the response page
 export async function GET(request: NextRequest) {
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
     const trimmedRelationshipNote = typeof relationship_note === 'string' ? relationship_note.trim() : '';
 
     // Create the response as a new event linked to the original
-    const previewText = stripHtml(content).slice(0, 200);
+    const previewText = generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
     const { data: newEvent, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
       .insert({
         title: `Re: ${name.trim()}'s note`,

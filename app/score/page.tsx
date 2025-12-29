@@ -3,6 +3,7 @@
 import { YearInput } from '@/components/forms/YearInput';
 import { ReferencesList } from '@/components/ReferencesList';
 import { RelationGraphPeek } from '@/components/RelationGraphPeek';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import {
   applyScoreEventOverrides,
   groupEventsIntoBundles,
@@ -37,19 +38,8 @@ export default function ChaptersPage() {
   const [hoveredBundle, setHoveredBundle] = useState<StoryBundle | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
   const [selectedBundle, setSelectedBundle] = useState<StoryBundle | null>(null);
-  const [isShareOpen, setIsShareOpen] = useState(false);
-  const [shareMode, setShareMode] = useState<'link' | 'invite'>('link');
   const [isReady, setIsReady] = useState(false);
 
-  // Share panel state
-  const [witnesses, setWitnesses] = useState<string[]>([]);
-  const [newWitness, setNewWitness] = useState('');
-  const [inviteMethod, setInviteMethod] = useState<'email' | 'sms' | 'link'>('link');
-  const [inviteContact, setInviteContact] = useState('');
-  const [personalMessage, setPersonalMessage] = useState('');
-  const [inviteSent, setInviteSent] = useState(false);
-  const [inviteSending, setInviteSending] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
@@ -67,6 +57,7 @@ export default function ChaptersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'time' | 'witness' | 'storyteller' | 'thread' | 'synchronicity'>('time');
+
   const [zoomLevel, setZoomLevel] = useState(1);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -178,7 +169,7 @@ export default function ChaptersPage() {
           setBundles(eventBundles);
         } else {
           // Fallback to direct Supabase client
-          const eventsData = await getTimelineEvents({ privacyLevels: ['public', 'family', 'kids-only'] });
+          const eventsData = await getTimelineEvents({ privacyLevels: ['public', 'family'] });
 
           const mappedEvents = mapTimelineEvents(eventsData).map(e => applyScoreEventOverrides(e));
           const eventBundles = groupEventsIntoBundles(mappedEvents);
@@ -200,47 +191,22 @@ export default function ChaptersPage() {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isShareOpen) {
-          setIsShareOpen(false);
-        } else {
-          setSelectedEvent(null);
-        }
+        setSelectedEvent(null);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [isShareOpen]);
+  }, []);
 
   // Reset state when modal closes
   useEffect(() => {
     if (!selectedEvent) {
-      setIsShareOpen(false);
-      setShareMode('link');
       setIsEditMode(false);
       setSelectedBundle(null);
-      setWitnesses([]);
-      setNewWitness('');
-      setInviteMethod('link');
-      setInviteContact('');
-      setPersonalMessage('');
-      setInviteSent(false);
       setConnectedPeople([]);
       setSaveError(null);
     }
   }, [selectedEvent]);
-
-  useEffect(() => {
-    if (!selectedEvent || selectedEvent.type !== 'memory') {
-      setShareMode('link');
-    }
-  }, [selectedEvent]);
-
-  useEffect(() => {
-    if (isShareOpen) {
-      setInviteSent(false);
-      setInviteError(null);
-    }
-  }, [isShareOpen, shareMode]);
 
   // Fetch people connected to selected event (for the graph)
   useEffect(() => {
@@ -263,59 +229,6 @@ export default function ChaptersPage() {
     fetchConnections();
   }, [selectedEvent]);
 
-  const addWitness = () => {
-    if (newWitness.trim() && !witnesses.includes(newWitness.trim())) {
-      setWitnesses([...witnesses, newWitness.trim()]);
-      setNewWitness('');
-    }
-  };
-
-  const removeWitness = (name: string) => {
-    setWitnesses(witnesses.filter(w => w !== name));
-  };
-
-  const handleSendInvite = async () => {
-    if (!selectedEvent) return;
-
-    setInviteSent(false);
-    setInviteError(null);
-    setInviteSending(true);
-    try {
-      const res = await fetch('/api/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          event_id: selectedEvent.id,
-          recipient_name: witnesses[0] || 'Friend of Valerie',
-          recipient_contact: inviteContact || 'link',
-          method: inviteMethod,
-          message: personalMessage,
-          witnesses,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Invite failed');
-      setInviteSent(true);
-      setPersonalMessage('');
-      setInviteContact('');
-      setWitnesses([]);
-      setNewWitness('');
-    } catch (error) {
-      console.error(error);
-      setInviteError('Could not send invite. Please try again.');
-    } finally {
-      setInviteSending(false);
-      setTimeout(() => setInviteSent(false), 2000);
-    }
-  };
-
-  const copyShareLink = () => {
-    const link = `${window.location.origin}/memory/${selectedEvent?.id}`;
-    navigator.clipboard.writeText(link);
-    setInviteError(null);
-    setInviteSent(true);
-    setTimeout(() => setInviteSent(false), 2000);
-  };
 
   // Enter edit mode - populate form with current values
   const enterEditMode = () => {
@@ -369,9 +282,7 @@ export default function ChaptersPage() {
         ...selectedEvent,
         title: editForm.title,
         fullEntry: editForm.content,
-        preview: editForm.content.length > 160
-          ? `${editForm.content.slice(0, 160).trimEnd()}...`
-          : editForm.content,
+        preview: generatePreviewFromHtml(editForm.content, PREVIEW_MAX_LENGTH),
         whyIncluded: editForm.why_included,
         location: editForm.location,
         year: editForm.year,
@@ -460,7 +371,7 @@ export default function ChaptersPage() {
     >
       {/* Intro Section */}
       <section className={`transition-opacity duration-1000 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="max-w-4xl mx-auto px-6 pt-24 pb-8">
+        <div className="max-w-4xl mx-auto px-6 pt-16 pb-6">
           <p
             className="text-xs uppercase tracking-[0.3em] text-white/40 animate-fade-in-up"
             style={{ animationDelay: '50ms', animationFillMode: 'both' }}
@@ -498,18 +409,18 @@ export default function ChaptersPage() {
             </a>
           </div>
           <div
-            className="mt-8 flex flex-wrap gap-4 animate-fade-in-up"
+            className="mt-6 flex flex-wrap items-center gap-3 animate-fade-in-up"
             style={{ animationDelay: '360ms', animationFillMode: 'both' }}
           >
             <a
               href="/share"
-              className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-6 py-3 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
+              className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2.5 text-xs uppercase tracking-[0.15em] font-medium hover:bg-[#d06a4f] transition-colors shadow-lg shadow-[#e07a5f]/20"
             >
               Add a note
             </a>
             <div className="relative">
               <span
-                className="inline-flex items-center gap-2 rounded-full border border-white/20 text-white/70 px-6 py-3 text-xs uppercase tracking-[0.2em] cursor-pointer hover:border-white/40 hover:text-white transition-colors"
+                className="inline-flex items-center gap-2 rounded-full border border-white/20 text-white/60 px-5 py-2.5 text-xs uppercase tracking-[0.15em] cursor-pointer hover:border-white/30 hover:text-white/80 transition-colors"
                 onMouseEnter={() => setShowComingSoon(true)}
                 onMouseLeave={() => setShowComingSoon(false)}
                 onClick={() => setShowComingSoon(true)}
@@ -1344,6 +1255,12 @@ export default function ChaptersPage() {
                 </>
               ) : (
                 <>
+                  <a
+                    href={`/memory/${selectedEvent.id}`}
+                    className="w-full py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>Open note</span>
+                  </a>
                   {/* Add your perspective - only for memories and not the contributor */}
                   {selectedEvent.type === 'memory' &&
                     !(currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase()) && (
@@ -1354,247 +1271,9 @@ export default function ChaptersPage() {
                       <span>Add your perspective</span>
                     </a>
                   )}
-
-                  {/* Share button - for all event types */}
-                  <button
-                    onClick={() => {
-                      setShareMode('link');
-                      setIsShareOpen(true);
-                    }}
-                    className="w-full py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span>Share this note</span>
-                    <span>→</span>
-                  </button>
                 </>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Share / Invite Panel */}
-      {isShareOpen && selectedEvent && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-fade-in"
-          onClick={() => setIsShareOpen(false)}
-        >
-          <div
-            className="bg-[#151515] border border-white/10 rounded-2xl max-w-lg w-full shadow-2xl animate-fade-in-up max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h2 className="text-lg font-medium text-white">Share this note</h2>
-              <button
-                onClick={() => setIsShareOpen(false)}
-                className="text-white/40 hover:text-white transition-colors"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Mode toggle */}
-            {selectedEvent.type === 'memory' && (
-              <div className="px-6 py-4 border-b border-white/10">
-                <p className="text-sm text-white/60">How do you want to share this note?</p>
-                <div className="flex gap-2 mt-3">
-                  <button
-                    onClick={() => setShareMode('link')}
-                    className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                      shareMode === 'link'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-white/10 text-white/50 hover:bg-white/15'
-                    }`}
-                  >
-                    View-only link
-                  </button>
-                  <button
-                    onClick={() => setShareMode('invite')}
-                    className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                      shareMode === 'invite'
-                        ? 'bg-white/20 text-white'
-                        : 'bg-white/10 text-white/50 hover:bg-white/15'
-                    }`}
-                  >
-                    Invite to contribute
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Share link */}
-            {(selectedEvent.type !== 'memory' || shareMode === 'link') && (
-              <>
-                <div className="p-6 bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f]">
-                  <div className="bg-[#1f1f1f] rounded-xl p-4 border border-white/5">
-                    <p className="text-white/40 text-xs">{formatYearLabel(selectedEvent)}</p>
-                    <h3 className="text-white font-serif text-lg mt-1">{selectedEvent.title}</h3>
-                    {selectedEvent.preview && (
-                      <p className="text-white/60 text-sm mt-2 leading-relaxed line-clamp-3">{selectedEvent.preview}</p>
-                    )}
-                    <p className="text-xs text-white/30 mt-3 pt-3 border-t border-white/5">
-                      Added by {selectedEvent.contributor}
-                      {selectedEvent.contributorRelation && selectedEvent.contributorRelation !== 'synthesized' && (
-                        <span> ({selectedEvent.contributorRelation})</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="px-6 py-4">
-                  <button
-                    onClick={copyShareLink}
-                    className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-                      inviteSent
-                        ? 'bg-green-600 text-white'
-                        : 'bg-[#e07a5f] text-white hover:bg-[#d06a4f]'
-                    }`}
-                  >
-                    {inviteSent ? (
-                      <>
-                        <span>✓</span>
-                        <span>Link copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Copy link to share</span>
-                      </>
-                    )}
-                  </button>
-                  <p className="text-xs text-white/30 text-center mt-3">
-                    Anyone with access can view this note
-                  </p>
-                </div>
-              </>
-            )}
-
-            {/* Invite to contribute */}
-            {selectedEvent.type === 'memory' && shareMode === 'invite' && (
-              <>
-                <div className="px-6 py-4 border-b border-white/10">
-                  <p className="text-sm text-white/60">
-                    Invite someone who was there to add their perspective to:
-                  </p>
-                  <p className="text-white font-medium mt-2">{selectedEvent.title}</p>
-                  <p className="text-xs text-white/40 mt-1">{formatYearLabel(selectedEvent)}</p>
-                </div>
-
-                <div className="px-6 py-4 border-b border-white/10">
-                  <label className="text-sm text-white/60 block mb-3">
-                    Who was there?
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newWitness}
-                      onChange={(e) => setNewWitness(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && addWitness()}
-                      placeholder="Name (e.g., Aunt Susan)"
-                      className="flex-1 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent"
-                    />
-                    <button
-                      onClick={addWitness}
-                      className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition-colors"
-                    >
-                      Add
-                    </button>
-                  </div>
-                  {witnesses.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {witnesses.map((name) => (
-                        <span
-                          key={name}
-                          className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#e07a5f]/20 text-[#e07a5f] text-sm"
-                        >
-                          {name}
-                          <button
-                            onClick={() => removeWitness(name)}
-                            className="ml-1 hover:text-white transition-colors"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-6 py-4 border-b border-white/10">
-                  <label className="text-sm text-white/60 block mb-3">
-                    How do you want to reach them?
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setInviteMethod('link')}
-                      className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                        inviteMethod === 'link'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-white/10 text-white/50 hover:bg-white/15'
-                      }`}
-                    >
-                      🔗 Copy Link
-                    </button>
-                    <div className="relative flex-1 group">
-                      <button
-                        disabled
-                        className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
-                      >
-                        📧 Email
-                      </button>
-                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        Coming soon
-                      </span>
-                    </div>
-                    <div className="relative flex-1 group">
-                      <button
-                        disabled
-                        className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
-                      >
-                        💬 SMS
-                      </button>
-                      <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        Coming soon
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="px-6 py-4">
-                  <button
-                    onClick={handleSendInvite}
-                    disabled={witnesses.length === 0 || inviteSending}
-                    className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-                      inviteSent
-                        ? 'bg-green-600 text-white'
-                        : 'bg-[#e07a5f] text-white hover:bg-[#d06a4f] disabled:opacity-50 disabled:cursor-not-allowed'
-                    }`}
-                  >
-                    {inviteSent ? (
-                      <>
-                        <span>✓</span>
-                        <span>Invite created!</span>
-                      </>
-                    ) : inviteSending ? (
-                      <span>Creating invite…</span>
-                    ) : (
-                      <>
-                        <span>{inviteMethod === 'link' ? 'Create invite link' : 'Send invite'}</span>
-                        <span>→</span>
-                      </>
-                    )}
-                  </button>
-                  {inviteError && (
-                    <p className="text-xs text-red-300 text-left mt-2">{inviteError}</p>
-                  )}
-                  <p className="text-xs text-white/30 text-center mt-3">
-                    {witnesses.length > 0
-                      ? `Will create an invite for ${witnesses.length} person${witnesses.length > 1 ? 's' : ''} to add their perspective`
-                      : 'Add at least one person to invite'}
-                  </p>
-                </div>
-              </>
-            )}
           </div>
         </div>
       )}

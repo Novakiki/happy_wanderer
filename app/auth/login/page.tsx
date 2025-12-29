@@ -14,7 +14,7 @@ export default function LoginPage() {
           {SITE_TITLE}
         </p>
         <h1 className="text-2xl sm:text-3xl font-serif text-white mb-2 mt-3 text-center">
-          Welcome back
+          Welcome
         </h1>
 
         {/* Decorative flourish */}

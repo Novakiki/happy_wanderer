@@ -23,16 +23,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Insert invite
-    const { error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>).insert({
-      event_id,
-      recipient_name,
-      recipient_contact,
-      method,
-      message,
-    });
+    // Check that the event is a memory (not milestone or synchronicity)
+    const { data: event, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+      .select('type')
+      .eq('id', event_id)
+      .single();
 
-    if (inviteError) {
+    if (eventError || !event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+
+    const eventType = (event as { type: string }).type;
+    if (eventType !== 'memory') {
+      const typeLabel = eventType === 'origin' ? 'synchronicity' : eventType;
+      return NextResponse.json(
+        { error: `Invites can only be sent for memories, not ${typeLabel}s` },
+        { status: 400 }
+      );
+    }
+
+    // Insert invite
+    const { data: invite, error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+      .insert({
+        event_id,
+        recipient_name,
+        recipient_contact,
+        method,
+        message,
+      })
+      .select('id')
+      .single();
+
+    if (inviteError || !invite) {
       console.error('Invite insert error:', inviteError);
       return NextResponse.json({ error: 'Failed to send invite' }, { status: 500 });
     }
@@ -57,7 +79,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, invite_id: (invite as { id: string }).id });
   } catch (error) {
     console.error('Invite API error:', error);
     return NextResponse.json({ error: 'Failed to send invite' }, { status: 500 });

@@ -7,25 +7,26 @@ export type ReferenceVisibility =
   | 'blurred'
   | 'removed';
 
-type ReferenceRow = {
+export type ReferenceRow = {
   id: string;
-  type: 'person' | 'link';
+  type: string;
   url?: string | null;
   display_name?: string | null;
   role?: string | null;
   note?: string | null;
-  visibility?: ReferenceVisibility | null;
+  visibility?: string | null;
   relationship_to_subject?: string | null;
   person?: {
+    id?: string;
     canonical_name?: string | null;
-    visibility?: ReferenceVisibility | null;
+    visibility?: string | null;
   } | null;
   contributor?: {
     name?: string | null;
   } | null;
 };
 
-type RedactedReference = {
+export type RedactedReference = {
   id: string;
   type: 'person' | 'link';
   url?: string | null;
@@ -35,6 +36,22 @@ type RedactedReference = {
   visibility: ReferenceVisibility;
   relationship_to_subject?: string | null;
   person_display_name?: string | null;
+  // New, normalized outputs
+  identity_state: ReferenceVisibility;
+  media_presentation: 'normal' | 'blurred' | 'hidden';
+  render_label: string;
+  // Author/admin-only payload (optional; included only when requested)
+  author_payload?: {
+    author_label: string;
+    render_label: string;
+    identity_state: ReferenceVisibility;
+    media_presentation: 'normal' | 'blurred' | 'hidden';
+    canApprove: boolean;
+    canAnonymize: boolean;
+    canRemove: boolean;
+    canInvite: boolean;
+    canEditDescriptor: boolean;
+  };
 };
 
 const visibilityRank: Record<ReferenceVisibility, number> = {
@@ -80,14 +97,22 @@ function getMaskedDisplayName(
   return 'someone';
 }
 
-export function redactReferences(references: ReferenceRow[]): RedactedReference[] {
+export function redactReferences(
+  references: ReferenceRow[],
+  options?: { includeAuthorPayload?: boolean }
+): RedactedReference[] {
   if (!references) return [];
+
+  const includeAuthor = options?.includeAuthorPayload || false;
 
   return references
     .map((ref) => {
       if (ref.type === 'link') {
         const visibility = (ref.visibility ?? 'pending') as ReferenceVisibility;
         if (visibility === 'removed') return null;
+
+        // Note: 'removed' was already handled above, so media is always normal for links
+        const media_presentation: RedactedReference['media_presentation'] = 'normal';
 
         return {
           id: ref.id,
@@ -97,6 +122,22 @@ export function redactReferences(references: ReferenceRow[]): RedactedReference[
           role: ref.role ?? null,
           note: ref.note ?? null,
           visibility,
+          identity_state: visibility,
+          media_presentation,
+          render_label: ref.display_name ?? '',
+          author_payload: includeAuthor
+            ? {
+                author_label: ref.display_name ?? '',
+                render_label: ref.display_name ?? '',
+                identity_state: visibility,
+                media_presentation,
+                canApprove: false,
+                canAnonymize: false,
+                canRemove: false,
+                canInvite: false,
+                canEditDescriptor: false,
+              }
+            : undefined,
         } as RedactedReference;
       }
 
@@ -105,11 +146,20 @@ export function redactReferences(references: ReferenceRow[]): RedactedReference[
         ref.contributor?.name ||
         'Someone';
       const relationship = ref.relationship_to_subject ?? null;
-      const effectiveVisibility = resolveVisibility(ref.visibility, ref.person?.visibility);
+      const effectiveVisibility = resolveVisibility(
+        ref.visibility as ReferenceVisibility | null | undefined,
+        ref.person?.visibility as ReferenceVisibility | null | undefined
+      );
 
       if (effectiveVisibility === 'removed') {
         return null;
       }
+
+      // Note: 'removed' was already handled above, so we only check 'blurred' vs 'normal'
+      const media_presentation: RedactedReference['media_presentation'] =
+        effectiveVisibility === 'blurred' ? 'blurred' : 'normal';
+
+      const render_label = getMaskedDisplayName(nameSource, effectiveVisibility, relationship);
 
       return {
         id: ref.id,
@@ -118,7 +168,24 @@ export function redactReferences(references: ReferenceRow[]): RedactedReference[
         note: ref.note ?? null,
         visibility: effectiveVisibility,
         relationship_to_subject: relationship,
-        person_display_name: getMaskedDisplayName(nameSource, effectiveVisibility, relationship),
+        person_display_name: render_label,
+        identity_state: effectiveVisibility,
+        media_presentation,
+        render_label,
+        author_payload: includeAuthor
+          ? {
+              author_label: nameSource,
+              render_label,
+              identity_state: effectiveVisibility,
+              media_presentation,
+              // Explicitly default all capabilities to false; only the identity owner should flip these.
+              canApprove: false,
+              canAnonymize: false,
+              canRemove: false,
+              canInvite: false,
+              canEditDescriptor: false,
+            }
+          : undefined,
       } as RedactedReference;
     })
     .filter((ref): ref is RedactedReference => Boolean(ref));

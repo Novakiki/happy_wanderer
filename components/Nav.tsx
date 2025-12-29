@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { SCORE_TITLE } from '@/lib/terminology';
 import InteractButton from '@/components/InteractButton';
 import UserMenu from '@/components/UserMenu';
 
@@ -60,15 +59,27 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4 bg-gradient-to-b from-[#0a0a0a] to-transparent pointer-events-none">
+    <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4 bg-gradient-to-b from-[#0a0a0a]/90 to-transparent backdrop-blur-md pointer-events-none">
       <div className="max-w-6xl mx-auto flex items-center justify-between pointer-events-auto">
         <Link
           href="/score"
-          className={`text-sm transition-colors font-light tracking-wide ${
+          className={`transition-colors p-2 -m-2 ${
             isScore ? 'text-white/40' : 'text-white/70 hover:text-white'
           }`}
+          aria-label="Return to score"
         >
-          {SCORE_TITLE}
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 9.5L12 3l9 6.5V21a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" />
+          </svg>
         </Link>
         <div className="flex items-center gap-4 text-sm text-white/50">
           <Link

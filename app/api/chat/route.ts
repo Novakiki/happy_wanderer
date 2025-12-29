@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
   try {
     const { messages } = await request.json();
 
-    // Fetch all visible notes from the Score (kids-safe only).
+    // Fetch all visible notes from the Score (public and family).
     const { data: events, error } = await supabase
       .from('timeline_events')
       .select(`
@@ -25,10 +25,10 @@ export async function POST(request: NextRequest) {
         preview,
         title,
         created_at,
-        contributor:contributors(name, relation)
+        contributor:contributors!contributor_id(name, relation)
       `)
       .eq('status', 'published')
-      .in('privacy_level', ['public', 'kids-only'])
+      .in('privacy_level', ['public', 'family'])
       .order('year', { ascending: false });
 
     if (error) {

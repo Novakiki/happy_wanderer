@@ -172,10 +172,6 @@ describe('normalizePrivacyLevel', () => {
     expect(normalizePrivacyLevel('family')).toBe('family');
   });
 
-  it('returns kids-only for "kids-only"', () => {
-    expect(normalizePrivacyLevel('kids-only')).toBe('kids-only');
-  });
-
   it('defaults to family for invalid value', () => {
     expect(normalizePrivacyLevel('invalid')).toBe('family');
   });

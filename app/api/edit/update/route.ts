@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { normalizePrivacyLevel } from '@/lib/memories';
+import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
 import {
   normalizeLinkReferenceInput,
@@ -16,6 +17,17 @@ const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
 
 const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+
+type ExistingReference = {
+  id: string;
+  type: string;
+  person_id: string | null;
+  url: string | null;
+  display_name: string | null;
+  role: string | null;
+  relationship_to_subject: string | null;
+  visibility: string | null;
+};
 
 type LinkReferencePayload = LinkReferenceInput;
 type PersonReferencePayload = PersonReferenceInput & {
@@ -93,9 +105,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    const trimmedTitle = String(title || '').trim();
-    const trimmedContent = String(content || '').trim();
-    const trimmedWhy = String(why_included || '').trim();
+    const rawTitle = String(title || '');
+    const rawContent = String(content || '');
+    const rawWhy = String(why_included || '');
     const trimmedSourceName = String(source_name || '').trim() || 'Personal memory';
     const parsedYear = Number.parseInt(String(year), 10);
     const parsedYearEnd = Number.parseInt(String(year_end), 10);
@@ -103,7 +115,8 @@ export async function POST(request: Request) {
     const parsedAgeEnd = Number.parseInt(String(age_end), 10);
     const parsedDate = typeof date === 'string' && date.includes('-') ? date : null;
 
-    if (!trimmedTitle || !trimmedContent || !trimmedWhy || !trimmedSourceName) {
+    // Use HTML-aware validation for rich text fields
+    if (!hasContent(rawTitle) || !hasContent(rawContent) || !hasContent(rawWhy) || !trimmedSourceName) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
     }
 
@@ -203,20 +216,17 @@ export async function POST(request: Request) {
           ? 'milestone'
           : 'memory';
 
-    const preview =
-      trimmedContent.length > 160
-        ? `${trimmedContent.slice(0, 160).trimEnd()}...`
-        : trimmedContent;
+    const preview = generatePreviewFromHtml(rawContent, PREVIEW_MAX_LENGTH);
 
     const updatePayload: Database['public']['Tables']['timeline_events']['Update'] = {
       year: resolvedYear ?? parsedYear,
       year_end: resolvedYearEnd,
       date: normalizedTimingInputType === 'date' ? parsedDate : null,
       type: eventType,
-      title: trimmedTitle,
-      full_entry: trimmedContent,
+      title: rawTitle.trim(),
+      full_entry: rawContent,
       preview,
-      why_included: trimmedWhy,
+      why_included: rawWhy,
       source_name: trimmedSourceName,
       source_url: String(source_url || '').trim() || null,
       timing_certainty: normalizedTimingCertainty,
@@ -239,7 +249,8 @@ export async function POST(request: Request) {
     }
 
     if (hasLinkPayload || hasPersonPayload) {
-      const { data: existingRefs, error: existingError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      const { data: existingRefs, error: existingError } = await admin
+        .from('event_references')
         .select('id, type, person_id, url, display_name, role, relationship_to_subject, visibility')
         .eq('event_id', event_id);
 
@@ -247,10 +258,10 @@ export async function POST(request: Request) {
         throw existingError;
       }
 
-      const existingRefsSafe = existingRefs || [];
-      const existingById = new Map(existingRefsSafe.map((ref) => [ref.id, ref]));
-      const existingLinks = existingRefsSafe.filter((ref) => ref.type === 'link' && ref.visibility !== 'removed');
-      const existingPeople = existingRefsSafe.filter((ref) => ref.type === 'person' && ref.visibility !== 'removed');
+      const existingRefsSafe: ExistingReference[] = (existingRefs || []) as ExistingReference[];
+      const existingById = new Map(existingRefsSafe.map((ref: ExistingReference) => [ref.id, ref]));
+      const existingLinks = existingRefsSafe.filter((ref: ExistingReference) => ref.type === 'link' && ref.visibility !== 'removed');
+      const existingPeople = existingRefsSafe.filter((ref: ExistingReference) => ref.type === 'person' && ref.visibility !== 'removed');
 
       const linkKeepIds = new Set<string>();
       const personKeepIds = new Set<string>();
@@ -258,7 +269,7 @@ export async function POST(request: Request) {
       const personRows: Database['public']['Tables']['event_references']['Insert'][] = [];
 
       // Create person lookup helpers scoped to this contributor
-      const { canUsePersonId, resolvePersonIdByName } = createPersonLookupHelpers(admin, tokenRow.contributor_id);
+      const { canUsePersonId, resolvePersonIdByName } = createPersonLookupHelpers(admin, tokenRow.contributor_id!);
 
       let cachedSubmitterName: string | null = null;
       const getSubmitterName = async () => {
@@ -268,7 +279,7 @@ export async function POST(request: Request) {
         const { data: contributorRow } = await admin
           .from('contributors')
           .select('name')
-          .eq('id', tokenRow.contributor_id)
+          .eq('id', tokenRow.contributor_id!)
           .single();
         cachedSubmitterName = contributorRow?.name || 'Someone';
         return cachedSubmitterName;
@@ -411,8 +422,8 @@ export async function POST(request: Request) {
 
       if (hasLinkPayload) {
         const linkIdsToDelete = existingLinks
-          .filter((ref) => !linkKeepIds.has(ref.id))
-          .map((ref) => ref.id);
+          .filter((ref: ExistingReference) => !linkKeepIds.has(ref.id))
+          .map((ref: ExistingReference) => ref.id);
         if (linkIdsToDelete.length > 0) {
           const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
             .delete()
@@ -425,8 +436,8 @@ export async function POST(request: Request) {
 
       if (hasPersonPayload) {
         const personIdsToDelete = existingPeople
-          .filter((ref) => !personKeepIds.has(ref.id))
-          .map((ref) => ref.id);
+          .filter((ref: ExistingReference) => !personKeepIds.has(ref.id))
+          .map((ref: ExistingReference) => ref.id);
         if (personIdsToDelete.length > 0) {
           const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
             .delete()

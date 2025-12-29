@@ -4,6 +4,7 @@ import type { Database } from '@/lib/database.types';
 import EditNotesClient from '@/components/EditNotesClient';
 import EditSessionSetter from '@/components/EditSessionSetter';
 import Nav from '@/components/Nav';
+import { redactReferences } from '@/lib/references';
 import { subtleBackground, formStyles } from '@/lib/styles';
 
 export const dynamic = 'force-dynamic';
@@ -101,6 +102,7 @@ export default async function EditTokenPage({
       `
         id,
         year,
+        date,
         year_end,
         age_start,
         age_end,
@@ -134,6 +136,13 @@ export default async function EditTokenPage({
     .eq('contributor_id', tokenRow.contributor_id)
     .order('year', { ascending: true });
 
+  const redactedEvents = (events || []).map((evt) => ({
+    ...evt,
+    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+      includeAuthorPayload: true,
+    }),
+  }));
+
   return (
     <div className={formStyles.pageContainer} style={subtleBackground}>
       <Nav />
@@ -153,7 +162,7 @@ export default async function EditTokenPage({
           <EditNotesClient
             token={token}
             contributorName={contributor?.name || 'Contributor'}
-            events={events || []}
+            events={redactedEvents}
           />
         </div>
       </section>

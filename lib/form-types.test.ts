@@ -57,10 +57,9 @@ describe('deriveProvenanceFromSource', () => {
     });
   });
 
-  it('maps mixed sources to the mixed type', () => {
+  it('maps legacy mixed sources to secondhand', () => {
     expect(deriveProvenanceFromSource('Mixed / not sure', null)).toEqual({
-      type: 'mixed',
-      note: 'Mixed / not sure',
+      type: 'secondhand',
     });
   });
 
@@ -74,13 +73,9 @@ describe('deriveProvenanceFromSource', () => {
 });
 
 describe('provenanceToSource', () => {
-  it('formats firsthand and mixed sources', () => {
+  it('formats firsthand sources', () => {
     expect(provenanceToSource({ type: 'firsthand' })).toEqual({
       source_name: 'Personal memory',
-      source_url: '',
-    });
-    expect(provenanceToSource({ type: 'mixed', note: 'Not sure' })).toEqual({
-      source_name: 'Not sure',
       source_url: '',
     });
   });

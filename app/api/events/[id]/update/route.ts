@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
-import { hasContent, stripHtml } from '@/lib/html-utils';
+import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -83,10 +83,7 @@ export async function PATCH(
     if (typeof content === 'string' && hasContent(content)) {
       updatePayload.full_entry = content;
       // Update preview (strip HTML for clean display)
-      const previewText = stripHtml(content);
-      updatePayload.preview = previewText.length > 160
-        ? `${previewText.slice(0, 160).trimEnd()}...`
-        : previewText;
+      updatePayload.preview = generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
     }
 
     if (typeof why_included === 'string') {

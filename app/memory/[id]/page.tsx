@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import type { Database, EventReferenceWithContributor } from "@/lib/database.types";
+import type { Database } from "@/lib/database.types";
 import { getEventById } from "@/lib/supabase";
 import Nav from "@/components/Nav";
 import { ReferencesList } from "@/components/ReferencesList";
+import ShareInvitePanel from "@/components/ShareInvitePanel";
 import { immersiveBackground } from "@/lib/styles";
-import { LIFE_STAGES } from "@/lib/terminology";
-import { redactReferences } from "@/lib/references";
+import { LIFE_STAGES, THREAD_RELATIONSHIP_LABELS } from "@/lib/terminology";
+import { redactReferences, type ReferenceRow, type RedactedReference } from "@/lib/references";
 
 type TimelineEvent = Database["public"]["Tables"]["timeline_events"]["Row"] & {
   contributor: { name: string; relation: string | null } | null;
   media?: { media: Database["public"]["Tables"]["media"]["Row"] }[];
-  references?: EventReferenceWithContributor[] | ReturnType<typeof redactReferences>;
+  references?: RedactedReference[];
 };
 
 type LinkedStory = {
@@ -23,6 +24,7 @@ type LinkedStory = {
   timing_certainty: 'exact' | 'approximate' | 'vague' | null;
   contributor: { name: string; relation: string | null } | null;
   relationship: string;
+  threadNote?: string | null;
   isOriginal: boolean; // true if this event is the original, false if it's a response
 };
 
@@ -59,10 +61,10 @@ export default async function MemoryPage({
       console.error("Error fetching event:", error);
     } else {
       // Redact private names before rendering
-      const eventData = data as TimelineEvent;
+      const rawRefs = (data.references || []) as unknown as ReferenceRow[];
       event = {
-        ...eventData,
-        references: redactReferences(eventData.references || []),
+        ...data,
+        references: redactReferences(rawRefs),
       } as TimelineEvent;
     }
 
@@ -73,6 +75,7 @@ export default async function MemoryPage({
         .from("memory_threads")
         .select(`
           relationship,
+          note,
           response_event:timeline_events!response_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
         `)
         .eq("original_event_id", params.id);
@@ -82,6 +85,7 @@ export default async function MemoryPage({
         .from("memory_threads")
         .select(`
           relationship,
+          note,
           original_event:timeline_events!original_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
         `)
         .eq("response_event_id", params.id);
@@ -89,6 +93,7 @@ export default async function MemoryPage({
       if (responsesToThis) {
         for (const thread of responsesToThis as Array<{
           relationship: string | null;
+          note: string | null;
           response_event: {
             id: string;
             title: string;
@@ -108,6 +113,7 @@ export default async function MemoryPage({
               timing_certainty: responseEvent.timing_certainty ?? null,
               contributor: responseEvent.contributor,
               relationship: thread.relationship || "perspective",
+              threadNote: thread.note,
               isOriginal: false, // this event is the original, linked one is response
             });
           }
@@ -117,6 +123,7 @@ export default async function MemoryPage({
       if (originalsForThis) {
         for (const thread of originalsForThis as Array<{
           relationship: string | null;
+          note: string | null;
           original_event: {
             id: string;
             title: string;
@@ -136,6 +143,7 @@ export default async function MemoryPage({
               timing_certainty: originalEvent.timing_certainty ?? null,
               contributor: originalEvent.contributor,
               relationship: thread.relationship || "perspective",
+              threadNote: thread.note,
               isOriginal: true, // linked one is the original, this is response
             });
           }
@@ -180,14 +188,18 @@ export default async function MemoryPage({
   // Find "heard from" reference for invite button
   const heardFromRef = event.references?.find((r) => r.role === "heard_from");
   const heardFromName =
+    heardFromRef?.render_label ||
     heardFromRef?.person_display_name ||
-    heardFromRef?.contributor?.name ||
     null;
   const hasLinkedResponse = linkedStories.some((s) => !s.isOriginal);
 
   const mediaItems = event.media
     ?.map((item) => item.media)
     .filter((item): item is Database["public"]["Tables"]["media"]["Row"] => Boolean(item));
+
+  const respondLink =
+    event.type === "memory" ? `/share?responding_to=${event.id}` : "/share";
+  const respondLabel = event.type === "memory" ? "Add your perspective" : "Add a note";
 
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={immersiveBackground}>
@@ -217,8 +229,8 @@ export default async function MemoryPage({
             && event.age_end !== null && (
             <span>Ages {event.age_start}–{event.age_end}</span>
           )}
-          {event.life_stage && (
-            <span>Life stage: {LIFE_STAGES[event.life_stage]}</span>
+          {event.life_stage && event.life_stage in LIFE_STAGES && (
+            <span>Life stage: {LIFE_STAGES[event.life_stage as keyof typeof LIFE_STAGES]}</span>
           )}
         </div>
 
@@ -314,39 +326,67 @@ export default async function MemoryPage({
           )}
         </div>
 
-        {/* Story chain - linked accounts */}
+        {/* Linked notes */}
         {linkedStories.length > 0 && (
           <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-white/40 mb-4">
-              The chain continues
+              Other Notes in this Measure
             </p>
             <div className="space-y-3">
-              {linkedStories.map((story) => (
-                <Link
-                  key={story.id}
-                  href={`/memory/${story.id}`}
-                  className="block p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm text-white">{story.title}</p>
-                      <p className="text-xs text-white/40 mt-1">
-                        {story.isOriginal ? "The story as it was told" : "Told by"}{" "}
-                        <span className="text-white/60">
-                          {story.contributor?.name || "Someone"}
-                        </span>
-                        {story.contributor?.relation && (
-                          <span> ({story.contributor.relation})</span>
+              {linkedStories.map((story) => {
+                const relationshipKey = story.relationship as keyof typeof THREAD_RELATIONSHIP_LABELS;
+                const relationshipLabel =
+                  THREAD_RELATIONSHIP_LABELS[relationshipKey] || "Perspective";
+
+                return (
+                  <Link
+                    key={story.id}
+                    href={`/memory/${story.id}`}
+                    className="block p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm text-white">{story.title}</p>
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-[#e07a5f]">
+                            {relationshipLabel}
+                          </span>
+                        </div>
+                        {story.threadNote && (
+                          <p className="text-xs text-white/50 mt-1 italic">
+                            {story.threadNote}
+                          </p>
                         )}
-                      </p>
+                        <p className="text-xs text-white/40 mt-1">
+                          {story.isOriginal ? "Original note" : "Told by"}{" "}
+                          <span className="text-white/60">
+                            {story.contributor?.name || "Someone"}
+                          </span>
+                          {story.contributor?.relation && (
+                            <span> ({story.contributor.relation})</span>
+                          )}
+                        </p>
+                      </div>
+                      <span className="text-xs text-white/30">{formatLinkedYear(story)}</span>
                     </div>
-                    <span className="text-xs text-white/30">{formatLinkedYear(story)}</span>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}
+
+        <ShareInvitePanel
+          eventId={event.id}
+          title={event.title}
+          content={event.full_entry || event.preview || ""}
+          contributorName={event.contributor?.name || null}
+          contributorRelation={event.contributor?.relation || null}
+          year={event.year}
+          yearEnd={event.year_end ?? null}
+          timingCertainty={(event.timing_certainty ?? null) as "exact" | "approximate" | "vague" | null}
+          eventType={(event.type ?? null) as "memory" | "milestone" | "origin" | null}
+        />
 
         <div className="mt-10 flex flex-wrap gap-3">
           <Link
@@ -356,10 +396,10 @@ export default async function MemoryPage({
             Back to the score
           </Link>
           <Link
-            href="/share"
+            href={respondLink}
             className="inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2 text-xs uppercase tracking-[0.2em] text-white/70 hover:text-white hover:border-white/30 transition-colors"
           >
-            Add a note
+            {respondLabel}
           </Link>
         </div>
       </div>

@@ -98,7 +98,7 @@ describe('buildInviteData', () => {
       recipient_name: 'Julie',
       recipient_contact: '8015551234',
       method: 'sms',
-      message: 'Sarah shared a memory that mentions you. Add your perspective!',
+      message: 'Sarah shared a memory of Val that includes you. Want to add to it or share your version?',
     });
   });
 
@@ -110,7 +110,7 @@ describe('buildInviteData', () => {
       recipient_name: 'Julie',
       recipient_contact: 'julie@example.com',
       method: 'email',
-      message: 'Sarah shared a memory that mentions you. Add your perspective!',
+      message: 'Sarah shared a memory of Val that includes you. Want to add to it or share your version?',
     });
   });
 
@@ -142,6 +142,11 @@ describe('buildSmsLink', () => {
     expect(result).toContain('sms:8015551234');
     expect(result).toContain('body=');
     expect(result).toContain(encodeURIComponent('Hey Julie!'));
+    expect(result).toContain(
+      encodeURIComponent(
+        'A memory of Val includes you. Want to add to it or share your version?'
+      )
+    );
     expect(result).toContain(encodeURIComponent('https://example.com/respond/invite-123'));
   });
 

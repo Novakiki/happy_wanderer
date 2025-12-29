@@ -7,14 +7,13 @@
 // Provenance - How the contributor knows this story
 // =============================================================================
 
-export type ProvenanceType = 'firsthand' | 'secondhand' | 'from_references' | 'mixed';
+export type ProvenanceType = 'firsthand' | 'secondhand' | 'from_references' | 'pattern_observed';
 
 export type ProvenanceData = {
   type: ProvenanceType;
   toldByName?: string;        // For 'secondhand' - who told you
   referenceName?: string;     // For 'from_references' - what record/document
   referenceUrl?: string;      // For 'from_references' - link to record
-  note?: string;              // For 'mixed' - explanation
 };
 
 // =============================================================================
@@ -43,6 +42,12 @@ export type TimingData = {
 
 export type PersonRole = 'was_there' | 'told_me' | 'might_remember';
 
+// Identity disclosure ladder
+export type IdentityState = 'approved' | 'pending' | 'anonymized' | 'removed';
+
+// Visual/media treatment (applies to images/avatars, not text)
+export type MediaPresentation = 'normal' | 'blurred' | 'hidden';
+
 export type PersonReference = {
   id?: string;                // Database ID if existing
   personId?: string | null;   // Linked person record ID
@@ -50,6 +55,9 @@ export type PersonReference = {
   relationship?: string | null;
   role: PersonRole;
   phone?: string;             // For invitations
+  // Visibility
+  identityState?: IdentityState;          // optional on form payloads
+  mediaPresentation?: MediaPresentation;  // optional on form payloads
 };
 
 // =============================================================================
@@ -72,7 +80,7 @@ export type EntryType = 'memory' | 'milestone' | 'origin';
 // Privacy
 // =============================================================================
 
-export type PrivacyLevel = 'public' | 'family' | 'kids-only';
+export type PrivacyLevel = 'public' | 'family';
 
 // =============================================================================
 // Complete Note Form Data
@@ -168,9 +176,9 @@ export function mapToLegacyPersonRole(role: PersonRole): 'witness' | 'heard_from
  */
 export function mapLegacyProvenance(type?: string | null): ProvenanceType {
   if (type === 'firsthand') return 'firsthand';
-  if (type === 'told' || type === 'secondhand') return 'secondhand';
+  if (type === 'told' || type === 'secondhand' || type === 'mixed') return 'secondhand';
   if (type === 'record' || type === 'from_references') return 'from_references';
-  if (type === 'mixed') return 'mixed';
+  if (type === 'pattern_observed') return 'pattern_observed';
   return 'firsthand'; // default
 }
 
@@ -192,7 +200,8 @@ export function deriveProvenanceFromSource(
     return { type: 'secondhand', toldByName: byMatch?.[1]?.trim() || '' };
   }
   if (name === 'mixed / not sure' || name.startsWith('mixed')) {
-    return { type: 'mixed', note: sourceName || '' };
+    // Legacy: map mixed to secondhand
+    return { type: 'secondhand' };
   }
   // Assume it's a record/reference
   return {
@@ -225,9 +234,24 @@ export function provenanceToSource(prov: ProvenanceData): {
         source_name: prov.referenceName || 'Record/document',
         source_url: prov.referenceUrl || '',
       };
-    case 'mixed':
-      return { source_name: prov.note || 'Mixed / not sure', source_url: '' };
+    case 'pattern_observed':
+      return { source_name: 'Pattern observed', source_url: '' };
     default:
       return { source_name: 'Personal memory', source_url: '' };
+  }
+}
+
+/**
+ * Returns the default provenance type for a given entry type
+ */
+export function getDefaultProvenanceForEntryType(entryType: EntryType): ProvenanceData {
+  switch (entryType) {
+    case 'origin':
+      return { type: 'pattern_observed' };
+    case 'milestone':
+      return { type: 'from_references' };
+    case 'memory':
+    default:
+      return { type: 'firsthand' };
   }
 }

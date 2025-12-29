@@ -7,7 +7,7 @@ export async function GET() {
       .from('timeline_events')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'published')
-      .in('privacy_level', ['public', 'kids-only']);
+      .in('privacy_level', ['public', 'family']);
 
     if (error) {
       console.error('Supabase count error:', error);

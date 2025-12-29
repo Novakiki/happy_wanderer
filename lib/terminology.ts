@@ -4,8 +4,8 @@ export const SITE_DESCRIPTION =
 export const GATE_DESCRIPTION =
   "A private room for family and friends, by invitation only.";
 
-export const SCORE_TITLE = "Happy Wanderer";
-export const SCORE_TITLE_FULL = SITE_TITLE;
+export const SCORE_TITLE = "The Score";
+export const SCORE_TITLE_FULL = SCORE_TITLE;
 
 export const NOTE_LABEL = "note";
 export const NOTE_LABEL_PLURAL = "notes";
@@ -52,21 +52,21 @@ export const MEMORY_PROVENANCE = {
   firsthand: "I was there",
   secondhand: "Someone told me",
   from_references: "From a record",
-  mixed: "Mixed / not sure",
+  pattern_observed: "A pattern I noticed",
 } as const;
 
 export const MEMORY_PROVENANCE_DESCRIPTIONS = {
   firsthand: "You witnessed this memory yourself",
   secondhand: "Someone else shared this story with you",
   from_references: "Photo, letter, journal, email, article, etc.",
-  mixed: "Part memory, part story you've heard",
+  pattern_observed: "A meaningful coincidence or connection you noticed",
 } as const;
 
 export const MEMORY_PROVENANCE_SHORT = {
   firsthand: "I was there",
   secondhand: "I was told",
   from_references: "I have a record",
-  mixed: "Mixed",
+  pattern_observed: "Pattern noticed",
 } as const;
 
 // =============================================================================
@@ -95,10 +95,17 @@ export const REFERENCE_ROLE_LABELS = {
 
 // Memory thread relationships
 export const THREAD_RELATIONSHIP_LABELS = {
-  perspective: "The chain continues",
-  addition: "Added to the story",
-  correction: "Revised",
+  perspective: "Perspective",
+  addition: "Addition",
+  correction: "Correction",
   related: "Related",
+} as const;
+
+export const THREAD_RELATIONSHIP_DESCRIPTIONS = {
+  perspective: "A parallel telling of the same moment.",
+  addition: "Adds detail without changing the core of the note.",
+  correction: "A gentle correction or different timing.",
+  related: "Connected, but not the same moment.",
 } as const;
 
 // =============================================================================

@@ -5,8 +5,7 @@ This repo builds **Happy Wanderer** — a private memory site for Valerie Park A
 The name comes from a 1953 song whose chorus ("Valeri, valera") literally sings her name.
 Her father, a gifted pianist who played by ear, sang this song to her.
 
-It serves two experiences: kids who want to know their mom, and contributors who want
-to share memories. The tone must be warm, calm, and factual.
+It serves contributors and family who want to share memories. The tone must be warm, calm, and factual.
 
 ## Musical Terminology (IMPORTANT)
 The site uses a consistent musical score metaphor. **Always use these terms:**
@@ -37,7 +36,6 @@ Happy Wanderer (site name / the song)
 - **Valeri, valera**: The chorus of Happy Wanderer — literally her name in song
 
 ## Audience and tone
-- Kids portal: gentle, reassuring, honest
 - Contributor portal: invitational, reflective, specific
 - Admin portal: practical and clear
 - Never sensationalize or invent
@@ -54,7 +52,7 @@ Happy Wanderer (site name / the song)
 - `/share` — contributor portal
 - `/edit` — request magic link to edit submissions
 - Edit session cookie: `vals-memory-edit`
-- `/chat` — LLM chat (kids-facing assistant)
+- `/chat` — LLM chat
 - `/memory/:id` — single note view
 - Routes source of truth: `docs/routes.md`
 
@@ -134,7 +132,7 @@ Most family stories are **retold, not witnessed**. The `heard_from` field makes 
 ## Data and privacy rules
 - Chat responses must only use approved memories and obituary facts
 - Never fabricate details or speak as Val
-- Privacy levels in database: `public`, `family`, `kids-only`
+- Privacy levels in database: `public`, `family`
 - Status levels: `published`, `pending`, `private`
 - Every note needs: source attribution (URL, contributor name/relation), and "why this note"
 

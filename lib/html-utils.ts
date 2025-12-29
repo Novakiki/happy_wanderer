@@ -3,6 +3,8 @@
  * Server-safe module - can be imported by both client and server code.
  */
 
+export const PREVIEW_MAX_LENGTH = 160;
+
 /**
  * Strip HTML tags from a string.
  * Also decodes common HTML entities and normalizes whitespace.
@@ -39,7 +41,10 @@ export function hasContent(html: string): boolean {
  * Generate a preview from HTML content.
  * Strips HTML, normalizes whitespace, and truncates to specified length.
  */
-export function generatePreviewFromHtml(html: string, maxLength: number = 200): string {
+export function generatePreviewFromHtml(
+  html: string,
+  maxLength: number = PREVIEW_MAX_LENGTH
+): string {
   const text = stripHtml(html);
   if (text.length <= maxLength) {
     return text;

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { computeChainInfo, generatePreview, normalizePrivacyLevel } from '@/lib/memories';
+import { hasContent } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
 import {
   normalizeLinkReferenceInput,
@@ -97,9 +98,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
     }
 
-    const trimmedTitle = String(title || '').trim();
-    const trimmedContent = String(content || '').trim();
-    const trimmedWhy = String(why_included || '').trim();
+    const rawTitle = String(title || '');
+    const rawContent = String(content || '');
+    const rawWhy = String(why_included || '');
     const trimmedSourceName = String(source_name || '').trim() || 'Personal memory';
     const trimmedSourceUrl = String(source_url || '').trim() || null;
     const parsedYear = Number.parseInt(String(year), 10);
@@ -108,7 +109,8 @@ export async function POST(request: Request) {
     const parsedAgeEnd = Number.parseInt(String(age_end), 10);
     const parsedDate = typeof date === 'string' && date.includes('-') ? date : null;
 
-    if (!trimmedTitle || !trimmedContent || !trimmedWhy || !trimmedSourceName) {
+    // Use HTML-aware validation for rich text fields
+    if (!hasContent(rawTitle) || !hasContent(rawContent) || !hasContent(rawWhy) || !trimmedSourceName) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
     }
 
@@ -182,7 +184,7 @@ export async function POST(request: Request) {
           ? 'milestone'
           : 'memory';
 
-    const preview = generatePreview(trimmedContent);
+    const preview = generatePreview(rawContent);
     const chainInfo = computeChainInfo({
       id: parentEvent.id,
       root_event_id: parentEvent.root_event_id,
@@ -195,10 +197,10 @@ export async function POST(request: Request) {
         year_end: resolvedYearEnd,
         date: normalizedTimingInputType === 'date' ? parsedDate : null,
         type: eventType,
-        title: trimmedTitle,
-        full_entry: trimmedContent,
+        title: rawTitle.trim(),
+        full_entry: rawContent,
         preview,
-        why_included: trimmedWhy,
+        why_included: rawWhy,
         source_name: trimmedSourceName,
         source_url: trimmedSourceUrl,
         timing_certainty: normalizedTimingCertainty,
@@ -275,7 +277,7 @@ export async function POST(request: Request) {
 
     if (hasLinkPayload || hasPersonPayload) {
       // Create person lookup helpers scoped to this contributor
-      const { canUsePersonId, resolvePersonIdByName } = createPersonLookupHelpers(admin, tokenRow.contributor_id);
+      const { canUsePersonId, resolvePersonIdByName } = createPersonLookupHelpers(admin, tokenRow.contributor_id!);
 
       let cachedSubmitterName: string | null = null;
       const getSubmitterName = async () => {
@@ -285,7 +287,7 @@ export async function POST(request: Request) {
         const { data: contributorRow } = await admin
           .from('contributors')
           .select('name')
-          .eq('id', tokenRow.contributor_id)
+          .eq('id', tokenRow.contributor_id!)
           .single();
         cachedSubmitterName = contributorRow?.name || 'Someone';
         return cachedSubmitterName;

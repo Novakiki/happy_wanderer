@@ -82,7 +82,7 @@ CREATE TABLE timeline_events (
   -- Admin & Privacy
   created_at TIMESTAMPTZ DEFAULT NOW(),
   status TEXT DEFAULT 'pending' CHECK (status IN ('published', 'pending', 'private')),
-  privacy_level TEXT DEFAULT 'family' CHECK (privacy_level IN ('public', 'family', 'kids-only')),
+  privacy_level TEXT DEFAULT 'family' CHECK (privacy_level IN ('public', 'family')),
 
   -- Story chain: links to the event this is responding to
   prompted_by_event_id UUID REFERENCES timeline_events(id),
@@ -194,6 +194,7 @@ CREATE TABLE memory_threads (
   original_event_id UUID REFERENCES timeline_events(id) ON DELETE CASCADE,
   response_event_id UUID REFERENCES timeline_events(id) ON DELETE CASCADE,
   relationship TEXT CHECK (relationship IN ('perspective', 'addition', 'correction', 'related')),
+  note TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -241,6 +242,23 @@ CREATE TABLE event_references (
   CONSTRAINT valid_person_ref CHECK (type != 'person' OR (person_id IS NOT NULL OR contributor_id IS NOT NULL)),
   CONSTRAINT valid_link_ref CHECK (type != 'link' OR (url IS NOT NULL AND display_name IS NOT NULL))
 );
+
+-- =============================================================================
+-- VIEWS (CONVENIENCE ALIASES)
+-- =============================================================================
+
+CREATE OR REPLACE VIEW notes AS
+  SELECT * FROM timeline_events;
+
+CREATE OR REPLACE VIEW note_references AS
+  SELECT * FROM event_references;
+
+CREATE OR REPLACE VIEW note_threads AS
+  SELECT * FROM memory_threads;
+
+COMMENT ON VIEW notes IS 'Alias for timeline_events (Note records).';
+COMMENT ON VIEW note_references IS 'Alias for event_references (provenance/chain).';
+COMMENT ON VIEW note_threads IS 'Alias for memory_threads (parallel notes).';
 
 -- =============================================================================
 -- INDEXES
@@ -327,7 +345,10 @@ GRANT SELECT ON TABLE
   media,
   event_media,
   event_references,
-  constellation_members
+  constellation_members,
+  notes,
+  note_references,
+  note_threads
 TO anon, authenticated;
 
 GRANT ALL ON TABLE
@@ -344,5 +365,8 @@ GRANT ALL ON TABLE
   notifications,
   constellation_members,
   memory_threads,
-  event_references
+  event_references,
+  notes,
+  note_references,
+  note_threads
 TO service_role;

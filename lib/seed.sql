@@ -112,34 +112,7 @@ INSERT INTO timeline_events (id, year, date, type, title, preview, full_entry, w
     'published',
     'family'
   ),
-  (
-    '30000000-0000-0000-0000-000000000001',
-    1986,
-    'Summer',
-    'memory',
-    'Tom Cruise at Classic Skating (almost)',
-    'We lined up to meet “Tom Cruise” at Classic Skating and kept our cups.',
-    'The summer Top Gun came out, Val’s crush on Tom Cruise took over everything. When we heard he would be at Classic Skating in Orem serving drinks, we bought tickets early, counted the days, and met him—completely losing our minds. He was shorter than expected, but the face (or the GQ sunglasses) delivered. We kept our cups, debated whose fingers brushed his longest, and believed for years that we had met Tom Cruise. It took longer to realize he almost certainly wasn’t working a concession stand at a roller rink, no matter what the sign said.',
-    'A family legend that shows how shared excitement and mischief lived in the small moments.',
-    NULL,
-    NULL,
-    '00000000-0000-0000-0000-000000000001',
-    'Orem, Utah',
-    'published',
-    'family'
-  )
 ON CONFLICT (id) DO NOTHING;
-
--- Add timing and people context for the Classic Skating memory
-UPDATE timeline_events
-SET
-  timing_input_type = 'age_range',
-  age_start = 10,
-  age_end = 12,
-  life_stage = 'childhood',
-  timing_note = 'Loose guess on age; year tied to Top Gun release.',
-  people_involved = ARRAY['Amy', 'Julie']
-WHERE id = '30000000-0000-0000-0000-000000000001';
 
 -- Insert references for events with source URLs
 INSERT INTO event_references (event_id, type, url, display_name, role, added_by) VALUES

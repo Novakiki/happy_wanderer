@@ -143,7 +143,11 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-6"
+      suppressHydrationWarning
+    >
       <div>
         <label htmlFor="email" className={formStyles.label}>
           Email
@@ -155,6 +159,8 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
           className={formStyles.input}
+          autoComplete="email"
+          suppressHydrationWarning
           required
           autoFocus
         />
@@ -182,6 +188,8 @@ export default function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Your password"
             className={formStyles.input}
+            autoComplete="current-password"
+            suppressHydrationWarning
             required
           />
         </div>

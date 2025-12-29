@@ -25,9 +25,7 @@ import { ReferencesSection } from './forms';
 import { TimingModeSelector } from './forms/TimingModeSelector';
 import type { TimingMode } from './forms/TimingModeSelector';
 import { validateYearRange } from '@/lib/form-validation';
-
-const stripHtml = (html?: string | null): string =>
-  html ? html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() : '';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH, stripHtml } from '@/lib/html-utils';
 
 type EditableEvent = {
   id: string;
@@ -50,7 +48,7 @@ type EditableEvent = {
   why_included: string | null;
   source_name: string | null;
   source_url: string | null;
-  privacy_level: 'public' | 'family' | 'kids-only';
+  privacy_level: 'public' | 'family';
   references: {
     id?: string;
     display_name: string;
@@ -66,16 +64,39 @@ type EditableEvent = {
   }[];
 };
 
-type IncomingEvent = Omit<EditableEvent, 'references'> & {
-  provenance?: 'firsthand' | 'secondhand' | 'from_references';
+// IncomingEvent uses looser types for values coming from the database
+// The component will normalize these to the stricter EditableEvent types internally
+type IncomingEvent = {
+  id: string;
+  year: number;
+  date?: string | null;
+  year_end?: number | null;
+  age_start?: number | null;
+  age_end?: number | null;
+  life_stage?: string | null;
+  timing_certainty?: string | null;
+  timing_input_type?: string | null;
+  timing_note?: string | null;
+  location?: string | null;
+  people_involved?: string[] | null;
+  provenance?: string | null;
+  type?: string;
+  title?: string;
+  preview?: string | null;
+  full_entry?: string | null;
+  why_included?: string | null;
+  source_name?: string | null;
+  source_url?: string | null;
+  privacy_level?: string | null;
+  person_refs?: EditableEvent['person_refs'];
   references?: {
     id: string;
-    type: 'person' | 'link';
+    type: string;
     url?: string | null;
     display_name?: string | null;
     role?: string | null;
     relationship_to_subject?: string | null;
-    visibility?: ReferenceVisibility | null;
+    visibility?: ReferenceVisibility | string | null;
     note?: string | null;
     person_id?: string | null;
     person?: { id?: string | null; canonical_name?: string | null } | null;
@@ -114,19 +135,25 @@ export default function EditNotesClient({ token, contributorName, events: initia
         })) ?? [];
       acc[event.id] = {
         ...event,
+        type: (event.type || 'memory') as EditableEvent['type'],
+        title: event.title || '',
+        full_entry: event.full_entry ?? null,
+        why_included: event.why_included ?? null,
+        source_name: event.source_name ?? null,
+        source_url: event.source_url ?? null,
         preview: event.preview ?? '',
         year_end: event.year_end ?? null,
         age_start: event.age_start ?? null,
         age_end: event.age_end ?? null,
-        life_stage: event.life_stage ?? null,
-        timing_certainty: event.timing_certainty ?? 'approximate',
-        timing_input_type: event.timing_input_type ?? 'year',
+        life_stage: (event.life_stage ?? null) as EditableEvent['life_stage'],
+        timing_certainty: (event.timing_certainty ?? 'approximate') as EditableEvent['timing_certainty'],
+        timing_input_type: (event.timing_input_type ?? 'year') as EditableEvent['timing_input_type'],
         date: event.date ?? null,
         timing_note: event.timing_note ?? '',
         location: event.location ?? '',
         people_involved: event.people_involved ?? [],
         provenance: deriveProvenanceFromSource(event.source_name, event.source_url),
-        privacy_level: event.privacy_level || 'family',
+        privacy_level: (event.privacy_level || 'family') as EditableEvent['privacy_level'],
         references: linkRefs,
         person_refs: personRefs,
       };
@@ -227,12 +254,14 @@ export default function EditNotesClient({ token, contributorName, events: initia
         nextValue = Array.isArray(value) ? value : [];
       }
       if (field === 'year') {
-        const parsed = Number.parseInt(value, 10);
+        const strValue = typeof value === 'string' ? value : '';
+        const parsed = Number.parseInt(strValue, 10);
         nextValue = Number.isNaN(parsed) ? current.year : parsed;
       }
       if (field === 'year_end' || field === 'age_start' || field === 'age_end') {
-        const parsed = Number.parseInt(value, 10);
-        nextValue = value.trim() === '' || Number.isNaN(parsed) ? null : parsed;
+        const strValue = typeof value === 'string' ? value : '';
+        const parsed = Number.parseInt(strValue, 10);
+        nextValue = strValue.trim() === '' || Number.isNaN(parsed) ? null : parsed;
       }
 
       setIsDirty(true);
@@ -746,7 +775,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   <p className="text-xs text-white/40">{formatYearLabel(summaryEvent)}</p>
                   <h3 className="text-lg font-serif text-white">{event.title}</h3>
                   <p className="text-white/50 text-sm mt-2 line-clamp-2">
-                    {stripHtml(event.full_entry) || 'No text added yet.'}
+                    {stripHtml(event.full_entry || '') || 'No text added yet.'}
                   </p>
                 </div>
                 <button
@@ -888,11 +917,19 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   />
                 </div>
 
-                <ProvenanceSection
-                  value={data.provenance}
-                  onChange={(prov) => updateProvenance(event.id, prov)}
-                  required
-                />
+                {event.type === 'origin' ? (
+                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                    <p className={formStyles.hint}>
+                      This synchronicity is recorded as your personal observation.
+                    </p>
+                  </div>
+                ) : (
+                  <ProvenanceSection
+                    value={data.provenance}
+                    onChange={(prov) => updateProvenance(event.id, prov)}
+                    required
+                  />
+                )}
 
                 <div>
                   <label className={formStyles.label}>Your memory of Val</label>
@@ -912,8 +949,10 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   <textarea
                     readOnly
                     value={(() => {
-                      const text = stripHtml(data.full_entry || data.preview || '');
-                      return text.length > 160 ? `${text.slice(0, 160).trimEnd()}...` : text;
+                      return generatePreviewFromHtml(
+                        data.full_entry || data.preview || '',
+                        PREVIEW_MAX_LENGTH
+                      );
                     })()}
                     rows={3}
                     className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm cursor-not-allowed"
@@ -957,20 +996,22 @@ export default function EditNotesClient({ token, contributorName, events: initia
                   )}
                 </div>
 
-                {/* People references */}
-                <PeopleSection
-                  value={(data.person_refs || []).map((p) => ({
-                    id: p.id,
-                    personId: p.person_id,
-                    name: p.name,
-                    relationship: p.relationship,
-                    role: p.role,
-                    phone: p.phone,
-                  }))}
-                  onChange={(people) => updatePeople(event.id, people)}
-                  mode="cards"
-                  showTypeahead={false}
-                />
+                {/* People references - only for memories */}
+                {event.type === 'memory' && (
+                  <PeopleSection
+                    value={(data.person_refs || []).map((p) => ({
+                      id: p.id,
+                      personId: p.person_id,
+                      name: p.name,
+                      relationship: p.relationship,
+                      role: p.role,
+                      phone: p.phone,
+                    }))}
+                    onChange={(people) => updatePeople(event.id, people)}
+                    mode="cards"
+                    showTypeahead={false}
+                  />
+                )}
 
                 <div className="opacity-50">
                   <div className="flex items-center gap-2">
