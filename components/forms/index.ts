@@ -14,3 +14,5 @@ export { YearInput } from './YearInput';
 export { YEAR_CONSTRAINTS } from '@/lib/form-validation';
 export { TimingModeSelector } from './TimingModeSelector';
 export type { TimingMode, TimingModeData, TimingModeSelectorProps } from './TimingModeSelector';
+export { DisclosureSection } from './DisclosureSection';
+export type { DisclosureSectionProps } from './DisclosureSection';

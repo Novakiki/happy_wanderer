@@ -9,6 +9,7 @@ import {
   TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
 import type { TimingData, TimingMode, LifeStage, EntryType } from '@/lib/form-types';
+import { DisclosureSection } from './DisclosureSection';
 import { YearInput } from './YearInput';
 
 type Props = {
@@ -366,41 +367,15 @@ export default function TimingSection({
         </button>
       </div>
 
-      {/* Optional details - collapsed */}
+      {/* Optional timing details */}
       <div className="flex flex-col items-start gap-3 mt-6">
-        {!showTimingNote && !value.note && (
-          <button
-            type="button"
-            onClick={() => setShowTimingNote(true)}
-            className={formStyles.buttonGhost}
-          >
-            <span className={formStyles.disclosureArrow}>&#9654;</span>Add timing note
-          </button>
-        )}
-        {!showLocationField && !location && onLocationChange && (
-          <button
-            type="button"
-            onClick={() => setShowLocationField(true)}
-            className={formStyles.buttonGhost}
-          >
-            <span className={formStyles.disclosureArrow}>&#9654;</span>Add location
-          </button>
-        )}
-      </div>
-
-      {/* Expanded optional fields */}
-      {(showTimingNote || value.note) && (
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => {
-              setShowTimingNote(false);
-              updateField('note', '');
-            }}
-            className={`${formStyles.buttonGhost} mb-2`}
-          >
-            <span className={formStyles.disclosureArrow}>&#9660;</span>Timing note
-          </button>
+        <DisclosureSection
+          label="Timing note"
+          isOpen={showTimingNote}
+          onToggle={setShowTimingNote}
+          hasContent={!!value.note}
+          onClear={() => updateField('note', '')}
+        >
           <input
             type="text"
             value={value.note || ''}
@@ -408,30 +383,26 @@ export default function TimingSection({
             placeholder="e.g., Summer before college, around Christmas"
             className={formStyles.input}
           />
-        </div>
-      )}
+        </DisclosureSection>
 
-      {(showLocationField || location) && onLocationChange && (
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => {
-              setShowLocationField(false);
-              onLocationChange('');
-            }}
-            className={`${formStyles.buttonGhost} mb-2`}
+        {onLocationChange && (
+          <DisclosureSection
+            label="Location"
+            isOpen={showLocationField}
+            onToggle={setShowLocationField}
+            hasContent={!!location}
+            onClear={() => onLocationChange('')}
           >
-            <span className={formStyles.disclosureArrow}>&#9660;</span>Location
-          </button>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => onLocationChange(e.target.value)}
-            placeholder="e.g., Riverton, UT or Anchorage, AK"
-            className={formStyles.input}
-          />
-        </div>
-      )}
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => onLocationChange(e.target.value)}
+              placeholder="e.g., Riverton, UT or Anchorage, AK"
+              className={formStyles.input}
+            />
+          </DisclosureSection>
+        )}
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ import {
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
 import { useState } from 'react';
-import { PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
+import { DisclosureSection, PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
 import RichTextEditor from './RichTextEditor';
 import type { TimingMode } from './forms';
 
@@ -423,39 +423,24 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               />
             </div>
 
-            {!showWhyMeaningful && !formData.why_included && (
-              <button
-                type="button"
-                onClick={() => setShowWhyMeaningful(true)}
-                className={formStyles.buttonGhost}
-              >
-                <span className={formStyles.disclosureArrow}>▶</span>Add why it&apos;s meaningful
-              </button>
-            )}
-
-            {(showWhyMeaningful || formData.why_included) && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowWhyMeaningful(false);
-                    setFormData({ ...formData, why_included: '' });
-                  }}
-                  className={`${formStyles.buttonGhost} mb-2`}
-                >
-                  <span className={formStyles.disclosureArrow}>▼</span>Why it&apos;s meaningful
-                </button>
-                <p className={formStyles.hint}>
-                  Appears as an italic quote beneath your note
-                </p>
-                <RichTextEditor
-                  value={formData.why_included}
-                  onChange={(val) => setFormData({ ...formData, why_included: val })}
-                  placeholder="What it shows about her, why it matters to you..."
-                  minHeight="80px"
-                />
-              </div>
-            )}
+            <DisclosureSection
+              label="Why it's meaningful"
+              addLabel="Add why it's meaningful"
+              isOpen={showWhyMeaningful}
+              onToggle={setShowWhyMeaningful}
+              hasContent={hasContent(formData.why_included)}
+              onClear={() => setFormData({ ...formData, why_included: '' })}
+            >
+              <p className={formStyles.hint}>
+                Appears as an italic quote beneath your note
+              </p>
+              <RichTextEditor
+                value={formData.why_included}
+                onChange={(val) => setFormData({ ...formData, why_included: val })}
+                placeholder="What it shows about her, why it matters to you..."
+                minHeight="80px"
+              />
+            </DisclosureSection>
           </div>
         </div>
 
@@ -518,41 +503,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             </>
           )}
 
-          {/* Optional details - collapsed */}
+          {/* Optional timing details */}
           <div className="flex flex-col items-start gap-3 mt-6">
-            {!showTimingDetails && !formData.timing_note && (
-              <button
-                type="button"
-                onClick={() => setShowTimingDetails(true)}
-                className={formStyles.buttonGhost}
-              >
-                <span className={formStyles.disclosureArrow}>▶</span>Add timing note
-              </button>
-            )}
-            {!showLocation && !formData.location && (
-              <button
-                type="button"
-                onClick={() => setShowLocation(true)}
-                className={formStyles.buttonGhost}
-              >
-                <span className={formStyles.disclosureArrow}>▶</span>Add location
-              </button>
-            )}
-          </div>
-
-          {/* Expanded optional fields */}
-          {(showTimingDetails || formData.timing_note) && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTimingDetails(false);
-                  setFormData({ ...formData, timing_note: '' });
-                }}
-                className={`${formStyles.buttonGhost} mb-2`}
-              >
-                <span className={formStyles.disclosureArrow}>▼</span>Timing note
-              </button>
+            <DisclosureSection
+              label="Timing note"
+              isOpen={showTimingDetails}
+              onToggle={setShowTimingDetails}
+              hasContent={!!formData.timing_note}
+              onClear={() => setFormData({ ...formData, timing_note: '' })}
+            >
               <input
                 type="text"
                 id="timing_note"
@@ -561,21 +520,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 placeholder="e.g., Summer before college, around Christmas"
                 className={formStyles.input}
               />
-            </div>
-          )}
+            </DisclosureSection>
 
-          {(showLocation || formData.location) && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLocation(false);
-                  setFormData({ ...formData, location: '' });
-                }}
-                className={`${formStyles.buttonGhost} mb-2`}
-              >
-                <span className={formStyles.disclosureArrow}>▼</span>Location
-              </button>
+            <DisclosureSection
+              label="Location"
+              isOpen={showLocation}
+              onToggle={setShowLocation}
+              hasContent={!!formData.location}
+              onClear={() => setFormData({ ...formData, location: '' })}
+            >
               <input
                 type="text"
                 id="location"
@@ -584,8 +537,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 placeholder="e.g., Riverton, UT or Anchorage, AK"
                 className={formStyles.input}
               />
-            </div>
-          )}
+            </DisclosureSection>
+          </div>
         </div>
 
         {/* Connection to the original note */}
