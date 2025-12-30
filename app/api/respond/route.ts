@@ -1,8 +1,54 @@
+/**
+ * Respond API - Handles Invited User Responses
+ * =============================================
+ *
+ * PURPOSE:
+ * This API powers the "chain mail" invite system, allowing invited users
+ * to respond to memories they were mentioned in WITHOUT authentication.
+ *
+ * ENDPOINTS:
+ *
+ * GET /api/respond?id={inviteId}
+ *   - Fetches invite details for the respond page
+ *   - Returns: original memory, sender name, recipient's relationship to Val
+ *   - Marks invite as "opened" on first access
+ *
+ * POST /api/respond
+ *   - Submits a response to an invite
+ *   - Creates: contributor record (if new), timeline_event, memory_thread link
+ *   - Marks invite as "contributed"
+ *   - Returns: contributor_id (for optional email capture)
+ *
+ * FLOW CONTEXT:
+ * This is the backend for /respond/[id]/page.tsx. Invited users:
+ * 1. Click SMS link → GET loads context
+ * 2. Submit response → POST creates linked memory
+ * 3. See success with signup prompt (handled by frontend)
+ *
+ * The response creates a FULL timeline_event (not a comment) that is:
+ * - Linked to original via memory_threads table
+ * - Marked with prompted_by_event_id
+ * - Inherits year/location from original for timeline placement
+ *
+ * DESIGN DECISIONS:
+ * - No auth required: Friction reduction for first-time responders
+ * - Simple input: Only name + content (not full MemoryForm fields)
+ * - Creates real memory: Shows in timeline, can be built upon
+ * - Contributor record: Enables future identity claim via signup
+ *
+ * RELATED FILES:
+ * - /app/respond/[id]/page.tsx - Frontend respond page
+ * - /lib/invites.ts - Invite creation helpers
+ * - /app/api/memories/route.ts - Where invites are created during memory submission
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 
-// GET: Fetch invite details for the response page
+/**
+ * GET: Fetch invite details for the response page
+ * Returns the original memory context so responder knows what they're responding to.
+ */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const inviteId = searchParams.get('id');
@@ -98,7 +144,15 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// POST: Submit a response to an invite
+/**
+ * POST: Submit a response to an invite
+ *
+ * Creates a new timeline_event linked to the original memory via memory_threads.
+ * This is intentionally a simplified submission - full MemoryForm access requires signup.
+ *
+ * Input: { invite_id, name, content, relationship?, relationship_note? }
+ * Output: { success, event_id, contributor_id }
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

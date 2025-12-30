@@ -1,12 +1,49 @@
 /**
- * Invite chain business logic
- * Pure functions for building invite data from person references
+ * Invite System - "Chain Mail" for Memory Collection
+ * ===================================================
+ *
+ * PURPOSE:
+ * This module powers the invite system that allows memory contributors to
+ * invite people mentioned in their memories to add their own perspectives.
+ *
+ * THE FLOW:
+ * 1. ADDING A MEMORY (MemoryForm):
+ *    - User adds people to a memory via PeopleSection
+ *    - If a person has a phone number, an invite record is created
+ *    - After submission, user sees "Text them →" buttons
+ *
+ * 2. SENDING (Client-side SMS):
+ *    - Clicking "Text them" opens native SMS app via sms: URI
+ *    - Pre-filled message includes link: /respond/{inviteId}
+ *    - User sends manually (we don't send SMS server-side)
+ *
+ * 3. RESPONDING (No auth required):
+ *    - Recipient clicks link → /respond/[id] page
+ *    - Sees original memory context
+ *    - Submits simple form (name + content only)
+ *    - Creates timeline_event linked via memory_threads
+ *
+ * 4. GUIDED PATH TO FULL ACCESS:
+ *    - After responding, user sees signup prompt
+ *    - Signup → full access to MemoryForm with all fields
+ *    - This is the conversion funnel from invited → full contributor
+ *
+ * DESIGN DECISIONS:
+ * - No server-side SMS: Uses native sms: URI for privacy and simplicity
+ * - No auth for responses: Reduces friction for first-time responders
+ * - Simple response form: Intentionally limited; full access requires signup
+ * - Creates real memories: Responses are timeline_events, not comments
+ *
+ * RELATED FILES:
+ * - /app/api/memories/route.ts - Creates invite records during memory submission
+ * - /app/respond/[id]/page.tsx - Response page for invited users
+ * - /app/api/respond/route.ts - API for submitting responses
+ * - /components/MemoryForm.tsx - Shows "Text them" buttons after submission
  *
  * TODO: Future identity claim flow:
  * - When contributor has email, they can receive a magic link
  * - Magic link creates auth account + links to contributor record
  * - Claimed contributors can edit their memories and add more
- * - Consider: person_claims table links people -> contributors for visibility
  */
 
 export type PersonReference = {
