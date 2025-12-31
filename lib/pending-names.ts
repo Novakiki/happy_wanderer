@@ -243,7 +243,7 @@ async function createPendingReference(
       event_id: eventId,
       type: 'person',
       person_id: personId,
-      role: 'mentioned',
+      role: 'witness',  // Auto-detected names treated as witnesses (people present/involved)
       visibility: 'pending',
       added_by: contributorId,
     });
