@@ -7,14 +7,17 @@ type DetectRequest = {
   people?: Array<{ id?: string; name?: string }>;
 };
 
-const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-const OPENAI_MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-5-mini-2025-08-07';
-
 /**
  * Call OpenAI to extract person names (kept server-side).
  */
 async function detectNamesLLM(content: string): Promise<string[]> {
-  if (!OPENAI_API_KEY) return [];
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5-mini-2025-08-07';
+  console.log('detectNamesLLM called, apiKey exists:', !!apiKey, 'model:', model);
+  if (!apiKey) {
+    console.warn('OPENAI_API_KEY not found in environment');
+    return [];
+  }
 
   const system = [
     'You are a precise, permissive NER helper for family memories.',
@@ -31,23 +34,24 @@ async function detectNamesLLM(content: string): Promise<string[]> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0,
       response_format: { type: 'json_object' },
     }),
   });
 
   if (!resp.ok) {
-    console.warn('OpenAI detection failed', await resp.text());
+    const errorText = await resp.text();
+    console.warn('OpenAI detection failed:', resp.status, errorText);
     return [];
   }
+  console.log('OpenAI call succeeded');
 
   const data = await resp.json();
   const contentStr = data?.choices?.[0]?.message?.content;
@@ -78,10 +82,6 @@ Deno.serve(async (req: Request) => {
 
     if (!content.trim()) {
       return Response.json({ error: 'Missing content' }, { status: 400 });
-    }
-
-    if (!OPENAI_API_KEY) {
-      return Response.json({ error: 'OPENAI_API_KEY missing' }, { status: 500 });
     }
 
     // LLM only; dedupe
