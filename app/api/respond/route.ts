@@ -42,7 +42,7 @@
  * - /app/api/memories/route.ts - Where invites are created during memory submission
  */
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
-import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
+import { llmReviewGate } from '@/lib/llm-review';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
@@ -340,29 +340,12 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedName = name.trim();
-    let llmResult: LlmReviewResult;
-    try {
-      llmResult = await runLlmReview({
-        title: `Re: ${trimmedName}'s note`,
-        content,
-        why: '',
-      });
-    } catch (llmError) {
-      console.error('LLM review error:', llmError);
-      return NextResponse.json(
-        { error: 'LLM review unavailable. Please try again.' },
-        { status: 503 }
-      );
-    }
-    if (!llmResult.approve) {
-      return NextResponse.json(
-        {
-          error: 'LLM review blocked submission.',
-          reasons: llmResult.reasons,
-        },
-        { status: 422 }
-      );
-    }
+    const llmGate = await llmReviewGate({
+      title: `Re: ${trimmedName}'s note`,
+      content,
+      why: '',
+    });
+    if (!llmGate.ok) return llmGate.response;
 
     const admin = createAdminClient();
 

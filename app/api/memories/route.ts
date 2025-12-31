@@ -12,7 +12,7 @@ import {
 import { mapLegacyPersonRole } from '@/lib/form-types';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
-import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
+import { llmReviewGate } from '@/lib/llm-review';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -77,29 +77,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let llmResult: LlmReviewResult;
-    try {
-      llmResult = await runLlmReview({
-        title,
-        content,
-        why: why_included,
-      });
-    } catch (llmError) {
-      console.error('LLM review error:', llmError);
-      return NextResponse.json(
-        { error: 'LLM review unavailable. Please try again.' },
-        { status: 503 }
-      );
-    }
-    if (!llmResult.approve) {
-      return NextResponse.json(
-        {
-          error: 'LLM review blocked submission.',
-          reasons: llmResult.reasons,
-        },
-        { status: 422 }
-      );
-    }
+    const llmGate = await llmReviewGate({ title, content, why: why_included });
+    if (!llmGate.ok) return llmGate.response;
 
     // Resolve timing (handles year, age_range, life_stage conversions)
     const timingResult = resolveTiming({

@@ -4,7 +4,7 @@ import type { Database } from '@/lib/database.types';
 import { normalizePrivacyLevel } from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
-import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
+import { llmReviewGate } from '@/lib/llm-review';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -121,29 +121,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
     }
 
-    let llmResult: LlmReviewResult;
-    try {
-      llmResult = await runLlmReview({
-        title: rawTitle,
-        content: rawContent,
-        why: rawWhy,
-      });
-    } catch (llmError) {
-      console.error('LLM review error:', llmError);
-      return NextResponse.json(
-        { error: 'LLM review unavailable. Please try again.' },
-        { status: 503 }
-      );
-    }
-    if (!llmResult.approve) {
-      return NextResponse.json(
-        {
-          error: 'LLM review blocked saving.',
-          reasons: llmResult.reasons,
-        },
-        { status: 422 }
-      );
-    }
+    const llmGate = await llmReviewGate(
+      { title: rawTitle, content: rawContent, why: rawWhy },
+      'LLM review blocked saving.'
+    );
+    if (!llmGate.ok) return llmGate.response;
 
     const normalizedTimingCertainty = timing_certainty === 'exact'
       || timing_certainty === 'approximate'

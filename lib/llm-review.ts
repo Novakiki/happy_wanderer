@@ -1,6 +1,7 @@
+import { NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 
-type LlmReviewInput = {
+export type LlmReviewInput = {
   title?: string;
   content: string;
   why?: string;
@@ -121,4 +122,56 @@ export async function runLlmReview(input: LlmReviewInput): Promise<LlmReviewResu
   const data = await resp.json().catch(() => ({}));
   const raw = (data as { result?: unknown }).result ?? data;
   return parseLlmResponse(raw);
+}
+
+type LlmGateSuccess = {
+  ok: true;
+  result: LlmReviewResult;
+};
+
+type LlmGateError = {
+  ok: false;
+  response: NextResponse;
+};
+
+export type LlmGateResult = LlmGateSuccess | LlmGateError;
+
+/**
+ * Wrapper that handles LLM review with standard error responses.
+ * Returns { ok: true, result } on success, or { ok: false, response } with
+ * a ready-to-return NextResponse on failure.
+ *
+ * @param input - The content to review
+ * @param errorMessage - Custom error message for rejected content (default: "LLM review blocked submission.")
+ */
+export async function llmReviewGate(
+  input: LlmReviewInput,
+  errorMessage = 'LLM review blocked submission.'
+): Promise<LlmGateResult> {
+  let result: LlmReviewResult;
+
+  try {
+    result = await runLlmReview(input);
+  } catch (err) {
+    console.error('LLM review error:', err);
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'LLM review unavailable. Please try again.' },
+        { status: 503 }
+      ),
+    };
+  }
+
+  if (!result.approve) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: errorMessage, reasons: result.reasons },
+        { status: 422 }
+      ),
+    };
+  }
+
+  return { ok: true, result };
 }
