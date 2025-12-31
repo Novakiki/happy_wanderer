@@ -11,10 +11,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function EditTokenPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ event_id?: string }>;
 }) {
   const { token } = await params;
+  const { event_id: eventId } = await searchParams;
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY;
 
@@ -96,45 +99,56 @@ export default async function EditTokenPage({
     .eq('id', tokenRow.contributor_id)
     .single();
 
-  const { data: events } = await admin
-    .from('timeline_events')
-    .select(
-      `
-        id,
-        year,
-        date,
-        year_end,
-        age_start,
-        age_end,
-        life_stage,
-        timing_certainty,
-        timing_input_type,
-        timing_note,
-        location,
-        type,
-        title,
-        preview,
-        full_entry,
-        why_included,
-        source_name,
-        source_url,
-        privacy_level,
-        people_involved,
-        references:event_references(
+  const buildEventsQuery = () =>
+    admin
+      .from('timeline_events')
+      .select(
+        `
           id,
+          year,
+          date,
+          year_end,
+          age_start,
+          age_end,
+          life_stage,
+          timing_certainty,
+          timing_input_type,
+          timing_note,
+          location,
           type,
-          url,
-          display_name,
-          role,
-          visibility,
-          relationship_to_subject,
-          person_id,
-          person:people(id, canonical_name)
-        )
-      `
-    )
-    .eq('contributor_id', tokenRow.contributor_id)
-    .order('year', { ascending: true });
+          title,
+          preview,
+          full_entry,
+          why_included,
+          source_name,
+          source_url,
+          privacy_level,
+          people_involved,
+          references:event_references(
+            id,
+            type,
+            url,
+            display_name,
+            role,
+            visibility,
+            relationship_to_subject,
+            person_id,
+            person:people(id, canonical_name)
+          )
+        `
+      )
+      .eq('contributor_id', tokenRow.contributor_id!)
+      .order('year', { ascending: true });
+
+  let { data: events } = eventId
+    ? await buildEventsQuery().eq('id', eventId)
+    : await buildEventsQuery();
+
+  // If a specific note was requested but no longer exists, fall back to all notes
+  if (eventId && (!events || events.length === 0)) {
+    const fallback = await buildEventsQuery();
+    events = fallback.data;
+  }
 
   const redactedEvents = (events || []).map((evt) => ({
     ...evt,
@@ -143,26 +157,38 @@ export default async function EditTokenPage({
     }),
   }));
 
+  const requestedEventFound = Boolean(eventId && redactedEvents.some((evt) => evt.id === eventId));
+
   return (
     <div className={formStyles.pageContainer} style={subtleBackground}>
       <Nav />
       <section className={formStyles.contentWrapper}>
         <EditSessionSetter token={token} />
         <p className={formStyles.subLabel}>
-          Edit your notes
+          Your notes
         </p>
         <h1 className={formStyles.pageTitle}>
-          Your contributions
+          {requestedEventFound ? 'Edit note' : 'Your notes'}
         </h1>
         <p className={formStyles.pageDescription}>
-          You can edit any note you have submitted. Changes update immediately in the score.
+          {requestedEventFound
+            ? 'Edit your note below. Changes update immediately in the score.'
+            : eventId
+              ? 'We could not find that note. Showing your other notes.'
+              : 'Select a note to edit. Changes update immediately in the score.'}
         </p>
+        {eventId && !requestedEventFound && (
+          <p className="mt-4 text-sm text-white/60">
+            The requested note may have been removed or the link expired. Your remaining notes are below.
+          </p>
+        )}
 
         <div className="mt-8">
           <EditNotesClient
             token={token}
             contributorName={contributor?.name || 'Contributor'}
             events={redactedEvents}
+            initialEditingId={requestedEventFound ? eventId : null}
           />
         </div>
       </section>
