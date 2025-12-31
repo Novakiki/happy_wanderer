@@ -5,7 +5,7 @@ import { normalizePrivacyLevel } from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
-import { buildLlmConsentContext } from '@/lib/llm-consent-context';
+import { detectAndCreatePendingReferences } from '@/lib/pending-names';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -122,10 +122,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
     }
 
-    // Build consent context for LLM review using contributor's visibility preferences
-    const consentContext = await buildLlmConsentContext(rawContent, admin, tokenRow.contributor_id);
+    // LLM review for safety (names are handled separately via pending references)
     const llmGate = await llmReviewGate(
-      { title: rawTitle, content: rawContent, why: rawWhy, consentContext },
+      { title: rawTitle, content: rawContent, why: rawWhy },
       'LLM review blocked saving.'
     );
     if (!llmGate.ok) return llmGate.response;
@@ -517,7 +516,15 @@ export async function POST(request: Request) {
       .update(tokenUpdate)
       .eq('id', tokenRow.id);
 
-    return NextResponse.json({ success: true });
+    // Detect names in content and create pending references for those without consent
+    const nameResult = await detectAndCreatePendingReferences(
+      rawContent,
+      event_id,
+      admin,
+      tokenRow.contributor_id
+    );
+
+    return NextResponse.json({ success: true, pendingNames: nameResult.pendingNames });
   } catch (error) {
     console.error('Edit update error:', error);
     return NextResponse.json({ error: 'Failed to update note' }, { status: 500 });

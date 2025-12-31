@@ -30,6 +30,12 @@ type CreatedInvite = {
   phone: string;
 };
 
+type PendingName = {
+  name: string;
+  personId: string;
+  status: string;
+};
+
 type UserProfile = {
   name: string;
   relation: string;
@@ -75,6 +81,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   // Invites created after submission (for "Text them" buttons)
   const [createdInvites, setCreatedInvites] = useState<CreatedInvite[]>([]);
+  const [pendingNames, setPendingNames] = useState<PendingName[]>([]);
 
   const [threadRelationship, setThreadRelationship] = useState<ThreadRelationship>('perspective');
   const [threadNote, setThreadNote] = useState('');
@@ -266,6 +273,10 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setCreatedInvites(result.invites);
       }
 
+      if (result.pendingNames && result.pendingNames.length > 0) {
+        setPendingNames(result.pendingNames);
+      }
+
       setIsSubmitted(true);
     } catch (err) {
       setError('Something went wrong. Please try again.');
@@ -312,10 +323,27 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           </div>
         )}
 
+        {/* Show pending names notice */}
+        {pendingNames.length > 0 && (
+          <div className="mb-8 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 text-left">
+            <p className="text-sm font-medium text-white mb-2">
+              Some names will appear blurred until confirmed
+            </p>
+            <p className="text-sm text-white/60 mb-3">
+              {pendingNames.map((p) => p.name).join(', ')} will appear blurred to others until they
+              confirm they&apos;re okay being named.
+            </p>
+            <p className="text-xs text-white/40">
+              You can invite them to respond, which will confirm their identity.
+            </p>
+          </div>
+        )}
+
         <button
           onClick={() => {
             setIsSubmitted(false);
             setCreatedInvites([]);
+            setPendingNames([]);
             setFormData({
               entry_type: 'memory',
               exact_date: '',

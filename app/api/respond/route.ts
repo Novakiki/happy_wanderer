@@ -43,7 +43,7 @@
  */
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { llmReviewGate } from '@/lib/llm-review';
-import { buildLlmConsentContext } from '@/lib/llm-consent-context';
+import { detectAndCreatePendingReferences } from '@/lib/pending-names';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
@@ -343,13 +343,11 @@ export async function POST(request: NextRequest) {
     const trimmedName = name.trim();
     const admin = createAdminClient();
 
-    // Build consent context for LLM review (no contributor_id for unauthenticated responders)
-    const consentContext = await buildLlmConsentContext(content, admin, null);
+    // LLM review for safety (names are handled separately via pending references)
     const llmGate = await llmReviewGate({
       title: `Re: ${trimmedName}'s note`,
       content,
       why: '',
-      consentContext,
     });
     if (!llmGate.ok) return llmGate.response;
 
@@ -471,10 +469,19 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', invite_id);
 
+    // Detect names in content and create pending references for those without consent
+    const nameResult = await detectAndCreatePendingReferences(
+      content.trim(),
+      typedNewEvent.id,
+      admin,
+      contributorId
+    );
+
     return NextResponse.json({
       success: true,
       event_id: typedNewEvent.id,
       contributor_id: contributorId,
+      pendingNames: nameResult.pendingNames,
     });
   } catch (error) {
     console.error('Respond API error:', error);

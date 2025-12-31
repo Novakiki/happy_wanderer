@@ -5,9 +5,6 @@ export type LlmReviewInput = {
   title?: string;
   content: string;
   why?: string;
-  consentContext?: {
-    consentedNames: Array<{ name: string; relationship: string | null }>;
-  };
 };
 
 export type LlmReviewResult = {
@@ -26,26 +23,19 @@ const buildPrompt = (input: LlmReviewInput) => {
   const content = input.content;
   const why = input.why?.trim() || '(none)';
 
-  // Build consent section if we have consented names
-  let consentSection = '';
-  if (input.consentContext?.consentedNames?.length) {
-    const names = input.consentContext.consentedNames
-      .map((p) => (p.relationship ? `${p.name} (${p.relationship})` : p.name))
-      .join(', ');
-    consentSection = `\nNote: The following people have consented to be named: ${names}. Mentions of these specific names are allowed.`;
-  }
-
+  // Note: We no longer block for named third parties - those are handled separately
+  // via pending person references that get blurred until consent is given.
   return [
     'You are an approval gate for publishing family memory text.',
     'Decide if it is safe to publish based on privacy/sensitivity.',
-    'Reject if it contains: phone/email/addresses, sensitive medical or financial details, minors + explicit content, slurs/hate, or clearly identifying third parties without consent.',
-    consentSection,
+    'Reject if it contains: phone numbers, email addresses, physical addresses, sensitive medical or financial details, minors + explicit content, or slurs/hate speech.',
+    'Person names are OK - they are handled separately by our consent system.',
     'Otherwise approve.',
     'Respond ONLY in JSON with shape: {"approve": true|false, "reasons": ["..."]}.',
     `Title: ${title}`,
     `Content: ${content}`,
     `Why: ${why}`,
-  ].filter(Boolean).join('\n');
+  ].join('\n');
 };
 
 const getAuthToken = async () => {

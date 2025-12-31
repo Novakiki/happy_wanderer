@@ -13,7 +13,7 @@ import { mapLegacyPersonRole } from '@/lib/form-types';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
-import { buildLlmConsentContext } from '@/lib/llm-consent-context';
+import { detectAndCreatePendingReferences } from '@/lib/pending-names';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -78,9 +78,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build consent context for LLM review
-    const consentContext = await buildLlmConsentContext(content, admin, contributor_id || null);
-    const llmGate = await llmReviewGate({ title, content, why: why_included, consentContext });
+    // LLM review for safety (names are handled separately via pending references)
+    const llmGate = await llmReviewGate({ title, content, why: why_included });
     if (!llmGate.ok) return llmGate.response;
 
     // Resolve timing (handles year, age_range, life_stage conversions)
@@ -415,7 +414,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, event: eventData, invites: createdInvites });
+    // Detect names in content and create pending references for those without consent
+    // These names will appear blurred until the person grants permission
+    let pendingNames: Array<{ name: string; personId: string; status: string }> = [];
+    if (eventId) {
+      const nameResult = await detectAndCreatePendingReferences(
+        trimmedContent,
+        eventId,
+        admin,
+        contributorId
+      );
+      pendingNames = nameResult.pendingNames;
+    }
+
+    return NextResponse.json({
+      success: true,
+      event: eventData,
+      invites: createdInvites,
+      pendingNames,
+    });
   } catch (error) {
     console.error('Note submission error:', error);
     return NextResponse.json(
