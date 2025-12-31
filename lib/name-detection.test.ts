@@ -36,7 +36,7 @@ describe('getMaskedName', () => {
     });
 
     it('returns "someone" for empty name', () => {
-      expect(getMaskedName('', 'blurred')).toBe('someone');
+      expect(getMaskedName('', 'blurred')).toBe('[person]');
     });
   });
 
@@ -46,22 +46,22 @@ describe('getMaskedName', () => {
     });
 
     it('returns "someone" when no relationship', () => {
-      expect(getMaskedName('Julie Smith', 'anonymized')).toBe('someone');
-      expect(getMaskedName('Julie Smith', 'anonymized', null)).toBe('someone');
+      expect(getMaskedName('Julie Smith', 'anonymized')).toBe('[person]');
+      expect(getMaskedName('Julie Smith', 'anonymized', null)).toBe('[person]');
     });
   });
 
   describe('removed/pending visibility', () => {
     it('returns "someone" for removed visibility', () => {
-      expect(getMaskedName('Julie Smith', 'removed')).toBe('someone');
+      expect(getMaskedName('Julie Smith', 'removed')).toBe('[person]');
     });
 
     it('returns "someone" for pending visibility without relationship', () => {
-      expect(getMaskedName('Julie Smith', 'pending')).toBe('someone');
+      expect(getMaskedName('Julie Smith', 'pending')).toBe('[person]');
     });
 
     it('returns "someone" for unknown visibility', () => {
-      expect(getMaskedName('Julie Smith', 'unknown')).toBe('someone');
+      expect(getMaskedName('Julie Smith', 'unknown')).toBe('[person]');
     });
   });
 });
@@ -327,14 +327,14 @@ describe('maskContentWithReferences', () => {
     const content = 'Julie Smith was there.';
     const references = [
       {
-        render_label: 'someone',
+        render_label: '[person]',
         visibility: 'removed',
         author_payload: { author_label: 'Julie Smith' },
       },
     ];
 
     const result = maskContentWithReferences(content, references);
-    expect(result).toBe('someone was there.');
+    expect(result).toBe('[person] was there.');
   });
 
   it('returns original content when no masking needed', () => {

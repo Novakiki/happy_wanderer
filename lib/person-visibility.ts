@@ -61,7 +61,7 @@ export function buildRenderLabel(
   descriptor?: string | null,
   options: BuildOptions = {}
 ): string {
-  const pendingPlaceholder = options.pendingPlaceholder || 'someone';
+  const pendingPlaceholder = options.pendingPlaceholder || '[person]';
   const anonymizedFallback = options.anonymizedFallback || 'a contributor';
 
   if (identityState === 'approved') {

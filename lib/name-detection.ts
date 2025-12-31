@@ -206,7 +206,7 @@ export function getMaskedName(
     if (parts.length >= 2) {
       return `${parts[0][0]}.${parts[parts.length - 1][0]}.`;
     }
-    return name[0] ? `${name[0]}.` : 'someone';
+    return name[0] ? `${name[0]}.` : '[person]';
   }
 
   if (visibility === 'anonymized' && relationship) {
@@ -214,5 +214,5 @@ export function getMaskedName(
     return relationship;
   }
 
-  return 'someone';
+  return '[person]';
 }
