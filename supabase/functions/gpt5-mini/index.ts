@@ -94,7 +94,9 @@ Deno.serve(async (req: Request) => {
               const { done, value } = await reader.read();
               if (done) break;
               const text = decoder.decode(value, { stream: true });
-              controller.enqueue(text.replace(/^/gm, 'data: ') + '\n');
+              // OpenAI streaming already returns SSE-formatted chunks (prefixed with "data:").
+              // Forward them unchanged to avoid double-prefixing.
+              controller.enqueue(text);
             }
             controller.close();
           } catch (err) {
