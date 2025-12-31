@@ -1,15 +1,15 @@
 /**
  * Pending Names Handler
  * =====================
- * Detects person names in content using LLM, checks their consent status,
- * and creates pending person references for those without consent.
- *
- * Names without consent appear blurred in the display until the person
+ * Detects person names in content using LLM and creates pending person
+ * references. Names appear as [person] in the display until the person
  * grants permission to be named.
+ *
+ * We always create pending references for detected names, even if someone
+ * with that name has previously consented - this handles the case where
+ * two different people share the same name.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-
-type ReferenceVisibility = 'approved' | 'pending' | 'anonymized' | 'blurred' | 'removed';
 
 export type PendingNameResult = {
   name: string;
@@ -19,8 +19,29 @@ export type PendingNameResult = {
 
 export type DetectAndCreateResult = {
   pendingNames: PendingNameResult[];
-  consentedNames: string[];
 };
+
+/**
+ * Common fictional characters to filter out from name detection.
+ * These are names that commonly appear in family stories but aren't real people.
+ */
+const FICTIONAL_CHARACTERS = new Set([
+  // Holiday figures
+  'santa', 'santa claus', 'father christmas', 'st nick', 'saint nick',
+  'easter bunny', 'tooth fairy', 'jack frost', 'cupid',
+  // Common fictional references
+  'god', 'jesus', 'jesus christ', 'christ',
+  'devil', 'satan',
+  // Fairy tale characters
+  'cinderella', 'snow white', 'sleeping beauty', 'rapunzel',
+  'peter pan', 'tinkerbell', 'pinocchio',
+  // Other common fictional names in stories
+  'boogeyman', 'sandman', 'mother nature',
+]);
+
+function isFictionalCharacter(name: string): boolean {
+  return FICTIONAL_CHARACTERS.has(name.toLowerCase().trim());
+}
 
 /**
  * Construct the name-detection-check edge function URL from SUPABASE_URL.
@@ -66,36 +87,6 @@ async function detectNamesViaLlm(content: string): Promise<string[]> {
     console.error('pending-names: detectNamesViaLlm error:', err);
     return [];
   }
-}
-
-/**
- * Resolve effective visibility using the same precedence as references.ts:
- * 1. Per-contributor preference
- * 2. Global preference (contributor_id = NULL)
- * 3. Person's default
- */
-function resolveVisibility(
-  personVisibility: ReferenceVisibility | null,
-  contributorPreference: ReferenceVisibility | null,
-  globalPreference: ReferenceVisibility | null
-): ReferenceVisibility {
-  const personVis = personVisibility ?? 'pending';
-  const contributorPref = contributorPreference ?? 'pending';
-  const globalPref = globalPreference ?? 'pending';
-
-  // Check for removal at any level
-  if (personVis === 'removed' || contributorPref === 'removed' || globalPref === 'removed') {
-    return 'removed';
-  }
-
-  // 1. Per-contributor preference
-  if (contributorPref !== 'pending') return contributorPref;
-
-  // 2. Global preference
-  if (globalPref !== 'pending') return globalPref;
-
-  // 3. Person's default
-  return personVis;
 }
 
 /**
@@ -156,62 +147,6 @@ async function createPerson(
 }
 
 /**
- * Check if a person has approved visibility for a given contributor.
- */
-async function checkPersonConsent(
-  admin: SupabaseClient,
-  personId: string,
-  contributorId: string | null
-): Promise<boolean> {
-  // Fetch person's default visibility
-  const { data: person } = await admin
-    .from('people')
-    .select('visibility')
-    .eq('id', personId)
-    .single();
-
-  const personVisibility = ((person as { visibility?: string } | null)?.visibility ?? 'pending') as ReferenceVisibility;
-
-  // Fetch visibility preferences
-  let contributorPref: ReferenceVisibility | null = null;
-  let globalPref: ReferenceVisibility | null = null;
-
-  if (contributorId) {
-    // Get both contributor-specific and global preferences
-    const { data: prefs } = await admin
-      .from('visibility_preferences')
-      .select('contributor_id, visibility')
-      .eq('person_id', personId)
-      .or(`contributor_id.eq.${contributorId},contributor_id.is.null`);
-
-    if (prefs) {
-      for (const pref of prefs as Array<{ contributor_id: string | null; visibility: string }>) {
-        if (pref.contributor_id === contributorId) {
-          contributorPref = pref.visibility as ReferenceVisibility;
-        } else if (pref.contributor_id === null) {
-          globalPref = pref.visibility as ReferenceVisibility;
-        }
-      }
-    }
-  } else {
-    // Only get global preferences
-    const { data: prefs } = await admin
-      .from('visibility_preferences')
-      .select('visibility')
-      .eq('person_id', personId)
-      .is('contributor_id', null)
-      .limit(1);
-
-    if (prefs && prefs.length > 0) {
-      globalPref = (prefs[0] as { visibility: string }).visibility as ReferenceVisibility;
-    }
-  }
-
-  const effectiveVisibility = resolveVisibility(personVisibility, contributorPref, globalPref);
-  return effectiveVisibility === 'approved';
-}
-
-/**
  * Check if a reference already exists for this event + person.
  */
 async function referenceExists(
@@ -254,14 +189,18 @@ async function createPendingReference(
 }
 
 /**
- * Detect names in content and create pending person references for those
- * without consent.
+ * Detect names in content and create pending person references.
+ *
+ * Note: We always create pending references for detected names, even if
+ * someone with that name has previously consented. This handles the case
+ * where two different people share the same name (e.g., "Amy" could be the
+ * contributor or Amy's cousin).
  *
  * @param content - The content to scan for names
  * @param eventId - The event to attach references to
  * @param admin - Supabase admin client
- * @param contributorId - Current contributor ID (for per-contributor preferences)
- * @returns Object containing arrays of pending and consented names
+ * @param contributorId - Current contributor ID
+ * @returns Object containing array of pending names
  */
 export async function detectAndCreatePendingReferences(
   content: string,
@@ -270,13 +209,12 @@ export async function detectAndCreatePendingReferences(
   contributorId: string | null
 ): Promise<DetectAndCreateResult> {
   const pendingNames: PendingNameResult[] = [];
-  const consentedNames: string[] = [];
 
   // Detect names using LLM
   const detectedNames = await detectNamesViaLlm(content);
 
   if (detectedNames.length === 0) {
-    return { pendingNames, consentedNames };
+    return { pendingNames };
   }
 
   // Process each detected name (limit to 20 for performance)
@@ -286,27 +224,20 @@ export async function detectAndCreatePendingReferences(
     const trimmedName = nameText.trim();
     if (!trimmedName) continue;
 
+    // Skip fictional characters (Santa, Easter Bunny, etc.)
+    if (isFictionalCharacter(trimmedName)) continue;
+
     // Try to find existing person
     let personId = await findPersonByName(admin, trimmedName);
-    let isNewPerson = false;
 
     if (!personId) {
       // Create new person record
       personId = await createPerson(admin, trimmedName);
-      isNewPerson = true;
     }
 
     if (!personId) continue;
 
-    // Check if they have consent
-    const hasConsent = isNewPerson ? false : await checkPersonConsent(admin, personId, contributorId);
-
-    if (hasConsent) {
-      consentedNames.push(trimmedName);
-      continue;
-    }
-
-    // Check if reference already exists
+    // Check if reference already exists for this event
     const exists = await referenceExists(admin, eventId, personId);
 
     if (exists) {
@@ -327,5 +258,5 @@ export async function detectAndCreatePendingReferences(
     });
   }
 
-  return { pendingNames, consentedNames };
+  return { pendingNames };
 }
