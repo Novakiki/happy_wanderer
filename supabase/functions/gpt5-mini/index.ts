@@ -51,11 +51,11 @@ Deno.serve(async (req: Request) => {
 
     const apiKey = Deno.env.get('OPENAI_API_KEY');
     const baseUrl = Deno.env.get('OPENAI_BASE_URL') || 'https://api.openai.com';
-    const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5-mini-2025-08-07';
+    const model = Deno.env.get('OPENAI_MODEL');
 
-    if (!apiKey) {
+    if (!apiKey || !model) {
       return new Response(
-        JSON.stringify({ error: 'Missing OPENAI_API_KEY' }),
+        JSON.stringify({ error: `Missing ${!apiKey ? 'OPENAI_API_KEY' : 'OPENAI_MODEL'}` }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }

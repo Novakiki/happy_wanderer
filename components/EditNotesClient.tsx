@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   ENTRY_TYPE_LABELS,
   ENTRY_TYPE_DESCRIPTIONS,
@@ -803,7 +804,15 @@ export default function EditNotesClient({
       </div>
 
       {events.length === 0 && (
-        <div className="text-white/50">No notes found for this email.</div>
+        <div className="space-y-3 text-white/60">
+          <div>No notes found for this email.</div>
+          <Link
+            href="/share"
+            className="inline-flex items-center gap-2 text-sm text-white/80 hover:text-white transition-colors underline underline-offset-4"
+          >
+            Add a new note →
+          </Link>
+        </div>
       )}
 
       {events.map((event) => {
