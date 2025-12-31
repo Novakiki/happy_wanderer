@@ -125,7 +125,7 @@ export async function buildLlmConsentContext(
         .from('visibility_preferences')
         .select('contributor_id, visibility')
         .eq('person_id', personId)
-        .or(`contributor_id.eq.${contributorId},contributor_id.is.null`);
+        .or(`contributor_id.eq."${contributorId}",contributor_id.is.null`);
 
       if (prefs) {
         for (const pref of prefs as Array<{ contributor_id: string | null; visibility: string }>) {
