@@ -43,6 +43,7 @@
  */
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { llmReviewGate } from '@/lib/llm-review';
+import { buildLlmConsentContext } from '@/lib/llm-consent-context';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
@@ -340,14 +341,17 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedName = name.trim();
+    const admin = createAdminClient();
+
+    // Build consent context for LLM review (no contributor_id for unauthenticated responders)
+    const consentContext = await buildLlmConsentContext(content, admin, null);
     const llmGate = await llmReviewGate({
       title: `Re: ${trimmedName}'s note`,
       content,
       why: '',
+      consentContext,
     });
     if (!llmGate.ok) return llmGate.response;
-
-    const admin = createAdminClient();
 
     type InviteRow = { id: string; event_id: string; recipient_name: string; recipient_contact: string | null };
     type EventRow = { year: number; year_end: number | null; life_stage: string | null; location: string | null; subject_id: string | null; privacy_level: string | null };

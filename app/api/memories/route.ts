@@ -13,6 +13,7 @@ import { mapLegacyPersonRole } from '@/lib/form-types';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
+import { buildLlmConsentContext } from '@/lib/llm-consent-context';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -77,7 +78,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const llmGate = await llmReviewGate({ title, content, why: why_included });
+    // Build consent context for LLM review
+    const consentContext = await buildLlmConsentContext(content, admin, contributor_id || null);
+    const llmGate = await llmReviewGate({ title, content, why: why_included, consentContext });
     if (!llmGate.ok) return llmGate.response;
 
     // Resolve timing (handles year, age_range, life_stage conversions)

@@ -5,6 +5,7 @@ import { computeChainInfo, generatePreview, normalizePrivacyLevel } from '@/lib/
 import { hasContent } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
+import { buildLlmConsentContext } from '@/lib/llm-consent-context';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -115,8 +116,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
     }
 
+    // Build consent context for LLM review using contributor's visibility preferences
+    const consentContext = await buildLlmConsentContext(rawContent, admin, tokenRow.contributor_id);
     const llmGate = await llmReviewGate(
-      { title: rawTitle, content: rawContent, why: rawWhy },
+      { title: rawTitle, content: rawContent, why: rawWhy, consentContext },
       'LLM review blocked saving.'
     );
     if (!llmGate.ok) return llmGate.response;
