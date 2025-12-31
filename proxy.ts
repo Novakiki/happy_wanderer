@@ -15,6 +15,6 @@ export const config = {
      * - public folder
      * Allow /respond for unauthenticated invite flows.
      */
-    '/((?!_next/static|_next/image|favicon.ico|respond|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|respond|identity|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

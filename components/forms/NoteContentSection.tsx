@@ -137,7 +137,7 @@ export default function NoteContentSection({
               )}
               {mode === 'rich' && (
                 <label className={formStyles.label}>
-                  Why this memory belongs (timeline hover)
+                  Why it&apos;s meaningful
                 </label>
               )}
               {mode === 'plain' && (

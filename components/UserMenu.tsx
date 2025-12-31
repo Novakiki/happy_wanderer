@@ -63,9 +63,9 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
-                <span>My notes</span>
+                <span>Your notes</span>
                 <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
-                  View and edit your contributions
+                  View and edit your notes
                 </span>
               </Link>
               <Link

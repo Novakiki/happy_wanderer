@@ -41,13 +41,13 @@
  * - /lib/invites.ts - Invite creation helpers
  * - /app/api/memories/route.ts - Where invites are created during memory submission
  */
-import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient, createClient } from '@/lib/supabase/server';
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
-import { upsertInviteIdentityReference } from '@/lib/respond-identity';
-import { redactReferences, type ReferenceRow } from '@/lib/references';
-import { maskContentWithReferences } from '@/lib/name-detection';
 import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
+import { maskContentWithReferences } from '@/lib/name-detection';
+import { redactReferences, type ReferenceRow } from '@/lib/references';
+import { upsertInviteIdentityReference } from '@/lib/respond-identity';
+import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 type Visibility = 'approved' | 'blurred' | 'anonymized' | 'removed' | 'pending';
 

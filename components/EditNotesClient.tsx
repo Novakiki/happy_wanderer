@@ -59,7 +59,7 @@ type EditableEvent = {
     person_id?: string | null;
     name: string;
     relationship?: string | null;
-    role: 'was_there' | 'told_me' | 'might_remember';
+    role: PersonReference['role'];
     phone?: string;
   }[];
 };
@@ -107,13 +107,24 @@ type Props = {
   token: string;
   contributorName: string;
   events: IncomingEvent[];
+  initialEditingId?: string | null;
 };
 
 type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
-export default function EditNotesClient({ token, contributorName, events: initialEvents }: Props) {
+export default function EditNotesClient({
+  token,
+  contributorName,
+  events: initialEvents,
+  initialEditingId = null,
+}: Props) {
   const [events, setEvents] = useState(initialEvents);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(() => {
+    if (initialEditingId && initialEvents.some((event) => event.id === initialEditingId)) {
+      return initialEditingId;
+    }
+    return null;
+  });
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<Record<string, EditableEvent>>(() =>
     initialEvents.reduce((acc, event) => {
@@ -198,6 +209,15 @@ export default function EditNotesClient({ token, contributorName, events: initia
         return acc;
       }, {} as Record<string, string>)
   );
+  const [llmMessages, setLlmMessages] = useState<Record<string, string | null>>({});
+  const [llmReasons, setLlmReasons] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (!initialEditingId) return;
+    if (events.some((event) => event.id === initialEditingId)) {
+      setEditingId(initialEditingId);
+    }
+  }, [initialEditingId, events]);
 
   // Warn user before leaving with unsaved changes
   useEffect(() => {
@@ -285,7 +305,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
     const trimmedSourceUrl = derivedSource.source_url;
 
     if (!trimmedWhy) {
-      setStatus((prev) => ({ ...prev, [eventId]: 'Please add why this memory belongs.' }));
+      setStatus((prev) => ({ ...prev, [eventId]: "Please add why it's meaningful." }));
       return;
     }
 
@@ -351,6 +371,9 @@ export default function EditNotesClient({ token, contributorName, events: initia
       return;
     }
 
+    setLlmMessages((prev) => ({ ...prev, [eventId]: null }));
+    setLlmReasons((prev) => ({ ...prev, [eventId]: [] }));
+
     setStatus((prev) => ({ ...prev, [eventId]: 'saving' }));
     try {
       const attachment = attachments[eventId];
@@ -403,9 +426,19 @@ export default function EditNotesClient({ token, contributorName, events: initia
         }),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result?.error || 'Update failed');
+        if (response.status === 422) {
+          setStatus((prev) => ({ ...prev, [eventId]: 'Blocked by LLM review.' }));
+          setLlmMessages((prev) => ({
+            ...prev,
+            [eventId]: 'LLM review blocked saving. Please address the issues below.',
+          }));
+          setLlmReasons((prev) => ({ ...prev, [eventId]: result?.reasons || [] }));
+          return;
+        }
+        setStatus((prev) => ({ ...prev, [eventId]: result?.error || 'Update failed.' }));
+        return;
       }
 
       setStatus((prev) => ({ ...prev, [eventId]: 'saved' }));
@@ -429,7 +462,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
     const trimmedSourceUrl = derivedSource.source_url;
 
     if (!trimmedWhy) {
-      setStatus((prev) => ({ ...prev, [eventId]: 'Please add why this memory belongs.' }));
+      setStatus((prev) => ({ ...prev, [eventId]: "Please add why it's meaningful." }));
       return;
     }
 
@@ -494,6 +527,8 @@ export default function EditNotesClient({ token, contributorName, events: initia
       return;
     }
 
+    setLlmMessages((prev) => ({ ...prev, [eventId]: null }));
+    setLlmReasons((prev) => ({ ...prev, [eventId]: [] }));
     setStatus((prev) => ({ ...prev, [eventId]: 'linking' }));
     try {
       const attachment = attachments[eventId];
@@ -547,9 +582,19 @@ export default function EditNotesClient({ token, contributorName, events: initia
         }),
       });
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(result?.error || 'Linked note failed');
+        if (response.status === 422) {
+          setStatus((prev) => ({ ...prev, [eventId]: 'Blocked by LLM review.' }));
+          setLlmMessages((prev) => ({
+            ...prev,
+            [eventId]: 'LLM review blocked saving. Please address the issues below.',
+          }));
+          setLlmReasons((prev) => ({ ...prev, [eventId]: result?.reasons || [] }));
+          return;
+        }
+        setStatus((prev) => ({ ...prev, [eventId]: result?.error || 'Linked note failed.' }));
+        return;
       }
 
       setStatus((prev) => ({ ...prev, [eventId]: 'linked' }));
@@ -618,7 +663,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
           ...current,
           person_refs: [
             ...(current.person_refs || []),
-            { name: '', relationship: '', role: 'was_there' as const, phone: '' },
+            { name: '', relationship: '', role: 'witness' as const, phone: '' },
           ],
         },
       };
@@ -973,7 +1018,7 @@ export default function EditNotesClient({ token, contributorName, events: initia
                     <div>
                       <div className="flex items-center justify-between">
                         <label className={formStyles.label}>
-                          Why this memory belongs <span className={formStyles.required}>*</span>
+                          Why it&apos;s meaningful <span className={formStyles.required}>*</span>
                         </label>
                         <button
                           type="button"
@@ -1153,6 +1198,21 @@ export default function EditNotesClient({ token, contributorName, events: initia
                     Delete memory
                   </button>
                 </div>
+
+                {(llmMessages[event.id] || (llmReasons[event.id] && llmReasons[event.id].length > 0)) && (
+                  <div className="mt-3 space-y-2">
+                    {llmMessages[event.id] && (
+                      <p className="text-sm text-white/70">{llmMessages[event.id]}</p>
+                    )}
+                    {llmReasons[event.id] && llmReasons[event.id].length > 0 && (
+                      <ul className="list-disc list-inside text-sm text-white/70">
+                        {llmReasons[event.id].map((r, idx) => (
+                          <li key={idx}>{r}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
 
                 {/* Delete confirmation */}
                 {deletingId === event.id && (

@@ -56,7 +56,7 @@ export const subtleBackground = {
 export const formStyles = {
   // Page layout
   pageContainer: 'min-h-screen text-white bg-[#0b0b0b]',
-  contentWrapper: 'max-w-2xl mx-auto px-6 py-16',
+  contentWrapper: 'max-w-2xl mx-auto px-6 pt-24 pb-16',
 
   // Header elements
   subLabel: 'text-xs uppercase tracking-[0.3em] text-white/40',

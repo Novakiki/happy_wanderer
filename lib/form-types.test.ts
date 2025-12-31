@@ -9,30 +9,30 @@ import {
 
 describe('mapLegacyPersonRole', () => {
   it('maps legacy roles to unified roles', () => {
-    expect(mapLegacyPersonRole('witness')).toBe('was_there');
-    expect(mapLegacyPersonRole('heard_from')).toBe('told_me');
-    expect(mapLegacyPersonRole('source')).toBe('told_me');
-    expect(mapLegacyPersonRole('related')).toBe('might_remember');
+    expect(mapLegacyPersonRole('witness')).toBe('witness');
+    expect(mapLegacyPersonRole('heard_from')).toBe('heard_from');
+    expect(mapLegacyPersonRole('source')).toBe('heard_from');
+    expect(mapLegacyPersonRole('related')).toBe('related');
   });
 
   it('passes through new role values', () => {
-    expect(mapLegacyPersonRole('was_there')).toBe('was_there');
-    expect(mapLegacyPersonRole('told_me')).toBe('told_me');
-    expect(mapLegacyPersonRole('might_remember')).toBe('might_remember');
+    expect(mapLegacyPersonRole('was_there')).toBe('witness');
+    expect(mapLegacyPersonRole('told_me')).toBe('heard_from');
+    expect(mapLegacyPersonRole('might_remember')).toBe('related');
   });
 
-  it('defaults unknown roles to was_there', () => {
-    expect(mapLegacyPersonRole('')).toBe('was_there');
-    expect(mapLegacyPersonRole('unknown')).toBe('was_there');
-    expect(mapLegacyPersonRole(null)).toBe('was_there');
+  it('defaults unknown roles to witness', () => {
+    expect(mapLegacyPersonRole('')).toBe('witness');
+    expect(mapLegacyPersonRole('unknown')).toBe('witness');
+    expect(mapLegacyPersonRole(null)).toBe('witness');
   });
 });
 
 describe('mapToLegacyPersonRole', () => {
   it('maps unified roles back to legacy values', () => {
-    expect(mapToLegacyPersonRole('was_there')).toBe('witness');
-    expect(mapToLegacyPersonRole('told_me')).toBe('heard_from');
-    expect(mapToLegacyPersonRole('might_remember')).toBe('related');
+    expect(mapToLegacyPersonRole('witness')).toBe('witness');
+    expect(mapToLegacyPersonRole('heard_from')).toBe('heard_from');
+    expect(mapToLegacyPersonRole('related')).toBe('related');
   });
 });
 

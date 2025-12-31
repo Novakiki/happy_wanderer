@@ -84,7 +84,7 @@ describe('redactReferences', () => {
         relationship_to_subject: 'cousin',
         person: {
           canonical_name: 'Julie Smith',
-          visibility: 'approved' as const,
+          visibility: 'pending' as const,
         },
       }];
 
@@ -103,7 +103,7 @@ describe('redactReferences', () => {
         relationship_to_subject: 'unknown',
         person: {
           canonical_name: 'Julie Smith',
-          visibility: 'approved' as const,
+          visibility: 'pending' as const,
         },
       }];
 
@@ -130,7 +130,7 @@ describe('redactReferences', () => {
   });
 
   describe('person references - visibility inheritance', () => {
-    it('uses more restrictive visibility between reference and person', () => {
+    it('prefers per-note override over person default', () => {
       const refs = [{
         id: 'ref-1',
         type: 'person' as const,
@@ -145,8 +145,8 @@ describe('redactReferences', () => {
       const result = redactReferences(refs);
 
       expect(result).toHaveLength(1);
-      expect(result[0].visibility).toBe('blurred');
-      expect(result[0].person_display_name).toBe('J.S.');
+      expect(result[0].visibility).toBe('approved');
+      expect(result[0].person_display_name).toBe('Julie Smith');
     });
 
     it('removes reference when person is removed', () => {
@@ -202,6 +202,197 @@ describe('redactReferences', () => {
     });
   });
 
+  describe('visibility cascade resolution', () => {
+    it('per-note override takes precedence over preferences (when no removal)', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'approved' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'blurred' as const,
+        },
+        visibility_preference: {
+          contributor_preference: 'anonymized',
+          global_preference: 'blurred',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('approved');
+      expect(result[0].person_display_name).toBe('Julie Smith');
+    });
+
+    it('contributor preference takes precedence over global preference', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'pending' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'pending' as const,
+        },
+        visibility_preference: {
+          contributor_preference: 'blurred',
+          global_preference: 'approved',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('blurred');
+      expect(result[0].person_display_name).toBe('J.S.');
+    });
+
+    it('global preference takes precedence over person default', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'pending' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'pending' as const,
+        },
+        visibility_preference: {
+          contributor_preference: null,
+          global_preference: 'anonymized',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('anonymized');
+      expect(result[0].person_display_name).toBe('a cousin');
+    });
+
+    it('falls back to person default when no preferences set', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'pending' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'blurred' as const,
+        },
+        visibility_preference: {
+          contributor_preference: null,
+          global_preference: null,
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('blurred');
+    });
+
+    it('removed at person level removes reference regardless of other settings', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'approved' as const,
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'removed' as const,
+        },
+        visibility_preference: {
+          contributor_preference: 'approved',
+          global_preference: 'approved',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('removed at contributor preference level removes reference', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'approved' as const,
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'approved' as const,
+        },
+        visibility_preference: {
+          contributor_preference: 'removed',
+          global_preference: 'approved',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('removed at global preference level removes reference', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'approved' as const,
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'approved' as const,
+        },
+        visibility_preference: {
+          contributor_preference: null,
+          global_preference: 'removed',
+        },
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('handles missing visibility_preference object', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'pending' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'approved' as const,
+        },
+        // no visibility_preference
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('approved');
+    });
+
+    it('handles empty visibility_preference object', () => {
+      const refs = [{
+        id: 'ref-1',
+        type: 'person' as const,
+        visibility: 'pending' as const,
+        relationship_to_subject: 'cousin',
+        person: {
+          canonical_name: 'Julie Smith',
+          visibility: 'blurred' as const,
+        },
+        visibility_preference: {},
+      }];
+
+      const result = redactReferences(refs);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].visibility).toBe('blurred');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty array', () => {
       const result = redactReferences([]);
@@ -231,11 +422,11 @@ describe('redactReferences', () => {
       expect(result[0].person_display_name).toBe('a friend');
     });
 
-    it('masks contributor name when person is null (defaults to pending)', () => {
+    it('masks contributor name when person is null and pending', () => {
       const refs = [{
         id: 'ref-1',
         type: 'person' as const,
-        visibility: 'approved' as const,
+        visibility: 'pending' as const,
         relationship_to_subject: null,
         person: null,
         contributor: {

@@ -7,7 +7,7 @@
 - Reference roles: `heard_from`, `witness`, `source`, `related`
 
 ## Auth vs public
-- Public: `/respond/*`, `/auth/*`, `/api/auth/*`
+- Public: `/respond/*`, `/identity`, `/auth/*`, `/api/auth/*`
 - Gated: everything else (middleware/proxy enforces)
 - Proxy middleware lives in `proxy.ts` only (no `middleware.ts`)
 
@@ -16,10 +16,19 @@
 - `/share` – add a note (requires auth)
 - `/submit` – contributor submission flow
 - `/respond/[id]` – invited responses (no auth required)
+- `/identity` – how identity works (public explainer)
 - `/edit` and `/edit/[token]` – magic link editing
+- `/settings` – account settings (profile, identity visibility)
 - `/auth/*` – login/signup/reset/complete-profile
 - `/why` – why this exists
 - `/emerging` – “What’s Emerging”
+
+## Interaction rules (UX behavior)
+- `/score`: hover previews are desktop-only; click/tap opens `/memory/:id` directly (no detail modal).
+- Editing happens on the full note page, not from the score preview.
+- Full note page (`/memory/:id`) links to `/edit?event_id=...` for contributor edits.
+- Invite responders can set per-note identity visibility on `/respond/[id]` and manage it later via `/respond/[id]?manage=1`.
+- Logged-in contributors can claim their identity and manage visibility defaults in `/settings`.
 
 ## Supabase
 - Server admin client: uses `SUPABASE_URL` + `SUPABASE_SECRET_KEY`
@@ -34,6 +43,7 @@
 ## References
 - People and links stored in `event_references`.
 - Roles: `heard_from` (passed down), `witness` (was there), `source` (external), `related`.
+- Invites can store the recipient's relationship to Val on the event's person reference (role: `witness`).
 
 ## Navigation components
 - Primary nav: `components/Nav.tsx` (uses `SCORE_TITLE` for label, now “Happy Wanderer”).

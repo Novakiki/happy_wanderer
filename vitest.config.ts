@@ -5,9 +5,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    // Unit tests only - component tests would use jsdom via // @vitest-environment jsdom
-    include: ['**/*.test.ts'],
+    // Unit tests use node env; component tests use // @vitest-environment jsdom
+    include: ['**/*.test.ts', '**/*.test.tsx'],
     exclude: ['node_modules', '.next'],
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

@@ -40,7 +40,7 @@ export default function EditSessionMenu({ name, token }: Props) {
         onClick={() => setOpen((prev) => !prev)}
         className="rounded-full border border-white/15 px-3 py-1 text-white/70 text-xs hover:border-white/30 hover:text-white transition-colors"
       >
-        Edit notes
+        Your notes
       </button>
 
       {open && (
@@ -52,7 +52,7 @@ export default function EditSessionMenu({ name, token }: Props) {
             href={token ? `/edit/${token}` : '/edit'}
             className="block px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/5 rounded-t-xl transition-colors"
           >
-            Edit notes
+            Your notes
           </Link>
         </div>
       )}

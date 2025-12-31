@@ -74,18 +74,18 @@ export const MEMORY_PROVENANCE_SHORT = {
 // =============================================================================
 
 export const PERSON_ROLE_LABELS = {
-  was_there: "Was there",
-  told_me: "Told me this",
-  might_remember: "Might remember",
+  witness: "Was there",
+  heard_from: "Told me this",
+  related: "Might remember",
 } as const;
 
 export const PERSON_ROLE_DESCRIPTIONS = {
-  was_there: "They were physically present",
-  told_me: "They shared this story with you",
-  might_remember: "They might have more to add",
+  witness: "They were physically present",
+  heard_from: "They shared this story with you",
+  related: "They might have more to add",
 } as const;
 
-// Reference roles - for the chain mail system (legacy, maps to new roles)
+// Reference roles - for the chain mail system
 export const REFERENCE_ROLE_LABELS = {
   heard_from: "Passed down from",
   witness: "Also there",

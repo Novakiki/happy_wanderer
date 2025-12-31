@@ -2,6 +2,7 @@
 
 ## Public
 - `/respond/[id]` – invitation response (no auth required)
+- `/identity` – how identity works (public explainer)
 - `/auth/*` – login, signup, reset, complete-profile
 - `/api/auth/*` – auth endpoints
 - Static assets: `_next/static`, `_next/image`, `favicon.ico`, public files
@@ -13,6 +14,7 @@
 - `/submit` – Contributor submission flow
 - `/edit` – Request magic link to edit submissions
 - `/edit/[token]` – Edit via magic link
+- `/settings` – Account settings (profile, identity visibility)
 - Other app routes unless listed above
 
 ## Route groups
