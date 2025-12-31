@@ -4,6 +4,7 @@ import type { Database } from '@/lib/database.types';
 import { normalizePrivacyLevel } from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildInviteData } from '@/lib/invites';
+import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -118,6 +119,30 @@ export async function POST(request: Request) {
     // Use HTML-aware validation for rich text fields
     if (!hasContent(rawTitle) || !hasContent(rawContent) || !hasContent(rawWhy) || !trimmedSourceName) {
       return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
+    }
+
+    let llmResult: LlmReviewResult;
+    try {
+      llmResult = await runLlmReview({
+        title: rawTitle,
+        content: rawContent,
+        why: rawWhy,
+      });
+    } catch (llmError) {
+      console.error('LLM review error:', llmError);
+      return NextResponse.json(
+        { error: 'LLM review unavailable. Please try again.' },
+        { status: 503 }
+      );
+    }
+    if (!llmResult.approve) {
+      return NextResponse.json(
+        {
+          error: 'LLM review blocked saving.',
+          reasons: llmResult.reasons,
+        },
+        { status: 422 }
+      );
     }
 
     const normalizedTimingCertainty = timing_certainty === 'exact'
@@ -331,8 +356,18 @@ export async function POST(request: Request) {
       }
 
       if (hasPersonPayload) {
+        // Get contributor name once to filter out self-references
+        const contributorNameLower = (await getSubmitterName()).toLowerCase();
+
         for (const raw of personRefs || []) {
           if (!raw) continue;
+
+          // Skip if this person is the contributor themselves (they're already credited as author)
+          const personName = String(raw?.name || raw?.display_name || '').trim();
+          if (personName && personName.toLowerCase() === contributorNameLower) {
+            continue;
+          }
+
           const rawId = typeof raw?.id === 'string' ? raw.id : null;
           const existing = rawId ? existingById.get(rawId) : null;
           const activeExisting = existing && existing.visibility !== 'removed' ? existing : null;

@@ -1,30 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
+import { readEditSession } from '@/lib/edit-session';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
 
 const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
-
-type EditSession = {
-  token: string;
-  name: string;
-};
-
-function readEditSession(value?: string): EditSession | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value));
-    if (parsed && typeof parsed.token === 'string' && typeof parsed.name === 'string') {
-      return parsed;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 export async function PATCH(
   request: NextRequest,

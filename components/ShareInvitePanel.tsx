@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from "@/lib/html-utils";
+import { RELATIONSHIP_OPTIONS } from "@/lib/terminology";
 
 type ShareInvitePanelProps = {
   eventId: string;
@@ -13,7 +14,25 @@ type ShareInvitePanelProps = {
   yearEnd: number | null;
   timingCertainty: "exact" | "approximate" | "vague" | null;
   eventType: "memory" | "milestone" | "origin" | null;
+  viewerIsOwner?: boolean;
 };
+
+const RELATIONSHIP_GROUPS = {
+  family: [
+    "parent",
+    "child",
+    "sibling",
+    "cousin",
+    "aunt_uncle",
+    "niece_nephew",
+    "grandparent",
+    "grandchild",
+    "in_law",
+    "spouse",
+  ],
+  social: ["friend", "neighbor", "coworker", "classmate"],
+  other: ["acquaintance", "other", "unknown"],
+} as const;
 
 function formatYearLabel(
   year: number,
@@ -38,14 +57,15 @@ export default function ShareInvitePanel({
   yearEnd,
   timingCertainty,
   eventType,
+  viewerIsOwner = false,
 }: ShareInvitePanelProps) {
   const isMemory = eventType === "memory";
+  const canInvite = isMemory && viewerIsOwner; // Only owners can invite others
   const [baseUrl, setBaseUrl] = useState("");
   const [shareMode, setShareMode] = useState<"link" | "invite">("link");
 
-  const [witnesses, setWitnesses] = useState<string[]>([]);
-  const [newWitness, setNewWitness] = useState("");
-  const [inviteMethod, setInviteMethod] = useState<"email" | "sms" | "link">("link");
+  const [recipientName, setRecipientName] = useState("");
+  const [relationshipToSubject, setRelationshipToSubject] = useState("");
   const [inviteId, setInviteId] = useState<string | null>(null);
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -70,17 +90,6 @@ export default function ShareInvitePanel({
     if (!content) return "";
     return generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
   }, [content]);
-
-  const addWitness = () => {
-    const trimmed = newWitness.trim();
-    if (!trimmed || witnesses.includes(trimmed)) return;
-    setWitnesses([...witnesses, trimmed]);
-    setNewWitness("");
-  };
-
-  const removeWitness = (name: string) => {
-    setWitnesses(witnesses.filter((witness) => witness !== name));
-  };
 
   const copyShareLink = async () => {
     if (!baseUrl) return;
@@ -108,7 +117,8 @@ export default function ShareInvitePanel({
   };
 
   const handleSendInvite = async () => {
-    if (!eventId || witnesses.length === 0) return;
+    const trimmedRecipient = recipientName.trim();
+    if (!eventId || !trimmedRecipient) return;
 
     setInviteSending(true);
     setInviteError(null);
@@ -121,11 +131,11 @@ export default function ShareInvitePanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           event_id: eventId,
-          recipient_name: witnesses[0] || "Friend of Valerie",
+          recipient_name: trimmedRecipient,
           recipient_contact: "link",
-          method: inviteMethod,
+          method: "link",
           message: "",
-          witnesses,
+          relationship_to_subject: relationshipToSubject,
         }),
       });
 
@@ -140,8 +150,6 @@ export default function ShareInvitePanel({
         throw new Error("Invite created without an ID");
       }
 
-      setWitnesses([]);
-      setNewWitness("");
     } catch (error) {
       console.error(error);
       setInviteError("Could not create invite. Please try again.");
@@ -152,217 +160,215 @@ export default function ShareInvitePanel({
 
   return (
     <div className="mt-10 rounded-2xl border border-white/10 bg-[#111111]/80 overflow-hidden">
+      {/* Header with inline tabs */}
       <div className="px-6 py-4 border-b border-white/10">
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Share this note</p>
-        <p className="text-sm text-white/50 mt-2">
-          Share a view-only link or invite someone to add their perspective.
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-[0.2em] text-white/40">Share this note</p>
+          {canInvite && (
+            <div className="flex gap-1 bg-white/5 rounded-lg p-0.5">
+              <button
+                onClick={() => setShareMode("link")}
+                className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                  shareMode === "link"
+                    ? "bg-white/15 text-white"
+                    : "text-white/40 hover:text-white/60"
+                }`}
+              >
+                Link
+              </button>
+              <button
+                onClick={() => setShareMode("invite")}
+                className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                  shareMode === "invite"
+                    ? "bg-white/15 text-white"
+                    : "text-white/40 hover:text-white/60"
+                }`}
+              >
+                Invite
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {isMemory && (
-        <div className="px-6 py-4 border-b border-white/10">
-          <p className="text-sm text-white/60">How do you want to share this note?</p>
-          <div className="flex gap-2 mt-3">
+      {(shareMode === "link" || !isMemory) && (
+        <div className="p-6">
+          {/* Inline link with copy button */}
+          <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 pl-4 border border-white/10">
+            <span className="flex-1 text-sm text-white/60 truncate font-mono">
+              {baseUrl ? `${baseUrl}/memory/${eventId}` : "Loading..."}
+            </span>
             <button
-              onClick={() => setShareMode("link")}
-              className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                shareMode === "link"
-                  ? "bg-white/20 text-white"
-                  : "bg-white/10 text-white/50 hover:bg-white/15"
+              onClick={copyShareLink}
+              disabled={!baseUrl}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 shrink-0 ${
+                linkCopied
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "bg-[#e07a5f] text-white hover:bg-[#d06a4f]"
               }`}
             >
-              View-only link
-            </button>
-            <button
-              onClick={() => setShareMode("invite")}
-              className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                shareMode === "invite"
-                  ? "bg-white/20 text-white"
-                  : "bg-white/10 text-white/50 hover:bg-white/15"
-              }`}
-            >
-              Invite to contribute
+              {linkCopied ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copied
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy
+                </>
+              )}
             </button>
           </div>
+          {shareError && (
+            <p className="text-xs text-red-300 mt-2">{shareError}</p>
+          )}
+          <p className="text-xs text-white/30 mt-3">
+            Anyone with this link can view the note.
+          </p>
         </div>
       )}
 
-      {(shareMode === "link" || !isMemory) && (
-        <>
-          <div className="p-6 bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f]">
-            <div className="bg-[#1f1f1f] rounded-xl p-4 border border-white/5">
-              <p className="text-white/40 text-xs">{formatYearLabel(year, yearEnd, timingCertainty)}</p>
-              <h3 className="text-white font-serif text-lg mt-1">{title}</h3>
-              {previewText && (
-                <p className="text-white/60 text-sm mt-2 leading-relaxed line-clamp-3">{previewText}</p>
-              )}
-              <p className="text-xs text-white/30 mt-3 pt-3 border-t border-white/5">
-                Added by {contributorName || "Someone who loved her"}
-                {contributorRelation && contributorRelation !== "synthesized" && (
-                  <span> ({contributorRelation})</span>
-                )}
+      {canInvite && shareMode === "invite" && (
+        <div className="p-6 space-y-4">
+          {/* Context */}
+          <p className="text-sm text-white/50">
+            Invite someone who was there to add their perspective to <span className="text-white/70">{title}</span>
+          </p>
+
+          {/* Invite details */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs uppercase tracking-[0.2em] text-white/40 mb-2">
+                Their name
+              </label>
+              <input
+                type="text"
+                value={recipientName}
+                onChange={(event) => setRecipientName(event.target.value)}
+                placeholder="Their name (e.g., Aunt Susan)"
+                disabled={Boolean(inviteId)}
+                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent disabled:opacity-60"
+              />
+            </div>
+            <div>
+              <label className="block text-xs uppercase tracking-[0.2em] text-white/40 mb-2">
+                Relationship to Val
+              </label>
+              <select
+                value={relationshipToSubject}
+                onChange={(event) => setRelationshipToSubject(event.target.value)}
+                disabled={Boolean(inviteId)}
+                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent disabled:opacity-60"
+              >
+                <option value="">Relationship to Val</option>
+                {relationshipToSubject && !(relationshipToSubject in RELATIONSHIP_OPTIONS) ? (
+                  <optgroup label="Custom">
+                    <option value={relationshipToSubject}>{relationshipToSubject}</option>
+                  </optgroup>
+                ) : null}
+                <optgroup label="Family">
+                  {RELATIONSHIP_GROUPS.family.map((key) => (
+                    <option key={key} value={key}>
+                      {RELATIONSHIP_OPTIONS[key]}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Social">
+                  {RELATIONSHIP_GROUPS.social.map((key) => (
+                    <option key={key} value={key}>
+                      {RELATIONSHIP_OPTIONS[key]}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Other">
+                  {RELATIONSHIP_GROUPS.other.map((key) => (
+                    <option key={key} value={key}>
+                      {RELATIONSHIP_OPTIONS[key]}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <p className="text-xs text-white/30 mt-2">
+                Optional. Helps us show "a cousin" if they choose relationship-only.
               </p>
             </div>
           </div>
 
-          <div className="px-6 py-4">
-            <button
-              onClick={copyShareLink}
-              className={`w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-                linkCopied
-                  ? "bg-green-600 text-white"
-                  : "bg-[#e07a5f] text-white hover:bg-[#d06a4f]"
-              }`}
-            >
-              {linkCopied ? "Link copied" : "Copy link to share"}
-            </button>
-            {shareError && (
-              <p className="text-xs text-red-300 text-center mt-2">{shareError}</p>
-            )}
-            <p className="text-xs text-white/30 text-center mt-3">
-              Anyone with access can view this note.
-            </p>
-          </div>
-        </>
-      )}
-
-      {isMemory && shareMode === "invite" && (
-        <>
-          <div className="px-6 py-4 border-b border-white/10">
-            <p className="text-sm text-white/60">
-              Invite someone who was there to add their perspective to:
-            </p>
-            <p className="text-white font-medium mt-2">{title}</p>
-            <p className="text-xs text-white/40 mt-1">
-              {formatYearLabel(year, yearEnd, timingCertainty)}
-            </p>
-          </div>
-
-          <div className="px-6 py-4 border-b border-white/10">
-            <label className="text-sm text-white/60 block mb-3">
-              Who was there?
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newWitness}
-                onChange={(event) => setNewWitness(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && addWitness()}
-                placeholder="Name (e.g., Aunt Susan)"
-                className="flex-1 px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 focus:border-transparent"
-              />
-              <button
-                onClick={addWitness}
-                className="px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm hover:bg-white/20 transition-colors"
-              >
-                Add
-              </button>
-            </div>
-            {witnesses.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3">
-                {witnesses.map((name) => (
-                  <span
-                    key={name}
-                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#e07a5f]/20 text-[#e07a5f] text-sm"
-                  >
-                    {name}
-                    <button
-                      onClick={() => removeWitness(name)}
-                      className="ml-1 hover:text-white transition-colors"
-                    >
-                      x
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="px-6 py-4 border-b border-white/10">
-            <label className="text-sm text-white/60 block mb-3">
-              How do you want to reach them?
-            </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setInviteMethod("link")}
-                className={`flex-1 py-2 rounded-xl text-sm transition-colors ${
-                  inviteMethod === "link"
-                    ? "bg-white/20 text-white"
-                    : "bg-white/10 text-white/50 hover:bg-white/15"
-                }`}
-              >
-                Copy link
-              </button>
-              <div className="relative flex-1 group">
-                <button
-                  disabled
-                  className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
-                >
-                  Email
-                </button>
-                <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  Coming soon
-                </span>
-              </div>
-              <div className="relative flex-1 group">
-                <button
-                  disabled
-                  className="w-full py-2 rounded-xl text-sm bg-white/5 text-white/30 cursor-not-allowed"
-                >
-                  SMS
-                </button>
-                <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-white/10 backdrop-blur-sm rounded text-xs text-white/60 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  Coming soon
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="px-6 py-4">
+          {/* Create invite / result */}
+          {!inviteId ? (
             <button
               onClick={handleSendInvite}
-              disabled={witnesses.length === 0 || inviteSending}
-              className="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 bg-[#e07a5f] text-white hover:bg-[#d06a4f] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!recipientName.trim() || inviteSending}
+              className="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 bg-[#e07a5f] text-white hover:bg-[#d06a4f] disabled:bg-white/10 disabled:text-white/30 disabled:cursor-not-allowed"
             >
-              {inviteSending ? "Creating invite..." : "Create invite link"}
+              {inviteSending
+                ? "Creating..."
+                : !recipientName.trim()
+                ? "Add a name to create invite"
+                : "Create invite link"}
             </button>
-            {inviteError && (
-              <p className="text-xs text-red-300 text-left mt-2">{inviteError}</p>
-            )}
-            <p className="text-xs text-white/30 text-center mt-3">
-              {witnesses.length > 0
-                ? `Will create an invite for ${witnesses.length} person${witnesses.length > 1 ? "s" : ""} to add their perspective`
-                : "Add at least one person to invite"}
-            </p>
-
-            {inviteId && baseUrl && (
-              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs text-white/50">Invite link</p>
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${baseUrl}/respond/${inviteId}`}
-                    className="flex-1 px-3 py-2 rounded-lg bg-white/10 border border-white/10 text-white/80 text-xs"
-                  />
-                  <button
-                    onClick={copyInviteLink}
-                    className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      inviteLinkCopied
-                        ? "bg-green-600 text-white"
-                        : "bg-white/10 text-white/70 hover:bg-white/20"
-                    }`}
-                  >
-                    {inviteLinkCopied ? "Copied" : "Copy link"}
-                  </button>
-                </div>
-                <p className="text-xs text-white/40 mt-2">
-                  Share this link so they can add their note.
-                </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 bg-white/5 rounded-xl p-1 pl-4 border border-white/10">
+                <span className="flex-1 text-sm text-white/60 truncate font-mono">
+                  {`${baseUrl}/respond/${inviteId}`}
+                </span>
+                <button
+                  onClick={copyInviteLink}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 shrink-0 ${
+                    inviteLinkCopied
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "bg-[#e07a5f] text-white hover:bg-[#d06a4f]"
+                  }`}
+                >
+                  {inviteLinkCopied ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copy
+                    </>
+                  )}
+                </button>
               </div>
-            )}
-          </div>
-        </>
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteId(null);
+                  setInviteLinkCopied(false);
+                  setRecipientName("");
+                  setRelationshipToSubject("");
+                  setInviteError(null);
+                }}
+                className="w-full py-2 rounded-xl text-sm font-medium bg-white/10 text-white/70 hover:bg-white/20 transition-colors"
+              >
+                Invite someone else
+              </button>
+            </div>
+          )}
+
+          {inviteError && (
+            <p className="text-xs text-red-300">{inviteError}</p>
+          )}
+
+          {inviteId && (
+            <p className="text-xs text-white/30">
+              Share this link so they can add their perspective.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import EditNotesClient from '@/components/EditNotesClient';
 import EditRequestForm from '@/components/EditRequestForm';
 import Nav from '@/components/Nav';
+import { readEditSession } from '@/lib/edit-session';
 import { redactReferences } from '@/lib/references';
 import { formStyles, subtleBackground } from '@/lib/styles';
 import { createAdminClient, createClient as createServerClient } from '@/lib/supabase/server';
@@ -15,24 +16,6 @@ function getMaxAgeSeconds() {
   }
   if (MAGIC_LINK_TTL_DAYS <= 0) return undefined;
   return Math.floor(MAGIC_LINK_TTL_DAYS * 24 * 60 * 60);
-}
-
-type EditSession = {
-  token: string;
-  name: string;
-};
-
-function readEditSession(value?: string): EditSession | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value));
-    if (parsed && typeof parsed.token === 'string' && typeof parsed.name === 'string') {
-      return parsed;
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 // Get a specific event by ID if the user has permission to edit it
@@ -386,7 +369,7 @@ export default async function EditPage({
             <Nav />
             <section className={formStyles.contentWrapper}>
               <p className={formStyles.subLabel}>
-                Edit your notes
+                Your notes
               </p>
               <h1 className={formStyles.pageTitle}>
                 Edit note
@@ -397,6 +380,7 @@ export default async function EditPage({
                   token={editSession.token}
                   contributorName={editSession.name}
                   events={[event] as Parameters<typeof EditNotesClient>[0]['events']}
+                  initialEditingId={event.id}
                 />
               </div>
             </section>
@@ -417,11 +401,14 @@ export default async function EditPage({
           <Nav />
           <section className={formStyles.contentWrapper}>
             <p className={formStyles.subLabel}>
-              Edit your notes
+              Your notes
             </p>
             <h1 className={formStyles.pageTitle}>
-              Your contributions
+              Your notes
             </h1>
+            <p className={formStyles.pageDescription}>
+              Select a note to edit.
+            </p>
 
             <div className="mt-8">
               <EditNotesClient
@@ -447,19 +434,20 @@ export default async function EditPage({
             style={subtleBackground}
           >
             <Nav />
-            <section className={formStyles.contentWrapper}>
-              <p className={formStyles.subLabel}>
-                Edit your notes
-              </p>
-              <h1 className={formStyles.pageTitle}>
-                Edit note
-              </h1>
+          <section className={formStyles.contentWrapper}>
+            <p className={formStyles.subLabel}>
+              Your notes
+            </p>
+            <h1 className={formStyles.pageTitle}>
+              Edit note
+            </h1>
 
               <div className="mt-8">
                 <EditNotesClient
                   token={contributorToken}
                   contributorName={profile.name || 'Your notes'}
                   events={[event] as Parameters<typeof EditNotesClient>[0]['events']}
+                  initialEditingId={event.id}
                 />
               </div>
             </section>
@@ -479,11 +467,14 @@ export default async function EditPage({
           <Nav />
           <section className={formStyles.contentWrapper}>
             <p className={formStyles.subLabel}>
-              Edit your notes
+              Your notes
             </p>
             <h1 className={formStyles.pageTitle}>
-              Your contributions
+              Your notes
             </h1>
+            <p className={formStyles.pageDescription}>
+              Select a note to edit.
+            </p>
 
             <div className="mt-8">
               <EditNotesClient
@@ -507,7 +498,7 @@ export default async function EditPage({
       <Nav />
       <section className={formStyles.contentWrapper}>
         <p className={formStyles.subLabel}>
-          Edit your notes
+          Your notes
         </p>
         <h1 className={formStyles.pageTitle}>
           Request a magic link

@@ -13,11 +13,7 @@ type DetectRequest = {
 async function detectNamesLLM(content: string): Promise<string[]> {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
   const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5-mini-2025-08-07';
-  console.log('detectNamesLLM called, apiKey exists:', !!apiKey, 'model:', model);
-  if (!apiKey) {
-    console.warn('OPENAI_API_KEY not found in environment');
-    return [];
-  }
+  if (!apiKey) return [];
 
   const system = [
     'You are a precise, permissive NER helper for family memories.',
@@ -47,11 +43,9 @@ async function detectNamesLLM(content: string): Promise<string[]> {
   });
 
   if (!resp.ok) {
-    const errorText = await resp.text();
-    console.warn('OpenAI detection failed:', resp.status, errorText);
+    console.warn('OpenAI detection failed', await resp.text());
     return [];
   }
-  console.log('OpenAI call succeeded');
 
   const data = await resp.json();
   const contentStr = data?.choices?.[0]?.message?.content;
@@ -96,7 +90,7 @@ Deno.serve(async (req: Request) => {
             received_content_excerpt: content.slice(0, 200),
             received_content_length: content.length,
           }
-        : null),
+        : {}),
     });
   } catch (error) {
     console.error('name-detection-check error', error);

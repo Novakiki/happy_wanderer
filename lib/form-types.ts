@@ -40,7 +40,7 @@ export type TimingData = {
 // People - Who else was part of this memory
 // =============================================================================
 
-export type PersonRole = 'was_there' | 'told_me' | 'might_remember';
+export type PersonRole = 'witness' | 'heard_from' | 'related';
 
 // Identity disclosure ladder
 export type IdentityState = 'approved' | 'pending' | 'anonymized' | 'removed';
@@ -152,23 +152,21 @@ export const DEFAULT_NOTE_FORM_DATA: NoteFormData = {
 // =============================================================================
 
 /**
- * Maps legacy person roles to new unified roles (for loading)
+ * Maps legacy person roles to canonical roles (for loading)
  */
 export function mapLegacyPersonRole(role?: string | null): PersonRole {
-  if (role === 'witness' || role === 'was_there') return 'was_there';
-  if (role === 'heard_from' || role === 'source' || role === 'told_me') return 'told_me';
-  if (role === 'related' || role === 'might_remember') return 'might_remember';
-  return 'was_there'; // default
+  if (role === 'witness' || role === 'was_there') return 'witness';
+  if (role === 'heard_from' || role === 'told_me') return 'heard_from';
+  if (role === 'related' || role === 'might_remember') return 'related';
+  if (role === 'source') return 'heard_from';
+  return 'witness'; // default
 }
 
 /**
- * Maps new person roles back to legacy roles (for saving to API)
+ * Maps canonical person roles back to reference roles (for saving to API)
  */
 export function mapToLegacyPersonRole(role: PersonRole): 'witness' | 'heard_from' | 'related' {
-  if (role === 'was_there') return 'witness';
-  if (role === 'told_me') return 'heard_from';
-  if (role === 'might_remember') return 'related';
-  return 'witness'; // default
+  return role;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
+import { upsertInviteIdentityReference } from '@/lib/respond-identity';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
       method,
       message,
       witnesses = [],
+      relationship_to_subject,
     } = body;
 
     if (!event_id || !recipient_name || !method) {
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
 
     // Check that the event is a memory (not milestone or synchronicity)
     const { data: event, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
-      .select('type')
+      .select('type, contributor_id')
       .eq('id', event_id)
       .single();
 
@@ -33,7 +35,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    const eventType = (event as { type: string }).type;
+    const typedEvent = event as { type: string; contributor_id: string | null };
+    const eventType = typedEvent.type;
     if (eventType !== 'memory') {
       const typeLabel = eventType === 'origin' ? 'synchronicity' : eventType;
       return NextResponse.json(
@@ -50,6 +53,7 @@ export async function POST(request: Request) {
         recipient_contact,
         method,
         message,
+        sender_id: typedEvent.contributor_id ?? null,
       })
       .select('id')
       .single();
@@ -58,6 +62,17 @@ export async function POST(request: Request) {
       console.error('Invite insert error:', inviteError);
       return NextResponse.json({ error: 'Failed to send invite' }, { status: 500 });
     }
+
+    const trimmedRelationship =
+      typeof relationship_to_subject === 'string' ? relationship_to_subject.trim() : '';
+
+    await upsertInviteIdentityReference({
+      admin,
+      eventId: event_id,
+      recipientName: recipient_name,
+      relationshipToSubject: trimmedRelationship || null,
+      contributorId: typedEvent.contributor_id ?? null,
+    });
 
     // Optionally record witnesses
     if (Array.isArray(witnesses) && witnesses.length) {

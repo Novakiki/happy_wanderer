@@ -1,9 +1,5 @@
 'use client';
 
-import { YearInput } from '@/components/forms/YearInput';
-import { ReferencesList } from '@/components/ReferencesList';
-import { RelationGraphPeek } from '@/components/RelationGraphPeek';
-import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import {
   applyScoreEventOverrides,
   groupEventsIntoBundles,
@@ -15,47 +11,23 @@ import { scoreBackground } from '@/lib/styles';
 import { getTimelineEvents } from '@/lib/supabase';
 import {
   LEGEND_LABELS,
-  MODAL_LABELS,
   SCORE_TITLE,
 } from '@/lib/terminology';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-// Minimal HTML decoder for stored rich text
-function decodeHtml(input: string) {
-  return input
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
 export default function ChaptersPage() {
+  const router = useRouter();
   const [bundles, setBundles] = useState<StoryBundle[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredEvent, setHoveredEvent] = useState<TimelineEvent | null>(null);
   const [hoveredBundle, setHoveredBundle] = useState<StoryBundle | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
-  const [selectedBundle, setSelectedBundle] = useState<StoryBundle | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   const [showComingSoon, setShowComingSoon] = useState(false);
-  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
 
-  // Inline edit mode for note detail modal
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editForm, setEditForm] = useState({
-    title: '',
-    content: '',
-    why_included: '',
-    location: '',
-    year: 0,
-    year_end: null as number | null,
-  });
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'time' | 'witness' | 'storyteller' | 'thread' | 'synchronicity'>('time');
 
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -63,15 +35,17 @@ export default function ChaptersPage() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const lastTouchDistance = useRef<number | null>(null);
 
-  // Graph connections for the selected event
-  type GraphPerson = {
-    id: string;
-    name?: string;
-    relationship?: string;
-    role: 'wrote' | 'responded' | 'invited' | 'mentioned';
-    isViewer?: boolean;
-  };
-  const [connectedPeople, setConnectedPeople] = useState<GraphPerson[]>([]);
+  // Map of event_id -> event for quick lookups (e.g., trigger titles)
+  const eventLookup = useMemo(() => {
+    const map = new Map<string, TimelineEvent>();
+    for (const bundle of bundles) {
+      map.set(bundle.rootEvent.id, bundle.rootEvent);
+      for (const p of bundle.perspectives) {
+        map.set(p.id, p);
+      }
+    }
+    return map;
+  }, [bundles]);
 
   // Gesture zoom handlers
   const handleWheel = useCallback((e: WheelEvent) => {
@@ -144,16 +118,6 @@ export default function ChaptersPage() {
     return isApproximate ? `~${event.year}` : String(event.year);
   };
 
-  // Fetch current user session
-  useEffect(() => {
-    fetch('/api/session')
-      .then(res => res.json())
-    .then(data => {
-      if (data?.name) setCurrentUserName(data.name);
-    })
-      .catch(() => {});
-  }, []);
-
   // Fetch data from Supabase
   useEffect(() => {
     async function fetchData() {
@@ -186,134 +150,6 @@ export default function ChaptersPage() {
 
     fetchData();
   }, []);
-
-  // Close modal on escape key
-  useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSelectedEvent(null);
-      }
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, []);
-
-  // Reset state when modal closes
-  useEffect(() => {
-    if (!selectedEvent) {
-      setIsEditMode(false);
-      setSelectedBundle(null);
-      setConnectedPeople([]);
-      setSaveError(null);
-    }
-  }, [selectedEvent]);
-
-  // Fetch people connected to selected event (for the graph)
-  useEffect(() => {
-    if (!selectedEvent || selectedEvent.type !== 'memory') {
-      setConnectedPeople([]);
-      return;
-    }
-
-    async function fetchConnections() {
-      try {
-        const res = await fetch(`/api/respond/connections?event_id=${selectedEvent!.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          setConnectedPeople(data.people || []);
-        }
-      } catch {
-        // Silently fail - graph is enhancement, not critical
-      }
-    }
-    fetchConnections();
-  }, [selectedEvent]);
-
-
-  // Enter edit mode - populate form with current values
-  const enterEditMode = () => {
-    if (!selectedEvent) return;
-    setEditForm({
-      title: selectedEvent.title || '',
-      content: selectedEvent.fullEntry || '',
-      why_included: selectedEvent.whyIncluded || '',
-      location: selectedEvent.location || '',
-      year: selectedEvent.year || 0,
-      year_end: selectedEvent.yearEnd ?? null,
-    });
-    setSaveError(null);
-    setIsEditMode(true);
-  };
-
-  // Cancel edit mode
-  const cancelEditMode = () => {
-    setIsEditMode(false);
-    setSaveError(null);
-  };
-
-  // Save inline edits
-  const saveInlineEdits = async () => {
-    if (!selectedEvent) return;
-
-    setIsSaving(true);
-    setSaveError(null);
-
-    try {
-      const res = await fetch(`/api/events/${selectedEvent.id}/update`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editForm.title,
-          content: editForm.content,
-          why_included: editForm.why_included,
-          location: editForm.location,
-          year: editForm.year,
-          year_end: editForm.year_end,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to save');
-      }
-
-      // Update the local state with new values
-      const updatedEvent = {
-        ...selectedEvent,
-        title: editForm.title,
-        fullEntry: editForm.content,
-        preview: generatePreviewFromHtml(editForm.content, PREVIEW_MAX_LENGTH),
-        whyIncluded: editForm.why_included,
-        location: editForm.location,
-        year: editForm.year,
-        yearEnd: editForm.year_end,
-      };
-
-      // Update bundles to reflect the change
-      setBundles(prevBundles =>
-        prevBundles.map(bundle => {
-          if (bundle.rootEvent.id === selectedEvent.id) {
-            return { ...bundle, rootEvent: updatedEvent };
-          }
-          return {
-            ...bundle,
-            perspectives: bundle.perspectives.map(p =>
-              p.id === selectedEvent.id ? updatedEvent : p
-            ),
-          };
-        })
-      );
-
-      setSelectedEvent(updatedEvent);
-      setIsEditMode(false);
-    } catch (error) {
-      console.error('Save error:', error);
-      setSaveError(error instanceof Error ? error.message : 'Failed to save');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   // Position bundles evenly across the timeline (index-based, not time-based)
   const getBundlePosition = (index: number) => {
     if (bundles.length <= 1) return 50;
@@ -451,12 +287,12 @@ export default function ChaptersPage() {
           style={{ animationDelay: '720ms', animationFillMode: 'both' }}
         >
           {/* Tabs */}
-          <div className="flex items-center justify-between px-4 pt-4 pb-2 border-b border-white/5 relative z-10">
+          <div className="px-4 pt-4 pb-2 border-b border-white/5 relative z-10">
             <div
-              className="flex items-center gap-1 overflow-x-auto scrollbar-hide pr-8 -mr-8"
+              className="flex items-center gap-1 overflow-x-auto scrollbar-hide"
               style={{
-                maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+                maskImage: 'linear-gradient(to right, black 90%, transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to right, black 90%, transparent 100%)',
               }}
             >
               <button
@@ -484,41 +320,39 @@ export default function ChaptersPage() {
                 </button>
               ))}
             </div>
-
-            {/* Zoom controls - hidden on mobile since pinch gestures work */}
-            {activeTab === 'time' && (
-              <div className="hidden sm:flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}
-                  className="w-7 h-7 rounded-md bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-sm flex items-center justify-center"
-                >
-                  −
-                </button>
-                <span className="text-[10px] text-white/30 w-10 text-center tabular-nums">{Math.round(zoomLevel * 100)}%</span>
-                <button
-                  type="button"
-                  onClick={() => setZoomLevel(z => Math.min(3, z + 0.25))}
-                  className="w-7 h-7 rounded-md bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-sm flex items-center justify-center"
-                >
-                  +
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Tab content */}
           <div className="p-4 overflow-visible relative z-20">
             {activeTab === 'time' ? (
               <>
-                {/* Key toggle */}
-                <div className="mb-2">
+                {/* Controls row: Key toggle left, Zoom controls right */}
+                <div className="flex items-center justify-between mb-2">
                   <button
                     onClick={() => setShowKey(!showKey)}
                     className="text-[11px] tracking-[0.15em] uppercase text-white/40 hover:text-white/60 transition-colors"
                   >
-                    {showKey ? '— Hide key' : '— Key'}
+                    {showKey ? '− Key' : '+ Key'}
                   </button>
+                  {/* Zoom controls - hidden on mobile since pinch gestures work */}
+                  <div className="hidden sm:flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}
+                      className="w-6 h-6 rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-xs flex items-center justify-center"
+                    >
+                      −
+                    </button>
+                    <span className="text-[10px] text-white/30 w-8 text-center tabular-nums">{Math.round(zoomLevel * 100)}%</span>
+                    <button
+                      type="button"
+                      onClick={() => setZoomLevel(z => Math.min(3, z + 0.25))}
+                      className="w-6 h-6 rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-xs flex items-center justify-center"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
                   <div
                     className={`overflow-hidden transition-all duration-300 ease-out ${
                       showKey ? 'max-h-32 opacity-100 mt-3' : 'max-h-0 opacity-0 mt-0'
@@ -542,7 +376,6 @@ export default function ChaptersPage() {
                       </div>
                     </div>
                   </div>
-                </div>
 
                 {/* Timeline container with fixed repeat signs */}
                 <div className="relative h-[280px] flex overflow-visible">
@@ -609,7 +442,6 @@ export default function ChaptersPage() {
                 const isOrigin = event.type === 'origin';
                 const isMilestone = event.type === 'milestone';
                 const isHovered = hoveredEvent?.id === event.id;
-                const hasMore = event.fullEntry || event.preview;
                 const isApproximate = event.timingCertainty === 'approximate';
                 const isVague = event.timingCertainty === 'vague';
                 const yearLabel = formatYearLabel(event);
@@ -625,7 +457,6 @@ export default function ChaptersPage() {
                         : 'bg-white/30';
                 const hoverColor = !isOrigin && !isMilestone ? 'group-hover:bg-white/50' : '';
                 const hoverHeight = !isOrigin && !isMilestone ? 'group-hover:h-20' : '';
-                const isSelected = selectedEvent?.id === event.id;
                 const noteHeadClass = isOrigin
                   ? 'w-3 h-3 rotate-45 rounded-[2px] bg-white/70'
                   : isMilestone
@@ -650,7 +481,7 @@ export default function ChaptersPage() {
                   : isOrigin
                     ? 'bg-white/70'
                     : 'bg-white/50';
-                const slurClass = isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+                const slurClass = isHovered ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
 
                 return (
                   <div
@@ -668,26 +499,10 @@ export default function ChaptersPage() {
                       setHoveredBundle(null);
                       setTooltipPos(null);
                     }}
-                    onClick={(e) => {
-                      if (!hasMore) return;
-
-                      // Two-tap pattern for mobile:
-                      // If already showing preview for this event, open full detail
-                      // Otherwise, show preview first
-                      if (hoveredEvent?.id === event.id) {
-                        setSelectedEvent(event);
-                        setSelectedBundle(bundle);
-                        // Clear preview
-                        setHoveredEvent(null);
-                        setHoveredBundle(null);
-                        setTooltipPos(null);
-                      } else {
-                        // Show preview (mobile tap = hover equivalent)
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
-                        setHoveredEvent(event);
-                        setHoveredBundle(bundle);
-                      }
+                    onClick={() => {
+                      if (!event.id) return;
+                      // Interaction rule: hover previews on desktop; click/tap opens the full note.
+                      router.push(`/memory/${event.id}`);
                     }}
                   >
                     {/* The bar */}
@@ -946,339 +761,7 @@ export default function ChaptersPage() {
           </div>
         </div>
       </section>
-
-
-      {/* Modal for expanded entry */}
-      {selectedEvent && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
-          onClick={() => setSelectedEvent(null)}
-        >
-          <div
-            className="bg-[#151515] border border-white/10 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in-up max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex-1 min-w-0">
-                {isEditMode ? (
-                  <>
-                    <YearInput
-                      year={editForm.year}
-                      yearEnd={editForm.year_end}
-                      onYearChange={(y) => setEditForm({ ...editForm, year: y ?? 0 })}
-                      onYearEndChange={(y) => setEditForm({ ...editForm, year_end: y })}
-                      layout="inline"
-                      label="Year"
-                      className="mb-2"
-                    />
-                    <label className="text-xs text-white/40 uppercase tracking-wider block mt-2">Title</label>
-                    <input
-                      type="text"
-                      value={editForm.title}
-                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-lg font-serif focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40"
-                      placeholder="Title"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <p className="text-white/40 text-sm">{formatYearLabel(selectedEvent)}</p>
-                    <h2 className="text-2xl font-serif text-white mt-1">{selectedEvent.title}</h2>
-                    {selectedBundle && selectedBundle.totalCount > 1 && (
-                      <span className="inline-flex items-center mt-2 px-2 py-0.5 rounded-full bg-[#e07a5f]/15 text-[#e07a5f] text-[10px] uppercase tracking-[0.2em]">
-                        Other perspectives
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="flex items-center gap-2 ml-4">
-                {/* Edit button for owner */}
-                {!isEditMode && currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase() && (
-                  <button
-                    onClick={enterEditMode}
-                    className="text-white/40 hover:text-white transition-colors p-1 text-sm"
-                    title="Edit this note"
-                  >
-                    Edit
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    if (isEditMode) {
-                      cancelEditMode();
-                    } else {
-                      setSelectedEvent(null);
-                    }
-                  }}
-                  className="text-white/40 hover:text-white transition-colors p-1"
-                >
-                  <span className="text-xl">×</span>
-                </button>
-              </div>
-            </div>
-
-            {selectedBundle && selectedBundle.totalCount > 1 && (
-              <div className="mb-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/50">
-                Root note · Depth {selectedEvent.chainDepth ?? 0} · {selectedBundle.totalCount} notes
-              </div>
-            )}
-
-            {/* Content */}
-            <div className="text-white/70 leading-relaxed space-y-4">
-              {selectedEvent.type === 'origin' && selectedEvent.fullEntry && !isEditMode && (
-                <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{MODAL_LABELS.originContent}</p>
-              )}
-              {isEditMode ? (
-                <>
-                  <label className="text-xs text-white/40 uppercase tracking-wider">Content</label>
-                  <textarea
-                    value={editForm.content}
-                    onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
-                    rows={8}
-                    className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 resize-y"
-                    placeholder="What happened..."
-                  />
-                </>
-              ) : selectedEvent.fullEntry ? (
-                <div
-                  className="prose prose-sm prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: decodeHtml(selectedEvent.fullEntry) }}
-                />
-              ) : selectedEvent.preview ? (
-                <p>{selectedEvent.preview}</p>
-              ) : null}
-            </div>
-
-            {selectedEvent.media && selectedEvent.media.length > 0 && (
-              <div className="mt-6 space-y-4">
-                {selectedEvent.media.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4"
-                  >
-                    {item.type === 'audio' && (
-                      <audio controls className="w-full">
-                        <source src={item.url} />
-                      </audio>
-                    )}
-                    {item.type === 'photo' && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.url}
-                        alt={item.caption || 'Attached image'}
-                        className="w-full rounded-lg border border-white/10"
-                      />
-                    )}
-                    {item.type === 'document' && (
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-[#e07a5f] hover:text-white transition-colors"
-                      >
-                        Open link
-                      </a>
-                    )}
-                    {item.caption && (
-                      <p className="text-xs text-white/40 mt-3">{item.caption}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Why this note */}
-            {isEditMode ? (
-              <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/10">
-                <label className="text-xs text-white/40 uppercase tracking-wider">{MODAL_LABELS.whyIncluded}</label>
-                <textarea
-                  value={editForm.why_included}
-                  onChange={(e) => setEditForm({ ...editForm, why_included: e.target.value })}
-                  rows={3}
-                  className="w-full mt-2 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white/60 text-sm italic leading-relaxed focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40 resize-y"
-                  placeholder="Why is this meaningful..."
-                />
-              </div>
-            ) : selectedEvent.whyIncluded ? (
-              <div className="mt-6 p-4 rounded-xl bg-white/5 border border-white/10">
-                <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{MODAL_LABELS.whyIncluded}</p>
-                <div
-                  className="text-white/60 text-sm italic leading-relaxed prose prose-sm prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: decodeHtml(selectedEvent.whyIncluded) }}
-                />
-                <p className="text-white/30 text-xs mt-2">
-                  — {selectedEvent.contributor}
-                  {selectedEvent.contributorRelation && selectedEvent.contributorRelation !== 'synthesized' && (
-                    <span> ({selectedEvent.contributorRelation})</span>
-                  )}
-                </p>
-              </div>
-            ) : null}
-
-            {/* Context / Location */}
-            {isEditMode ? (
-              <div className="mt-4">
-                <label className="text-xs text-white/40 uppercase tracking-wider">Location</label>
-                <input
-                  type="text"
-                  value={editForm.location}
-                  onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
-                  className="w-full mt-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#e07a5f]/40"
-                  placeholder="Where did this happen?"
-                />
-              </div>
-            ) : (selectedEvent.location
-              || selectedEvent.date
-              || (selectedEvent.timingCertainty && selectedEvent.timingCertainty !== 'exact')
-              || (selectedEvent.timingInputType === 'age_range'
-                && selectedEvent.ageStart !== null
-                && selectedEvent.ageEnd !== null)
-            ) ? (
-              <div className="mt-4 flex flex-wrap gap-3 text-xs text-white/40">
-                {selectedEvent.date && (
-                  <span>{selectedEvent.date}, {formatYearLabel(selectedEvent)}</span>
-                )}
-                {selectedEvent.location && (
-                  <span>📍 {selectedEvent.location}</span>
-                )}
-                {selectedEvent.timingCertainty && selectedEvent.timingCertainty !== 'exact' && (
-                  <span>
-                    Timing: {selectedEvent.timingCertainty === 'approximate' ? 'Approximate' : 'Vague'}
-                  </span>
-                )}
-                {selectedEvent.timingInputType === 'age_range'
-                  && selectedEvent.ageStart !== null
-                  && selectedEvent.ageEnd !== null && (
-                  <span>Ages {selectedEvent.ageStart}–{selectedEvent.ageEnd}</span>
-                )}
-              </div>
-            ) : null}
-
-            {/* Other perspectives in this story */}
-            {selectedBundle && selectedBundle.totalCount > 1 && (
-              <div className="mt-6 pt-4 border-t border-white/10">
-                <p className="text-xs text-white/40 uppercase tracking-wider mb-3">
-                  Other perspectives ({selectedBundle.totalCount})
-                </p>
-                <div className="space-y-2">
-                  {/* Show root event if currently viewing a perspective */}
-                  {selectedEvent.id !== selectedBundle.rootEvent.id && (
-                    <button
-                      onClick={() => setSelectedEvent(selectedBundle.rootEvent)}
-                      className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-                    >
-                      <p className="text-white/80 text-sm font-medium">{selectedBundle.rootEvent.title}</p>
-                      <p className="text-white/40 text-xs mt-1">
-                        {selectedBundle.rootEvent.contributor}
-                        {selectedBundle.rootEvent.contributorRelation && selectedBundle.rootEvent.contributorRelation !== 'synthesized' && (
-                          <span> ({selectedBundle.rootEvent.contributorRelation})</span>
-                        )}
-                        <span className="ml-2 text-[#e07a5f]">Original</span>
-                      </p>
-                    </button>
-                  )}
-                  {/* Show other perspectives */}
-                  {selectedBundle.perspectives
-                    .filter(p => p.id !== selectedEvent.id)
-                    .map((perspective) => (
-                      <button
-                        key={perspective.id}
-                        onClick={() => setSelectedEvent(perspective)}
-                        className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-                      >
-                        <p className="text-white/80 text-sm font-medium">{perspective.title}</p>
-                        <p className="text-white/40 text-xs mt-1">
-                          {perspective.contributor}
-                          {perspective.contributorRelation && perspective.contributorRelation !== 'synthesized' && (
-                            <span> ({perspective.contributorRelation})</span>
-                          )}
-                        </p>
-                      </button>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Source attribution (references only) */}
-            <div className="mt-6 pt-4 border-t border-white/10 space-y-4">
-              <div className="text-xs text-white/40">
-                <span className="text-white/20">Added by</span>{' '}
-                <span className="text-white/50">{selectedEvent.contributor}</span>
-                {selectedEvent.contributorRelation && selectedEvent.contributorRelation !== 'synthesized' && (
-                  <span className="text-white/30"> ({selectedEvent.contributorRelation})</span>
-                )}
-              </div>
-              {selectedEvent.references && selectedEvent.references.length > 0 && (
-                <ReferencesList references={selectedEvent.references} />
-              )}
-            </div>
-
-            {/* Constellation graph - only for memories with connections */}
-            {selectedEvent.type === 'memory' && connectedPeople.length > 0 && (
-              <RelationGraphPeek
-                className="mt-6"
-                story={{
-                  id: selectedEvent.id,
-                  title: selectedEvent.title,
-                  type: selectedEvent.type,
-                }}
-                people={connectedPeople}
-              />
-            )}
-
-            {/* Action buttons */}
-            <div className="mt-6 space-y-3">
-              {/* Save/Cancel buttons when in edit mode */}
-              {isEditMode ? (
-                <>
-                  {saveError && (
-                    <p className="text-sm text-red-400 text-center">{saveError}</p>
-                  )}
-                  <div className="flex gap-3">
-                    <button
-                      onClick={cancelEditMode}
-                      disabled={isSaving}
-                      className="flex-1 py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveInlineEdits}
-                      disabled={isSaving || !editForm.title.trim() || !editForm.content.trim()}
-                      className="flex-1 py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                      {isSaving ? 'Saving...' : 'Save changes'}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <a
-                    href={`/memory/${selectedEvent.id}`}
-                    className="w-full py-3 rounded-xl bg-[#e07a5f] text-white text-sm font-medium hover:bg-[#d06a4f] transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span>Open note</span>
-                  </a>
-                  {/* Add your perspective - only for memories and not the contributor */}
-                  {selectedEvent.type === 'memory' &&
-                    !(currentUserName && selectedEvent.contributor?.toLowerCase() === currentUserName.toLowerCase()) && (
-                    <a
-                      href={`/share?responding_to=${selectedEvent.id}`}
-                      className="w-full py-3 rounded-xl border border-white/20 text-white/70 text-sm font-medium hover:border-white/40 hover:text-white transition-colors flex items-center justify-center gap-2"
-                    >
-                      <span>Add your perspective</span>
-                    </a>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Portal tooltip for timeline hover/tap preview */}
+      {/* Portal tooltip for timeline hover preview */}
       {hoveredEvent && tooltipPos && typeof document !== 'undefined' && createPortal(
         <>
           {/* Invisible backdrop to dismiss on mobile tap-away */}
@@ -1298,14 +781,8 @@ export default function ChaptersPage() {
               transform: 'translate(-50%, -100%)',
             }}
             onClick={() => {
-              // Tap on tooltip opens full detail (mobile)
-              if (hoveredEvent.fullEntry || hoveredEvent.preview) {
-                setSelectedEvent(hoveredEvent);
-                setSelectedBundle(hoveredBundle);
-                setHoveredEvent(null);
-                setHoveredBundle(null);
-                setTooltipPos(null);
-              }
+              if (!hoveredEvent?.id) return;
+              router.push(`/memory/${hoveredEvent.id}`);
             }}
           >
             <p className="text-white/50 text-[10px] tracking-wide">
@@ -1317,6 +794,14 @@ export default function ChaptersPage() {
               <p className="text-white/60 text-xs mt-1.5 leading-relaxed line-clamp-3">
                 {hoveredEvent.preview.replace(/<[^>]*>/g, '').slice(0, 150)}
                 {hoveredEvent.preview.replace(/<[^>]*>/g, '').length > 150 ? '…' : ''}
+              </p>
+            )}
+            {hoveredEvent.triggerEventId && eventLookup.get(hoveredEvent.triggerEventId) && (
+              <p className="text-white/40 text-[10px] mt-2">
+                In response to:{' '}
+                <span className="text-white/60">
+                  {eventLookup.get(hoveredEvent.triggerEventId)?.title}
+                </span>
               </p>
             )}
             <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
@@ -1333,8 +818,8 @@ export default function ChaptersPage() {
               )}
             </div>
             <p className="text-white/30 text-[10px] mt-1.5 italic">
-              <span className="hidden md:inline">Click to read more</span>
-              <span className="md:hidden">Tap to read more</span>
+              <span className="hidden md:inline">Click the note to open</span>
+              <span className="md:hidden">Tap the note to open</span>
             </p>
           </div>
         </>,

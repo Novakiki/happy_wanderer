@@ -1,7 +1,21 @@
 import { immersiveBackground } from "@/lib/styles";
+import Link from "next/link";
 import ContinueButton from "./ContinueButton";
 
-export default async function LetterPage() {
+export const dynamic = "force-dynamic";
+
+type Props = {
+  searchParams: Promise<{
+    from?: string;
+    inviteId?: string;
+  }>;
+};
+
+export default async function LetterPage({ searchParams }: Props) {
+  const params = await searchParams;
+  const hideContinue = params?.from === "invite";
+  const inviteId = params?.inviteId;
+  const inviteLink = inviteId ? `/respond/${inviteId}` : null;
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={immersiveBackground}>
       <div className="max-w-2xl mx-auto px-6 py-16">
@@ -63,9 +77,21 @@ export default async function LetterPage() {
             Where speech was lost, language re-enters differently: distributed
             across people, unfolding over time, and held collectively.
           </p>
+
         </div>
 
-        <ContinueButton />
+        {hideContinue && inviteLink ? (
+          <div className="mt-10">
+            <Link
+              href={inviteLink}
+              className="text-sm text-white/70 hover:text-white transition-colors"
+            >
+              Back to your invitation →
+            </Link>
+          </div>
+        ) : null}
+
+        {!hideContinue && <ContinueButton />}
       </div>
     </div>
   );

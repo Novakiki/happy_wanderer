@@ -1,14 +1,19 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
+import { readEditSession, isNoteOwner } from "@/lib/edit-session";
 import { getEventById } from "@/lib/supabase";
+import { createClient as createServerClient } from "@/lib/supabase/server";
 import Nav from "@/components/Nav";
 import { ReferencesList } from "@/components/ReferencesList";
 import ShareInvitePanel from "@/components/ShareInvitePanel";
+import { TriggerEventLink } from "@/components/TriggerEventLink";
 import { immersiveBackground } from "@/lib/styles";
 import { LIFE_STAGES, THREAD_RELATIONSHIP_LABELS } from "@/lib/terminology";
 import { redactReferences, type ReferenceRow, type RedactedReference } from "@/lib/references";
+import { maskContentWithReferences } from "@/lib/name-detection";
 
 type TimelineEvent = Database["public"]["Tables"]["timeline_events"]["Row"] & {
   contributor: { name: string; relation: string | null } | null;
@@ -31,8 +36,26 @@ type LinkedStory = {
 export default async function MemoryPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
+
+  // Read edit session to check if viewer is the note owner (magic link users)
+  const cookieStore = await cookies();
+  const editSession = readEditSession(cookieStore.get("vals-memory-edit")?.value);
+
+  // Also check if logged-in user has a linked contributor (auth users like Amy)
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("profiles")
+        .select("contributor_id")
+        .eq("id", user.id)
+        .single()
+    : { data: null };
+  const authContributorId = profile?.contributor_id ?? null;
+
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY;
   const admin =
@@ -51,20 +74,22 @@ export default async function MemoryPage({
         *,
         contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
         media:event_media(media:media(*)),
-        references:event_references(id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name))
+        references:event_references(id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name)),
+        trigger_event:timeline_events!timeline_events_trigger_event_id_fkey(id, title, privacy_level)
       `
       )
-      .eq("id", params.id)
+      .eq("id", id)
       .single();
 
     if (error) {
-      console.error("Error fetching event:", error);
+      // Soft-fail: fall back to getEventById; avoid dev overlay noise
+      console.warn("Error fetching event via admin client:", error);
     } else {
-      // Redact private names before rendering
+      // Redact private names before rendering (include author payload so owner can see real names)
       const rawRefs = (data.references || []) as unknown as ReferenceRow[];
       event = {
         ...data,
-        references: redactReferences(rawRefs),
+        references: redactReferences(rawRefs, { includeAuthorPayload: true }),
       } as TimelineEvent;
     }
 
@@ -78,7 +103,7 @@ export default async function MemoryPage({
           note,
           response_event:timeline_events!response_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
         `)
-        .eq("original_event_id", params.id);
+        .eq("original_event_id", id);
 
       // Stories where this is a response
       const { data: originalsForThis } = await admin
@@ -88,7 +113,7 @@ export default async function MemoryPage({
           note,
           original_event:timeline_events!original_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
         `)
-        .eq("response_event_id", params.id);
+        .eq("response_event_id", id);
 
       if (responsesToThis) {
         for (const thread of responsesToThis as Array<{
@@ -153,7 +178,7 @@ export default async function MemoryPage({
   }
 
   if (!event) {
-    event = (await getEventById(params.id)) as TimelineEvent | null;
+    event = (await getEventById(id)) as TimelineEvent | null;
   }
 
   if (!event) {
@@ -201,19 +226,87 @@ export default async function MemoryPage({
     event.type === "memory" ? `/share?responding_to=${event.id}` : "/share";
   const respondLabel = event.type === "memory" ? "Add your perspective" : "Add a note";
 
+  const triggerEvent = (event as unknown as { trigger_event?: { id: string; title: string; privacy_level?: string | null } | null }).trigger_event;
+  const canShowTrigger =
+    triggerEvent &&
+    triggerEvent.id !== event.id &&
+    (triggerEvent.privacy_level === "public" || triggerEvent.privacy_level === event.privacy_level);
+
+  // Check if current viewer is the note owner (via edit session OR auth profile)
+  const ownerViaEditSession = isNoteOwner(editSession, event.contributor_id);
+  const ownerViaAuth = authContributorId !== null && authContributorId === event.contributor_id;
+  const viewerIsOwner = ownerViaEditSession || ownerViaAuth;
+
+  // Mask names in content for non-owners based on visibility preferences
+  const displayText = viewerIsOwner
+    ? primaryText
+    : maskContentWithReferences(primaryText, event.references || []);
+
+  // Build edit link - prefer edit session token, fall back to auth-based edit page
+  const editLink = viewerIsOwner
+    ? editSession?.token
+      ? `/edit/${editSession.token}?event_id=${event.id}`
+      : `/edit?event_id=${event.id}`
+    : null;
+
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={immersiveBackground}>
       <div className="max-w-3xl mx-auto px-6 py-16">
         <Nav variant="back" />
 
-        <p className="text-xs uppercase tracking-[0.3em] text-white/40 mt-8">
-          A note in the score
-        </p>
-        <h1 className="text-3xl sm:text-4xl font-serif text-white mt-4">
-          {event.title}
-        </h1>
+        <div className="flex items-start justify-between gap-4 mt-8">
+          <div className="flex-1">
+            <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+              A note in the score
+            </p>
+            {canShowTrigger && triggerEvent && (
+              <TriggerEventLink
+                triggerEvent={triggerEvent}
+                currentEventId={event.id}
+              />
+            )}
+            <h1 className="text-3xl sm:text-4xl font-serif text-white mt-4">
+              {event.title}
+            </h1>
+          </div>
+          {viewerIsOwner && editLink && (
+            <Link
+              href={editLink}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors text-xs"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit
+            </Link>
+          )}
+        </div>
 
-        <div className="flex flex-wrap gap-3 text-xs text-white/40 mt-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-white/40 mt-4">
+          {/* Owner-only status badges inline with metadata */}
+          {viewerIsOwner && (
+            <>
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                event.status === "published"
+                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  : event.status === "draft"
+                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                  : "bg-white/5 text-white/40 border border-white/10"
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  event.status === "published" ? "bg-emerald-400" : event.status === "draft" ? "bg-amber-400" : "bg-white/40"
+                }`} />
+                {event.status || "pending"}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-white/5 text-white/40 border border-white/10">
+                {event.privacy_level === "public" && "Public"}
+                {event.privacy_level === "family" && "Family only"}
+                {event.privacy_level === "private" && "Private"}
+                {!event.privacy_level && "Family only"}
+              </span>
+            </>
+          )}
           <span>{dateLine}</span>
           {event.location && <span>Location: {event.location}</span>}
           {event.people_involved && event.people_involved.length > 0 && (
@@ -234,10 +327,10 @@ export default async function MemoryPage({
           )}
         </div>
 
-        {primaryText ? (
+        {displayText ? (
           <div
             className="mt-8 space-y-6 text-white/70 leading-relaxed prose prose-sm prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: primaryText }}
+            dangerouslySetInnerHTML={{ __html: displayText }}
           />
         ) : (
           <p className="mt-8 text-white/50">
@@ -305,7 +398,11 @@ export default async function MemoryPage({
               )}
           </div>
           {event.references && event.references.length > 0 && (
-            <ReferencesList references={event.references} />
+            <ReferencesList
+              references={event.references}
+              viewerIsOwner={viewerIsOwner}
+              showBothViews={process.env.NODE_ENV === 'development'}
+            />
           )}
 
           {/* Invite storyteller button */}
@@ -386,6 +483,7 @@ export default async function MemoryPage({
           yearEnd={event.year_end ?? null}
           timingCertainty={(event.timing_certainty ?? null) as "exact" | "approximate" | "vague" | null}
           eventType={(event.type ?? null) as "memory" | "milestone" | "origin" | null}
+          viewerIsOwner={viewerIsOwner}
         />
 
         <div className="mt-10 flex flex-wrap gap-3">

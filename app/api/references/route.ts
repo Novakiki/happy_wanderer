@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { redactReferences } from '@/lib/references';
+import { redactReferences, type ReferenceRow } from '@/lib/references';
 
 export async function POST(request: NextRequest) {
   try {
@@ -131,6 +131,14 @@ export async function GET(request: NextRequest) {
     }
 
     const admin = createAdminClient();
+
+    // Get the event's contributor_id for preference lookups
+    const { data: eventData } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+      .select('contributor_id')
+      .eq('id', eventId)
+      .single();
+    const eventContributorId = (eventData as { contributor_id?: string } | null)?.contributor_id;
+
     const { data, error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
       .select(`
         id,
@@ -151,8 +159,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch references' }, { status: 500 });
     }
 
+    // Fetch visibility preferences for all person references
+    const personIds = ((data || []) as { person?: { id?: string } | null }[])
+      .filter(r => r.person?.id)
+      .map(r => r.person!.id!);
+
+    let preferencesMap: Map<string, { contributor_preference?: string | null; global_preference?: string | null }> = new Map();
+
+    if (personIds.length > 0 && eventContributorId) {
+      // Fetch preferences for these people (both contributor-specific and global)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: prefs } = await (admin.from('visibility_preferences' as any) as any)
+        .select('person_id, contributor_id, visibility')
+        .in('person_id', personIds)
+        .or(`contributor_id.eq.${eventContributorId},contributor_id.is.null`);
+
+      // Build a map of person_id -> { contributor_preference, global_preference }
+      if (prefs) {
+        for (const pref of prefs as { person_id: string; contributor_id: string | null; visibility: string }[]) {
+          const existing = preferencesMap.get(pref.person_id) || {};
+          if (pref.contributor_id === eventContributorId) {
+            existing.contributor_preference = pref.visibility;
+          } else if (pref.contributor_id === null) {
+            existing.global_preference = pref.visibility;
+          }
+          preferencesMap.set(pref.person_id, existing);
+        }
+      }
+    }
+
+    // Attach visibility preferences to each reference
+    type RefWithPerson = { person?: { id?: string } | null };
+    const enrichedData = (data || []).map((ref: RefWithPerson) => ({
+      ...ref,
+      visibility_preference: ref.person?.id ? preferencesMap.get(ref.person.id) : null,
+    }));
+
     // Redact private names and filter removed before sending to client
-    const references = redactReferences(data || []);
+    const references = redactReferences(enrichedData as ReferenceRow[]);
 
     return NextResponse.json({ references });
   } catch (error) {

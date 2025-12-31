@@ -655,6 +655,7 @@ export type Database = {
           preview: string | null
           privacy_level: string | null
           prompted_by_event_id: string | null
+          trigger_event_id: string | null
           root_event_id: string | null
           source_name: string | null
           source_url: string | null
@@ -684,6 +685,7 @@ export type Database = {
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
+          trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
           source_url?: string | null
@@ -713,6 +715,7 @@ export type Database = {
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
+          trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
           source_url?: string | null
@@ -738,6 +741,13 @@ export type Database = {
           {
             foreignKeyName: "timeline_events_prompted_by_event_id_fkey"
             columns: ["prompted_by_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_trigger_event_id_fkey"
+            columns: ["trigger_event_id"]
             isOneToOne: false
             referencedRelation: "timeline_events"
             referencedColumns: ["id"]

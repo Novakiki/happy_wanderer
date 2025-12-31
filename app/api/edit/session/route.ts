@@ -51,9 +51,14 @@ export async function POST(request: Request) {
     const payload = JSON.stringify({
       token: normalizedToken,
       name: contributor?.name || 'Contributor',
+      contributor_id: tokenRow.contributor_id,
     });
 
-    const response = NextResponse.json({ success: true, name: contributor?.name || null });
+    const response = NextResponse.json({
+      success: true,
+      name: contributor?.name || null,
+      contributor_id: tokenRow.contributor_id,
+    });
     response.cookies.set('vals-memory-edit', encodeURIComponent(payload), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

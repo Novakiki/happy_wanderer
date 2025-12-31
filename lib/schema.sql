@@ -86,6 +86,7 @@ CREATE TABLE timeline_events (
 
   -- Story chain: links to the event this is responding to
   prompted_by_event_id UUID REFERENCES timeline_events(id),
+  trigger_event_id UUID REFERENCES timeline_events(id), -- UI surface that prompted this submission
   root_event_id UUID REFERENCES timeline_events(id),
   chain_depth INTEGER DEFAULT 0,
 

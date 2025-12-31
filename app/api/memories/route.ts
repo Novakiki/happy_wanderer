@@ -9,8 +9,10 @@ import {
   computeChainInfo,
   type ParentEventInfo,
 } from '@/lib/memories';
+import { mapLegacyPersonRole } from '@/lib/form-types';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
+import { runLlmReview, type LlmReviewResult } from '@/lib/llm-review';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -75,6 +77,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let llmResult: LlmReviewResult;
+    try {
+      llmResult = await runLlmReview({
+        title,
+        content,
+        why: why_included,
+      });
+    } catch (llmError) {
+      console.error('LLM review error:', llmError);
+      return NextResponse.json(
+        { error: 'LLM review unavailable. Please try again.' },
+        { status: 503 }
+      );
+    }
+    if (!llmResult.approve) {
+      return NextResponse.json(
+        {
+          error: 'LLM review blocked submission.',
+          reasons: llmResult.reasons,
+        },
+        { status: 422 }
+      );
+    }
+
     // Resolve timing (handles year, age_range, life_stage conversions)
     const timingResult = resolveTiming({
       year,
@@ -97,24 +123,32 @@ export async function POST(request: NextRequest) {
     const eventType = normalizeEntryType(entry_type);
     const normalizedPrivacyLevel = normalizePrivacyLevel(privacy_level);
 
-    // Determine story chain root and depth
+  // Determine story chain root and depth
     let chainInfo = computeChainInfo(null);
+  let parentPrivacy: 'public' | 'family' | null = null;
 
     if (prompted_by_event_id) {
       // Look up the parent event's chain info
       const { data: parentEvent } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
-        .select('id, root_event_id, chain_depth')
+      .select('id, root_event_id, chain_depth, privacy_level')
         .eq('id', prompted_by_event_id)
         .single();
 
       if (parentEvent) {
         chainInfo = computeChainInfo(parentEvent as ParentEventInfo);
+      parentPrivacy = (parentEvent as { privacy_level?: string | null }).privacy_level === 'public' ? 'public' : 'family';
       }
     }
 
     const trimmedContent = content.trim();
     const trimmedTitle = title.trim();
     const preview = generatePreview(trimmedContent);
+
+  // Clamp privacy so a response cannot be less restrictive than its parent
+  const effectivePrivacy: 'public' | 'family' =
+    parentPrivacy === 'family'
+      ? 'family'
+      : normalizedPrivacyLevel;
 
     // Use contributor_id from authenticated user's profile
     // Falls back to lookup/create for backwards compatibility
@@ -178,8 +212,9 @@ export async function POST(request: NextRequest) {
         life_stage: timing.lifeStage,
         timing_note: timing_note?.trim() || null,
         status: 'published',
-        privacy_level: normalizedPrivacyLevel,
+        privacy_level: effectivePrivacy,
         prompted_by_event_id: prompted_by_event_id || null,
+        trigger_event_id: prompted_by_event_id || null,
         root_event_id: chainInfo.rootEventId,
         chain_depth: chainInfo.chainDepth,
       })
@@ -230,11 +265,20 @@ export async function POST(request: NextRequest) {
       }
 
       // Insert person references (resolve person records)
+      // Note: Skip if the person is the same as the contributor (they're already credited as author)
+      const contributorNameLower = (submitter_name || '').trim().toLowerCase();
+
       for (const personRef of personRefs) {
         const trimmedName = personRef.name?.trim() || '';
         const submittedPersonId = personRef.personId || personRef.person_id;
+        const normalizedRole = mapLegacyPersonRole(personRef.role);
 
         if (!trimmedName && !submittedPersonId) {
+          continue;
+        }
+
+        // Skip if this person is the contributor themselves
+        if (trimmedName && trimmedName.toLowerCase() === contributorNameLower) {
           continue;
         }
 
@@ -253,7 +297,7 @@ export async function POST(request: NextRequest) {
           event_id: eventId,
           type: 'person',
           person_id: personId,
-          role: 'witness',
+          role: normalizedRole,
           relationship_to_subject: personRef.relationship || null,
           visibility: 'pending',
           added_by: contributorId,
@@ -391,9 +435,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, event: eventData, invites: createdInvites });
   } catch (error) {
-    console.error('Memory submission error:', error);
+    console.error('Note submission error:', error);
     return NextResponse.json(
-      { error: 'Failed to submit memory' },
+      { error: 'Failed to save note' },
       { status: 500 }
     );
   }

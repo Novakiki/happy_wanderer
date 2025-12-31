@@ -8,6 +8,7 @@ import {
   provenanceToSource,
 } from '@/lib/form-types';
 import { parseYear, parseYearFromDate, validateYearRange } from '@/lib/form-validation';
+import { hasContent } from '@/lib/html-utils';
 import { buildSmsLink } from '@/lib/invites';
 import { formStyles } from '@/lib/styles';
 import {
@@ -19,10 +20,9 @@ import {
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
 import { useState } from 'react';
+import type { TimingMode } from './forms';
 import { DisclosureSection, PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
 import RichTextEditor from './RichTextEditor';
-import type { TimingMode } from './forms';
-import { hasContent } from '@/lib/html-utils';
 
 type CreatedInvite = {
   id: string;
@@ -100,6 +100,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
 
+  const [llmReviewMessage, setLlmReviewMessage] = useState<string | null>(null);
+  const [llmReviewReasons, setLlmReviewReasons] = useState<string[]>([]);
+
   const addLinkRef = () => {
     const url = newLinkUrl.trim();
     const name = newLinkName.trim();
@@ -124,6 +127,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLlmReviewMessage(null);
+    setLlmReviewReasons([]);
 
     // Validate and derive year based on entry type and timing mode
     let year: number | null = null;
@@ -246,11 +251,17 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         }),
       });
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error('Failed to submit memory');
+        if (response.status === 422) {
+          setLlmReviewMessage('LLM review blocked submission. Please address the issues below.');
+          setLlmReviewReasons(result?.reasons || []);
+          return;
+        }
+        setError(result?.error || 'Something went wrong. Please try again.');
+        return;
       }
 
-      const result = await response.json();
       if (result.invites && result.invites.length > 0) {
         setCreatedInvites(result.invites);
       }
@@ -421,6 +432,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 placeholder="Share a story, a moment, or a note..."
                 minHeight="120px"
               />
+
             </div>
 
             <DisclosureSection
@@ -798,9 +810,23 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         </div>
 
         {/* Review notice */}
-        <p className="text-sm text-white/50 leading-relaxed">
-          Admin may follow up to add context.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-white/50 leading-relaxed">
+            We run a quick LLM check before publishing. If it flags something, we&rsquo;ll ask you to revise.
+          </p>
+          {llmReviewMessage && (
+            <p className="text-sm text-white/70">
+              {llmReviewMessage}
+            </p>
+          )}
+          {llmReviewReasons.length > 0 && (
+            <ul className="list-disc list-inside text-sm text-white/70">
+              {llmReviewReasons.map((r, idx) => (
+                <li key={idx}>{r}</li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {error && (
           <p className={formStyles.error}>{error}</p>

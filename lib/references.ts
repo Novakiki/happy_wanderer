@@ -24,6 +24,13 @@ export type ReferenceRow = {
   contributor?: {
     name?: string | null;
   } | null;
+  // Visibility preferences (fetched by API routes)
+  // contributor_preference: visibility set for this specific contributor
+  // global_preference: visibility set for all contributors (contributor_id = NULL)
+  visibility_preference?: {
+    contributor_preference?: string | null;
+    global_preference?: string | null;
+  } | null;
 };
 
 export type RedactedReference = {
@@ -54,26 +61,42 @@ export type RedactedReference = {
   };
 };
 
-const visibilityRank: Record<ReferenceVisibility, number> = {
-  approved: 0,
-  blurred: 1,
-  anonymized: 2,
-  pending: 2,
-  removed: 3,
-};
-
+/**
+ * Resolves the effective visibility for a reference using the precedence order:
+ * 1. Per-note override (event_references.visibility)
+ * 2. Per-contributor preference (visibility_preferences with contributor_id)
+ * 3. Global preference (visibility_preferences with contributor_id = NULL)
+ * 4. Person's default (people.visibility)
+ */
 function resolveVisibility(
   referenceVisibility?: ReferenceVisibility | null,
-  personVisibility?: ReferenceVisibility | null
+  personVisibility?: ReferenceVisibility | null,
+  visibilityPreference?: {
+    contributor_preference?: string | null;
+    global_preference?: string | null;
+  } | null
 ): ReferenceVisibility {
   const refVis = referenceVisibility ?? 'pending';
+  const contributorPref = (visibilityPreference?.contributor_preference ?? 'pending') as ReferenceVisibility;
+  const globalPref = (visibilityPreference?.global_preference ?? 'pending') as ReferenceVisibility;
   const personVis = personVisibility ?? 'pending';
-  const rank = Math.max(visibilityRank[refVis], visibilityRank[personVis]);
 
-  if (rank >= visibilityRank.removed) return 'removed';
-  if (rank >= visibilityRank.anonymized) return 'pending';
-  if (rank >= visibilityRank.blurred) return 'blurred';
-  return 'approved';
+  // Check for removal at any level (takes highest priority)
+  if (personVis === 'removed' || contributorPref === 'removed' || globalPref === 'removed') {
+    return 'removed';
+  }
+
+  // 1. Per-note override
+  if (refVis !== 'pending') return refVis;
+
+  // 2. Per-contributor preference
+  if (contributorPref !== 'pending') return contributorPref;
+
+  // 3. Global preference
+  if (globalPref !== 'pending') return globalPref;
+
+  // 4. Person's default
+  return personVis;
 }
 
 function getMaskedDisplayName(
@@ -148,7 +171,8 @@ export function redactReferences(
       const relationship = ref.relationship_to_subject ?? null;
       const effectiveVisibility = resolveVisibility(
         ref.visibility as ReferenceVisibility | null | undefined,
-        ref.person?.visibility as ReferenceVisibility | null | undefined
+        ref.person?.visibility as ReferenceVisibility | null | undefined,
+        ref.visibility_preference
       );
 
       if (effectiveVisibility === 'removed') {

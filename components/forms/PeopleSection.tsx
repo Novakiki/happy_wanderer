@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { formStyles } from '@/lib/styles';
 import {
   PERSON_ROLE_LABELS,
@@ -26,6 +27,57 @@ type Props = {
   emptyMessage?: string;
 };
 
+const RELATIONSHIP_GROUPS = {
+  family: [
+    'parent',
+    'child',
+    'sibling',
+    'cousin',
+    'aunt_uncle',
+    'niece_nephew',
+    'grandparent',
+    'grandchild',
+    'in_law',
+    'spouse',
+  ],
+  social: ['friend', 'neighbor', 'coworker', 'classmate'],
+  other: ['acquaintance', 'other', 'unknown'],
+} as const;
+
+function renderRelationshipOptions(customValue?: string) {
+  return (
+    <>
+      <option value="">Relationship to Val</option>
+      {customValue ? (
+        <optgroup label="Custom">
+          <option value={customValue}>{customValue}</option>
+        </optgroup>
+      ) : null}
+      <optgroup label="Family">
+        {RELATIONSHIP_GROUPS.family.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Social">
+        {RELATIONSHIP_GROUPS.social.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Other">
+        {RELATIONSHIP_GROUPS.other.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key]}
+          </option>
+        ))}
+      </optgroup>
+    </>
+  );
+}
+
 export default function PeopleSection({
   value,
   onChange,
@@ -38,7 +90,7 @@ export default function PeopleSection({
   // New person form state
   const [newName, setNewName] = useState('');
   const [newRelationship, setNewRelationship] = useState('');
-  const [newRole, setNewRole] = useState<PersonRole>('was_there');
+  const [newRole, setNewRole] = useState<PersonRole>('witness');
   const [newPersonId, setNewPersonId] = useState<string | null>(null);
   const [newPhone, setNewPhone] = useState('');
 
@@ -107,7 +159,7 @@ export default function PeopleSection({
   const resetForm = () => {
     setNewName('');
     setNewRelationship('');
-    setNewRole('was_there');
+    setNewRole('witness');
     setNewPersonId(null);
     setNewPhone('');
     setShowDropdown(false);
@@ -121,12 +173,18 @@ export default function PeopleSection({
           <label className={formStyles.label}>{label}</label>
           <button
             type="button"
-            onClick={() => onChange([...value, { name: '', role: 'was_there' }])}
+            onClick={() => onChange([...value, { name: '', role: 'witness' }])}
             className={formStyles.buttonGhost}
           >
             + Add person
           </button>
         </div>
+        <p className={formStyles.hint}>
+          Names are masked per note.{' '}
+          <Link href="/identity" className="text-[#e07a5f] hover:text-white transition-colors">
+            How identity works
+          </Link>
+        </p>
 
         {value.length === 0 && (
           <p className={`${formStyles.hint} italic`}>{emptyMessage}</p>
@@ -155,13 +213,17 @@ export default function PeopleSection({
               className={formStyles.input}
             />
             <div className="grid gap-3 sm:grid-cols-2">
-              <input
-                type="text"
+              <select
                 value={person.relationship || ''}
                 onChange={(e) => updatePerson(index, 'relationship', e.target.value)}
-                placeholder="Relationship to Val (optional)"
-                className={formStyles.input}
-              />
+                className={formStyles.select}
+              >
+                {renderRelationshipOptions(
+                  person.relationship && !(person.relationship in RELATIONSHIP_OPTIONS)
+                    ? person.relationship
+                    : undefined
+                )}
+              </select>
               <select
                 value={person.role}
                 onChange={(e) => updatePerson(index, 'role', e.target.value)}
@@ -193,6 +255,12 @@ export default function PeopleSection({
   return (
     <div>
       <label className={formStyles.label}>{label}</label>
+      <p className={formStyles.hint}>
+        Names are masked per note.{' '}
+        <Link href="/identity" className="text-[#e07a5f] hover:text-white transition-colors">
+          How identity works
+        </Link>
+      </p>
       <div className="space-y-3">
         <div className="grid gap-2 sm:grid-cols-[1fr,auto,auto]">
           <div className="relative">
@@ -260,51 +328,7 @@ export default function PeopleSection({
             onChange={(e) => setNewRelationship(e.target.value)}
             className={`${formStyles.select} text-sm py-2`}
           >
-            <option value="">Relationship to Val</option>
-            <optgroup label="Family">
-              {Object.entries(RELATIONSHIP_OPTIONS)
-                .filter(([key]) =>
-                  [
-                    'parent',
-                    'child',
-                    'sibling',
-                    'cousin',
-                    'aunt_uncle',
-                    'niece_nephew',
-                    'grandparent',
-                    'grandchild',
-                    'in_law',
-                    'spouse',
-                  ].includes(key)
-                )
-                .map(([val, lbl]) => (
-                  <option key={val} value={val}>
-                    {lbl}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="Social">
-              {Object.entries(RELATIONSHIP_OPTIONS)
-                .filter(([key]) =>
-                  ['friend', 'neighbor', 'coworker', 'classmate'].includes(key)
-                )
-                .map(([val, lbl]) => (
-                  <option key={val} value={val}>
-                    {lbl}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="Other">
-              {Object.entries(RELATIONSHIP_OPTIONS)
-                .filter(([key]) =>
-                  ['acquaintance', 'other', 'unknown'].includes(key)
-                )
-                .map(([val, lbl]) => (
-                  <option key={val} value={val}>
-                    {lbl}
-                  </option>
-                ))}
-            </optgroup>
+            {renderRelationshipOptions()}
           </select>
           <select
             value={newRole}
