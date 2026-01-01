@@ -104,7 +104,7 @@ What would you like to know about her?`,
   if (!isInitialized) {
     return (
       <div className="flex flex-col h-[500px] bg-white/[0.03] rounded-2xl border border-white/10 items-center justify-center">
-        <div className="animate-pulse text-white/40">Loading...</div>
+        <div className="animate-pulse text-white/50">Loading...</div>
       </div>
     );
   }
@@ -142,7 +142,7 @@ What would you like to know about her?`,
         {/* Suggested questions - show only at start */}
         {messages.length === 1 && !isLoading && (
           <div className="px-4 pb-3">
-            <p className="text-xs text-white/40 mb-2">Try asking:</p>
+            <p className="text-xs text-white/50 mb-2">Try asking:</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTED_QUESTIONS.map((q) => (
                 <button

@@ -64,7 +64,7 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
         <Link
           href="/score"
           className={`transition-colors p-2 -m-2 ${
-            isScore ? 'text-white/40' : 'text-white/70 hover:text-white'
+            isScore ? 'text-white/50' : 'text-white/70 hover:text-white'
           }`}
           aria-label="Return to score"
         >
@@ -85,7 +85,7 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
           <Link
             href="/share"
             className={`transition-colors ${
-              pathname === '/share' ? 'text-white/40' : 'hover:text-white'
+              pathname === '/share' ? 'text-white/50' : 'hover:text-white'
             }`}
           >
             Add a note

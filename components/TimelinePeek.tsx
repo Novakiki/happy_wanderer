@@ -127,7 +127,7 @@ export function TimelinePeek({ className = '', maxEvents = 14, previewEvents }: 
         <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.06]">
           <div className="flex items-start justify-between gap-4 mb-2">
             <div>
-              <p className="text-xs uppercase tracking-[0.25em] text-white/40">The Score</p>
+              <p className="text-xs uppercase tracking-[0.25em] text-white/50">The Score</p>
               <h3 className="text-lg text-white font-semibold mt-1">Where this note lives</h3>
             </div>
             <a
@@ -152,7 +152,7 @@ export function TimelinePeek({ className = '', maxEvents = 14, previewEvents }: 
       <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.06]">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-white/40">The Score</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-white/50">The Score</p>
             <h3 className="text-lg text-white font-semibold mt-1">Where this note lives</h3>
           </div>
           <a
@@ -185,12 +185,12 @@ export function TimelinePeek({ className = '', maxEvents = 14, previewEvents }: 
               key={event.id}
               className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"
             >
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/50">
                 {event.year}
               </p>
               <p className="text-sm text-white mt-1">{event.title}</p>
               {event._perspectiveCount ? (
-                <p className="text-[11px] text-white/50 mt-1">
+                <p className="text-xs text-white/50 mt-1">
                   {event._perspectiveCount} linked perspective
                   {event._perspectiveCount === 1 ? '' : 's'}
                 </p>

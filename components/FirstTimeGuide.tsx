@@ -129,7 +129,7 @@ export default function FirstTimeGuide({
             <button
               type="button"
               onClick={handleDismiss}
-              className="text-xs uppercase tracking-[0.18em] text-white/40 hover:text-white/70 transition-colors"
+              className="text-xs uppercase tracking-[0.18em] text-white/50 hover:text-white/70 transition-colors"
             >
               Dismiss
             </button>
@@ -143,7 +143,7 @@ export default function FirstTimeGuide({
               ))}
             </ol>
             {hasLinks && linksRow}
-            <p className="text-[11px] text-white/40">Dismiss hides this guide for you.</p>
+            <p className="text-xs text-white/50">Dismiss hides this guide for you.</p>
           </div>
         ) : null}
       </div>

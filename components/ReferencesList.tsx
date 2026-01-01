@@ -6,7 +6,7 @@ import type { EventReferenceWithContributor } from '@/lib/database.types';
 import type { RedactedReference } from '@/lib/references';
 import { REFERENCE_ROLE_LABELS, RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 
-const PRIVACY_EXPLAINER = `To protect privacy, we show "someone" instead of real names until the person has approved being identified. The note author can still see who they mentioned.`;
+const PRIVACY_EXPLAINER = `Identity guardian: we hide names until people confirm how they want to appear. You can still see who you mentioned; others will see "someone" until they choose their name and visibility.`;
 
 // Component accepts either raw DB references or redacted references
 type ReferenceItem = RedactedReference | EventReferenceWithContributor;
@@ -64,8 +64,8 @@ function PersonRefItem({
     : null;
 
   return (
-    <div className="text-xs text-white/40 flex items-center gap-1.5">
-      <span className="text-white/30">
+    <div className="text-xs text-white/50 flex items-center gap-1.5">
+      <span className="text-white/50">
         {ref.role ? REFERENCE_ROLE_LABELS[ref.role as keyof typeof REFERENCE_ROLE_LABELS] || '' : ''}
       </span>
       {ref.role && REFERENCE_ROLE_LABELS[ref.role as keyof typeof REFERENCE_ROLE_LABELS] ? ' ' : ''}
@@ -73,14 +73,14 @@ function PersonRefItem({
         {displayName}
       </span>
       {showRelationship && relationshipLabel && (
-        <span className="text-white/40"> ({relationshipLabel})</span>
+        <span className="text-white/50"> ({relationshipLabel})</span>
       )}
       {/* Show privacy indicator for public view when name is redacted */}
       {!asOwner && isRedacted && (
         <span className="relative inline-flex items-center">
           <button
             type="button"
-            className="inline-flex items-center gap-1 text-[10px] text-white/25 hover:text-white/40 transition-colors cursor-help"
+            className="inline-flex items-center gap-1 text-xs text-white/25 hover:text-white/50 transition-colors cursor-help"
             onMouseEnter={() => setShowExplainer(true)}
             onMouseLeave={() => setShowExplainer(false)}
             onClick={(e) => {
@@ -113,7 +113,7 @@ function PersonRefItem({
                   href="/identity"
                   className="mt-2 inline-block text-xs text-white/60 hover:text-white"
                 >
-                  How identity works
+                  How the identity guardian works
                 </Link>
                 {/* Close button for mobile */}
                 <button
@@ -153,7 +153,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
       <div className="space-y-4">
         {/* Owner view */}
         <div className="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-          <p className="text-[10px] uppercase tracking-wider text-emerald-400/60 mb-2">
+          <p className="text-xs uppercase tracking-wider text-emerald-400/60 mb-2">
             Owner sees
           </p>
           <div className="space-y-1">
@@ -165,7 +165,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
 
         {/* Public view */}
         <div className="p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
-          <p className="text-[10px] uppercase tracking-wider text-amber-400/60 mb-2">
+          <p className="text-xs uppercase tracking-wider text-amber-400/60 mb-2">
             Public sees
           </p>
           <div className="space-y-1">
@@ -184,7 +184,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
                   href={ref.url || '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-white/40 hover:text-white/60 transition-colors"
+                  className="text-xs text-white/50 hover:text-white/70 transition-colors"
                 >
                   {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">↗</span>
                 </a>
@@ -215,7 +215,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
                 href={ref.url || '#'}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-white/40 hover:text-white/60 transition-colors"
+                className="text-xs text-white/50 hover:text-white/70 transition-colors"
               >
                 {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">↗</span>
               </a>

@@ -18,7 +18,7 @@ export default function InteractButton() {
 
       {/* Coming Soon Tooltip */}
       <div
-        className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-black/80 rounded text-[10px] text-white/50 whitespace-nowrap transition-all duration-150 z-[100] ${
+        className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-black/80 rounded text-xs text-white/50 whitespace-nowrap transition-all duration-150 z-[100] ${
           showTooltip ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >

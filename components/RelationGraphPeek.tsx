@@ -78,7 +78,7 @@ export function RelationGraphPeek({
       <div className="p-5 rounded-2xl border border-white/10 bg-white/[0.06]">
         <div className="flex items-start justify-between gap-4 mb-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-white/40">Constellation</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-white/50">Constellation</p>
             <h3 className="text-lg text-white font-semibold mt-1">Who this touched</h3>
             <p className="text-sm text-white/60 mt-1">
               People connected to this {effectiveStory?.type === 'origin' ? 'synchronicity' : effectiveStory?.type || 'note'}.
@@ -291,3 +291,4 @@ export function RelationGraphPeek({
     </div>
   );
 }
+

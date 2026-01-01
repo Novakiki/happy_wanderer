@@ -146,7 +146,7 @@ export default function SignupForm() {
 
       <div>
         <label htmlFor="password" className={formStyles.label}>
-          Password <span className="text-white/40 text-xs font-normal">(optional)</span>
+          Password <span className="text-white/50 text-xs font-normal">(optional)</span>
         </label>
         <p className={formStyles.hint}>Set a password for faster login, or leave blank to use magic link</p>
         <input

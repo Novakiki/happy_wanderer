@@ -64,7 +64,7 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 onClick={() => setIsOpen(false)}
               >
                 <span>Your notes</span>
-                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
+                <span className="block text-xs text-white/50 group-hover:text-white/60 transition-colors">
                   View and edit your notes
                 </span>
               </Link>
@@ -74,7 +74,7 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 onClick={() => setIsOpen(false)}
               >
                 <span>Connections</span>
-                <span className="block text-[10px] text-white/30 group-hover:text-white/40 transition-colors">
+                <span className="block text-xs text-white/50 group-hover:text-white/60 transition-colors">
                   Who you remember, who remembers you
                 </span>
               </Link>
