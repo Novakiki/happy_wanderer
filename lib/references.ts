@@ -105,7 +105,14 @@ function getMaskedDisplayName(
   relationship: string | null
 ): string {
   if (visibility === 'approved') return name;
+
+  // Prefer relational masking when identity is hidden
+  const relationshipLabel = relationship && relationship in RELATIONSHIP_DISPLAY
+    ? RELATIONSHIP_DISPLAY[relationship as keyof typeof RELATIONSHIP_DISPLAY]
+    : null;
+
   if (visibility === 'blurred') {
+    if (relationshipLabel) return relationshipLabel;
     const parts = name.split(' ').filter(Boolean);
     if (parts.length >= 2) {
       return `${parts[0][0]}.${parts[parts.length - 1][0]}.`;
@@ -113,9 +120,7 @@ function getMaskedDisplayName(
     return name[0] ? `${name[0]}.` : 'someone';
   }
 
-  if (relationship && relationship in RELATIONSHIP_DISPLAY) {
-    return RELATIONSHIP_DISPLAY[relationship as keyof typeof RELATIONSHIP_DISPLAY];
-  }
+  if (relationshipLabel) return relationshipLabel;
 
   return 'someone';
 }

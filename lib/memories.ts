@@ -16,6 +16,8 @@ export type TimingInputType = 'date' | 'year' | 'year_range' | 'age_range' | 'li
 export type PrivacyLevel = 'public' | 'family';
 export type EventType = 'origin' | 'milestone' | 'memory';
 export type LifeStage = 'childhood' | 'teens' | 'college' | 'young_family' | 'beyond';
+export type WitnessType = 'direct' | 'secondhand' | 'mixed' | 'unsure';
+export type Recurrence = 'one_time' | 'repeated' | 'ongoing';
 
 export type MemoryInput = {
   content?: string;
@@ -133,6 +135,28 @@ export function normalizePrivacyLevel(value?: string): PrivacyLevel {
   }
   // Collapse any legacy values to family by default.
   return 'family';
+}
+
+/**
+ * Normalize witness type to valid enum value.
+ * Defaults to 'direct' for invalid/missing values.
+ */
+export function normalizeWitnessType(value?: string): WitnessType {
+  if (value === 'direct' || value === 'secondhand' || value === 'mixed' || value === 'unsure') {
+    return value;
+  }
+  return 'direct';
+}
+
+/**
+ * Normalize recurrence to valid enum value.
+ * Defaults to 'one_time' for invalid/missing values.
+ */
+export function normalizeRecurrence(value?: string): Recurrence {
+  if (value === 'one_time' || value === 'repeated' || value === 'ongoing') {
+    return value;
+  }
+  return 'one_time';
 }
 
 /**

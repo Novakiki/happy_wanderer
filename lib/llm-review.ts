@@ -23,13 +23,14 @@ const buildPrompt = (input: LlmReviewInput) => {
   const content = input.content;
   const why = input.why?.trim() || '(none)';
 
-  // Note: We no longer block for named third parties - those are handled separately
-  // via pending person references that get blurred until consent is given.
   return [
     'You are an approval gate for publishing family memory text.',
     'Decide if it is safe to publish based on privacy/sensitivity.',
     'Reject if it contains: phone numbers, email addresses, physical addresses, sensitive medical or financial details, minors + explicit content, or slurs/hate speech.',
-    'Person names are OK - they are handled separately by our consent system.',
+    'Handle person names with consent rules:',
+    '- Always allow and never flag Valerie Park Anderson and her variants: Val, Valerie, Valeri, Valera, Valeria, Valerie Anderson, Valerie Park Anderson.',
+    '- Do NOT block well-known public figures or fictional characters; they can remain as plain text and must NOT create person records.',
+    '- For any other person name (likely family/relative/private individual), require consent: return approve=false with reason "Needs consent for named person."',
     'Otherwise approve.',
     'Respond ONLY in JSON with shape: {"approve": true|false, "reasons": ["..."]}.',
     `Title: ${title}`,
