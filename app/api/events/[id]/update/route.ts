@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { readEditSession } from '@/lib/edit-session';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
+import { normalizeRecurrence, normalizeWitnessType } from '@/lib/memories';
+import { lintNote } from '@/lib/note-lint';
+import { recordEventVersion } from '@/lib/event-versions';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -54,7 +57,17 @@ export async function PATCH(
 
     // Parse update data
     const body = await request.json();
-    const { title, content, why_included, location, year, year_end } = body;
+    const {
+      title,
+      content,
+      why_included,
+      location,
+      year,
+      year_end,
+      timing_raw_text,
+      witness_type,
+      recurrence,
+    } = body;
 
     // Build update payload with only provided fields
     const updatePayload: Database['public']['Tables']['timeline_events']['Update'] = {};
@@ -85,9 +98,25 @@ export async function PATCH(
       updatePayload.year_end = typeof year_end === 'number' && year_end > 0 ? year_end : null;
     }
 
+    if (typeof timing_raw_text === 'string') {
+      updatePayload.timing_raw_text = timing_raw_text.trim() || null;
+    }
+
+    if (typeof witness_type === 'string') {
+      updatePayload.witness_type = normalizeWitnessType(witness_type);
+    }
+
+    if (typeof recurrence === 'string') {
+      updatePayload.recurrence = normalizeRecurrence(recurrence);
+    }
+
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
     }
+
+    const lintWarnings = typeof content === 'string' && hasContent(content)
+      ? await lintNote(admin, content)
+      : [];
 
     // Update the event
     const { error: updateError } = await admin
@@ -100,6 +129,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
     }
 
+    await recordEventVersion(admin, eventId, tokenRow.contributor_id);
+
     // Fetch updated event
     const { data: updatedEvent } = await admin
       .from('timeline_events')
@@ -107,7 +138,7 @@ export async function PATCH(
       .eq('id', eventId)
       .single();
 
-    return NextResponse.json({ success: true, event: updatedEvent });
+    return NextResponse.json({ success: true, event: updatedEvent, lintWarnings });
   } catch (error) {
     console.error('Inline update error:', error);
     return NextResponse.json({ error: 'Failed to update' }, { status: 500 });

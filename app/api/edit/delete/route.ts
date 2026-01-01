@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
+import { recordEventVersion } from '@/lib/event-versions';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -44,18 +45,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Not authorized to delete this note' }, { status: 403 });
     }
 
-    // Delete related records first (foreign key constraints)
-    await admin.from('event_references').delete().eq('event_id', event_id);
+    const { error: refError } = await admin
+      .from('event_references')
+      .update({ visibility: 'removed' })
+      .eq('event_id', event_id);
 
-    // Delete the event itself
-    const { error: deleteError } = await admin
+    if (refError) {
+      throw refError;
+    }
+
+    const { error: updateError } = await admin
       .from('timeline_events')
-      .delete()
+      .update({ status: 'private' })
       .eq('id', event_id);
 
-    if (deleteError) {
-      throw deleteError;
+    if (updateError) {
+      throw updateError;
     }
+
+    await recordEventVersion(admin, event_id, tokenRow.contributor_id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

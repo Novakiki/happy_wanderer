@@ -42,7 +42,10 @@
  * - /app/api/memories/route.ts - Where invites are created during memory submission
  */
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
+import { buildTimingRawText } from '@/lib/form-validation';
+import { recordEventVersion } from '@/lib/event-versions';
 import { llmReviewGate } from '@/lib/llm-review';
+import { lintNote } from '@/lib/note-lint';
 import { detectAndCreatePendingReferences } from '@/lib/pending-names';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
@@ -351,6 +354,8 @@ export async function POST(request: NextRequest) {
     });
     if (!llmGate.ok) return llmGate.response;
 
+    const lintWarnings = await lintNote(admin, content);
+
     type InviteRow = { id: string; event_id: string; recipient_name: string; recipient_contact: string | null };
     type EventRow = { year: number; year_end: number | null; life_stage: string | null; location: string | null; subject_id: string | null; privacy_level: string | null };
     type ContributorRow = { id: string };
@@ -407,6 +412,12 @@ export async function POST(request: NextRequest) {
     const normalizedVisibility = allowedVisibility.has(identity_visibility) ? identity_visibility : null;
     const trimmedRelationshipToSubject =
       typeof relationship_to_subject === 'string' ? relationship_to_subject.trim() : '';
+    const timingInputType = typedEvent?.year_end ? 'year_range' : 'year';
+    const timingRawText = buildTimingRawText({
+      timingInputType,
+      year: typedEvent?.year ?? null,
+      yearEnd: typedEvent?.year_end ?? null,
+    });
 
     // Create the response as a new event linked to the original
     const previewText = generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
@@ -428,6 +439,9 @@ export async function POST(request: NextRequest) {
         privacy_level: typedEvent?.privacy_level || 'family',
         source_name: 'Invited response',
         timing_certainty: 'approximate',
+        timing_raw_text: timingRawText,
+        witness_type: 'direct',
+        recurrence: 'one_time',
       })
       .select('id')
       .single();
@@ -441,6 +455,8 @@ export async function POST(request: NextRequest) {
     }
 
     const typedNewEvent = newEvent as { id: string };
+
+    await recordEventVersion(admin, typedNewEvent.id, contributorId);
 
     // Create a memory thread linking the response to the original
     // TODO: After inserting, check if original contributor has email and send notification
@@ -482,6 +498,7 @@ export async function POST(request: NextRequest) {
       event_id: typedNewEvent.id,
       contributor_id: contributorId,
       pendingNames: nameResult.pendingNames,
+      lintWarnings,
     });
   } catch (error) {
     console.error('Respond API error:', error);

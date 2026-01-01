@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
-import { normalizePrivacyLevel } from '@/lib/memories';
+import {
+  normalizePrivacyLevel,
+  normalizeRecurrence,
+  normalizeWitnessType,
+} from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
+import { buildTimingRawText } from '@/lib/form-validation';
 import { buildInviteData } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
+import { lintNote } from '@/lib/note-lint';
 import { detectAndCreatePendingReferences } from '@/lib/pending-names';
+import { recordEventVersion } from '@/lib/event-versions';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -61,6 +68,9 @@ export async function POST(request: Request) {
       timing_input_type,
       date,
       timing_note,
+      timing_raw_text,
+      witness_type,
+      recurrence,
       location,
       entry_type,
       title,
@@ -142,6 +152,8 @@ export async function POST(request: Request) {
       ? timing_input_type
       : 'year';
     const normalizedPrivacyLevel = normalizePrivacyLevel(privacy_level);
+    const normalizedWitnessType = normalizeWitnessType(witness_type);
+    const normalizedRecurrence = normalizeRecurrence(recurrence);
     const normalizedPeople =
       Array.isArray(people_involved)
         ? people_involved
@@ -226,6 +238,19 @@ export async function POST(request: Request) {
           : 'memory';
 
     const preview = generatePreviewFromHtml(rawContent, PREVIEW_MAX_LENGTH);
+    const lintWarnings = await lintNote(admin, rawContent);
+    const trimmedTimingRawText = typeof timing_raw_text === 'string' ? timing_raw_text.trim() : '';
+    const timingRawText = trimmedTimingRawText
+      || buildTimingRawText({
+        timingInputType: normalizedTimingInputType as 'date' | 'year' | 'year_range' | 'age_range' | 'life_stage',
+        exactDate: parsedDate,
+        year: resolvedYear,
+        yearEnd: resolvedYearEnd,
+        lifeStage: normalizedLifeStage,
+        ageStart: resolvedAgeStart,
+        ageEnd: resolvedAgeEnd,
+      })
+      || null;
 
     const updatePayload: Database['public']['Tables']['timeline_events']['Update'] = {
       year: resolvedYear ?? parsedYear,
@@ -244,6 +269,9 @@ export async function POST(request: Request) {
       age_end: resolvedAgeEnd,
       life_stage: normalizedLifeStage,
       timing_note: String(timing_note || '').trim() || null,
+      timing_raw_text: timingRawText,
+      witness_type: normalizedWitnessType,
+      recurrence: normalizedRecurrence,
       location: String(location || '').trim() || null,
       privacy_level: normalizedPrivacyLevel,
       people_involved: normalizedPeople.length > 0 ? normalizedPeople : null,
@@ -256,6 +284,8 @@ export async function POST(request: Request) {
     if (updateError) {
       throw updateError;
     }
+
+    await recordEventVersion(admin, event_id, tokenRow.contributor_id);
 
     if (hasLinkPayload || hasPersonPayload) {
       const { data: existingRefs, error: existingError } = await admin
@@ -445,7 +475,7 @@ export async function POST(request: Request) {
           .map((ref: ExistingReference) => ref.id);
         if (linkIdsToDelete.length > 0) {
           const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-            .delete()
+            .update({ visibility: 'removed' })
             .in('id', linkIdsToDelete);
           if (deleteError) {
             throw deleteError;
@@ -459,7 +489,7 @@ export async function POST(request: Request) {
           .map((ref: ExistingReference) => ref.id);
         if (personIdsToDelete.length > 0) {
           const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-            .delete()
+            .update({ visibility: 'removed' })
             .in('id', personIdsToDelete);
           if (deleteError) {
             throw deleteError;
@@ -524,7 +554,11 @@ export async function POST(request: Request) {
       tokenRow.contributor_id
     );
 
-    return NextResponse.json({ success: true, pendingNames: nameResult.pendingNames });
+    return NextResponse.json({
+      success: true,
+      pendingNames: nameResult.pendingNames,
+      lintWarnings,
+    });
   } catch (error) {
     console.error('Edit update error:', error);
     return NextResponse.json({ error: 'Failed to update note' }, { status: 500 });

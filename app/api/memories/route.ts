@@ -5,15 +5,20 @@ import {
   resolveTiming,
   normalizeEntryType,
   normalizePrivacyLevel,
+  normalizeRecurrence,
+  normalizeWitnessType,
   generatePreview,
   computeChainInfo,
   type ParentEventInfo,
 } from '@/lib/memories';
 import { mapLegacyPersonRole } from '@/lib/form-types';
+import { buildTimingRawText } from '@/lib/form-validation';
 import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
+import { lintNote } from '@/lib/note-lint';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
 import { detectAndCreatePendingReferences } from '@/lib/pending-names';
+import { recordEventVersion } from '@/lib/event-versions';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -48,6 +53,9 @@ export async function POST(request: NextRequest) {
       timing_certainty,
       timing_input_type,
       timing_note,
+      timing_raw_text,
+      witness_type,
+      recurrence,
       title,
       source_name,
       source_url,
@@ -103,6 +111,19 @@ export async function POST(request: NextRequest) {
     const timing = timingResult.data;
     const eventType = normalizeEntryType(entry_type);
     const normalizedPrivacyLevel = normalizePrivacyLevel(privacy_level);
+    const normalizedWitnessType = normalizeWitnessType(witness_type);
+    const normalizedRecurrence = normalizeRecurrence(recurrence);
+    const trimmedTimingRawText = typeof timing_raw_text === 'string' ? timing_raw_text.trim() : '';
+    const timingRawText = trimmedTimingRawText
+      || buildTimingRawText({
+        timingInputType: timing.timingInputType,
+        year,
+        yearEnd: year_end,
+        ageStart: age_start,
+        ageEnd: age_end,
+        lifeStage: life_stage,
+      })
+      || null;
 
   // Determine story chain root and depth
     let chainInfo = computeChainInfo(null);
@@ -124,6 +145,8 @@ export async function POST(request: NextRequest) {
     const trimmedContent = content.trim();
     const trimmedTitle = title.trim();
     const preview = generatePreview(trimmedContent);
+
+    const lintWarnings = await lintNote(admin, trimmedContent);
 
   // Clamp privacy so a response cannot be less restrictive than its parent
   const effectivePrivacy: 'public' | 'family' =
@@ -192,6 +215,9 @@ export async function POST(request: NextRequest) {
         age_end: timing.ageEnd,
         life_stage: timing.lifeStage,
         timing_note: timing_note?.trim() || null,
+        timing_raw_text: timingRawText,
+        witness_type: normalizedWitnessType,
+        recurrence: normalizedRecurrence,
         status: 'published',
         privacy_level: effectivePrivacy,
         prompted_by_event_id: prompted_by_event_id || null,
@@ -213,6 +239,10 @@ export async function POST(request: NextRequest) {
     // Save references if provided
     const eventId = (eventData as { id?: string } | null)?.id;
     const createdInvites: Array<{ id: string; name: string; phone: string }> = [];
+
+    if (eventId) {
+      await recordEventVersion(admin, eventId, contributorId);
+    }
 
     // If this is a standalone event (no parent), set root_event_id to self
     if (eventId && !chainInfo.rootEventId) {
@@ -432,6 +462,7 @@ export async function POST(request: NextRequest) {
       event: eventData,
       invites: createdInvites,
       pendingNames,
+      lintWarnings,
     });
   } catch (error) {
     console.error('Note submission error:', error);
