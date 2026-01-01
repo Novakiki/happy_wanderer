@@ -59,7 +59,7 @@ export default function RichTextEditor({ value, onChange, placeholder, className
 
   return (
     <div className={className}>
-      <div className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white">
+      <div className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white textarea-enhanced">
         <EditorContent editor={editor} />
       </div>
     </div>

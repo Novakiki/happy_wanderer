@@ -1,32 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import type { PersonReference, ProvenanceData, Reference } from '@/lib/form-types';
 import {
-  ENTRY_TYPE_LABELS,
+  deriveProvenanceFromSource,
+  mapLegacyPersonRole,
+  mapToLegacyPersonRole,
+  provenanceToRecurrence,
+  provenanceToSource,
+  provenanceToWitnessType,
+} from '@/lib/form-types';
+import { buildTimingRawText, validateYearRange } from '@/lib/form-validation';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH, stripHtml } from '@/lib/html-utils';
+import { getLintSuggestion } from '@/lib/lint-copy';
+import type { ReferenceVisibility } from '@/lib/references';
+import { formStyles } from '@/lib/styles';
+import {
   ENTRY_TYPE_DESCRIPTIONS,
+  ENTRY_TYPE_LABELS,
   LIFE_STAGE_YEAR_RANGES,
   THREAD_RELATIONSHIP_LABELS,
   TIMING_CERTAINTY,
   TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
-import { formStyles } from '@/lib/styles';
-import type { ReferenceVisibility } from '@/lib/references';
-import type { ProvenanceData, PersonReference, Reference } from '@/lib/form-types';
-import {
-  mapLegacyPersonRole,
-  mapToLegacyPersonRole,
-  deriveProvenanceFromSource,
-  provenanceToSource,
-} from '@/lib/form-types';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import RichTextEditor from './RichTextEditor';
-import { ProvenanceSection } from './forms';
-import { PeopleSection } from './forms';
-import { ReferencesSection } from './forms';
-import { TimingModeSelector } from './forms/TimingModeSelector';
+import { PeopleSection, ProvenanceSection, ReferencesSection } from './forms';
 import type { TimingMode } from './forms/TimingModeSelector';
-import { validateYearRange } from '@/lib/form-validation';
-import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH, stripHtml } from '@/lib/html-utils';
+import { TimingModeSelector } from './forms/TimingModeSelector';
 
 type EditableEvent = {
   id: string;
@@ -39,6 +40,9 @@ type EditableEvent = {
   timing_certainty: 'exact' | 'approximate' | 'vague';
   timing_input_type: 'date' | 'year' | 'year_range' | 'age_range' | 'life_stage';
   timing_note: string | null;
+  timing_raw_text: string | null;
+  witness_type: 'direct' | 'secondhand' | 'mixed' | 'unsure';
+  recurrence: 'one_time' | 'repeated' | 'ongoing';
   location: string | null;
   people_involved?: string[] | null;
   provenance: ProvenanceData;
@@ -78,6 +82,9 @@ type IncomingEvent = {
   timing_certainty?: string | null;
   timing_input_type?: string | null;
   timing_note?: string | null;
+  timing_raw_text?: string | null;
+  witness_type?: string | null;
+  recurrence?: string | null;
   location?: string | null;
   people_involved?: string[] | null;
   provenance?: string | null;
@@ -112,6 +119,19 @@ type Props = {
 };
 
 type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
+
+type LintWarning = {
+  code: string;
+  message: string;
+  suggestion?: string;
+  severity?: 'soft' | 'strong';
+  match?: string;
+};
+
+const lintTone = (severity?: LintWarning['severity']) => ({
+  message: severity === 'soft' ? 'text-sm text-white/50' : 'text-sm text-white/70',
+  suggestion: severity === 'soft' ? 'text-xs text-white/40' : 'text-xs text-white/50',
+});
 
 export default function EditNotesClient({
   token,
@@ -162,6 +182,9 @@ export default function EditNotesClient({
         timing_input_type: (event.timing_input_type ?? 'year') as EditableEvent['timing_input_type'],
         date: event.date ?? null,
         timing_note: event.timing_note ?? '',
+        timing_raw_text: event.timing_raw_text ?? null,
+        witness_type: (event.witness_type ?? 'direct') as EditableEvent['witness_type'],
+        recurrence: (event.recurrence ?? 'one_time') as EditableEvent['recurrence'],
         location: event.location ?? '',
         people_involved: event.people_involved ?? [],
         provenance: deriveProvenanceFromSource(event.source_name, event.source_url),
@@ -189,6 +212,12 @@ export default function EditNotesClient({
       return acc;
     }, {} as Record<string, boolean>)
   );
+  const [guidanceWhyOpen, setGuidanceWhyOpen] = useState<Record<string, boolean>>(() =>
+    initialEvents.reduce((acc, event) => {
+      acc[event.id] = false;
+      return acc;
+    }, {} as Record<string, boolean>)
+  );
   const [attachments, setAttachments] = useState<Record<string, { type: 'image' | 'audio' | 'link'; url: string; caption: string }>>(
     () =>
       initialEvents.reduce((acc, event) => {
@@ -212,6 +241,7 @@ export default function EditNotesClient({
   );
   const [llmMessages, setLlmMessages] = useState<Record<string, string | null>>({});
   const [llmReasons, setLlmReasons] = useState<Record<string, string[]>>({});
+  const [lintWarningsById, setLintWarningsById] = useState<Record<string, LintWarning[]>>({});
 
   useEffect(() => {
     if (!initialEditingId) return;
@@ -305,11 +335,6 @@ export default function EditNotesClient({
     const trimmedSourceName = derivedSource.source_name;
     const trimmedSourceUrl = derivedSource.source_url;
 
-    if (!trimmedWhy) {
-      setStatus((prev) => ({ ...prev, [eventId]: "Please add why it's meaningful." }));
-      return;
-    }
-
     // Derive timing from card selection
     const mode = timingMode[eventId] ?? 'year';
     let timingInputType = payload.timing_input_type;
@@ -382,6 +407,17 @@ export default function EditNotesClient({
         attachment && attachment.url.trim() ? attachment.type : 'none';
       const attachment_url = attachment?.url?.trim() || '';
       const attachment_caption = attachment?.caption?.trim() || '';
+      const timingRawText = buildTimingRawText({
+        timingInputType: timingInputType as EditableEvent['timing_input_type'],
+        exactDate: date,
+        year,
+        yearEnd: year_end,
+        lifeStage: life_stage,
+        ageStart: payload.age_start,
+        ageEnd: payload.age_end,
+      }) || payload.timing_raw_text || null;
+      const witnessType = payload.witness_type || provenanceToWitnessType(payload.provenance);
+      const recurrence = payload.recurrence || provenanceToRecurrence(payload.provenance);
 
       const response = await fetch('/api/edit/update', {
         method: 'POST',
@@ -398,6 +434,9 @@ export default function EditNotesClient({
           timing_certainty: timingCertainty,
           timing_input_type: timingInputType,
           timing_note: payload.timing_note,
+          timing_raw_text: timingRawText,
+          witness_type: witnessType,
+          recurrence,
           location: payload.location,
           // Sync people_involved: use person_refs if any have names, else preserve legacy
           people_involved: (() => {
@@ -429,6 +468,10 @@ export default function EditNotesClient({
 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
+        setLintWarningsById((prev) => ({
+          ...prev,
+          [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
+        }));
         if (response.status === 422) {
           setStatus((prev) => ({ ...prev, [eventId]: 'Blocked by LLM review.' }));
           setLlmMessages((prev) => ({
@@ -441,6 +484,11 @@ export default function EditNotesClient({
         setStatus((prev) => ({ ...prev, [eventId]: result?.error || 'Update failed.' }));
         return;
       }
+
+      setLintWarningsById((prev) => ({
+        ...prev,
+        [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
+      }));
 
       setStatus((prev) => ({ ...prev, [eventId]: 'saved' }));
       setIsDirty(false);
@@ -461,11 +509,6 @@ export default function EditNotesClient({
     const derivedSource = provenanceToSource(payload.provenance);
     const trimmedSourceName = derivedSource.source_name;
     const trimmedSourceUrl = derivedSource.source_url;
-
-    if (!trimmedWhy) {
-      setStatus((prev) => ({ ...prev, [eventId]: "Please add why it's meaningful." }));
-      return;
-    }
 
     const mode = timingMode[eventId] ?? 'year';
     let timingInputType = payload.timing_input_type;
@@ -537,6 +580,17 @@ export default function EditNotesClient({
         attachment && attachment.url.trim() ? attachment.type : 'none';
       const attachment_url = attachment?.url?.trim() || '';
       const attachment_caption = attachment?.caption?.trim() || '';
+      const timingRawText = buildTimingRawText({
+        timingInputType: timingInputType as EditableEvent['timing_input_type'],
+        exactDate: date,
+        year,
+        yearEnd: year_end,
+        lifeStage: life_stage,
+        ageStart: payload.age_start,
+        ageEnd: payload.age_end,
+      }) || payload.timing_raw_text || null;
+      const witnessType = payload.witness_type || provenanceToWitnessType(payload.provenance);
+      const recurrence = payload.recurrence || provenanceToRecurrence(payload.provenance);
 
           const response = await fetch('/api/edit/linked', {
         method: 'POST',
@@ -555,6 +609,9 @@ export default function EditNotesClient({
           timing_certainty: timingCertainty,
           timing_input_type: timingInputType,
           timing_note: payload.timing_note,
+          timing_raw_text: timingRawText,
+          witness_type: witnessType,
+          recurrence,
           location: payload.location,
           people_involved: (() => {
             const namesFromRefs = (payload.person_refs || [])
@@ -585,6 +642,10 @@ export default function EditNotesClient({
 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
+        setLintWarningsById((prev) => ({
+          ...prev,
+          [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
+        }));
         if (response.status === 422) {
           setStatus((prev) => ({ ...prev, [eventId]: 'Blocked by LLM review.' }));
           setLlmMessages((prev) => ({
@@ -597,6 +658,11 @@ export default function EditNotesClient({
         setStatus((prev) => ({ ...prev, [eventId]: result?.error || 'Linked note failed.' }));
         return;
       }
+
+      setLintWarningsById((prev) => ({
+        ...prev,
+        [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
+      }));
 
       setStatus((prev) => ({ ...prev, [eventId]: 'linked' }));
       setTimeout(() => {
@@ -826,7 +892,7 @@ export default function EditNotesClient({
             {!isEditing ? (
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs text-white/40">{formatYearLabel(summaryEvent)}</p>
+                  <p className="text-xs text-white/50">{formatYearLabel(summaryEvent)}</p>
                   <h3 className="text-lg font-serif text-white">{event.title}</h3>
                   <p className="text-white/50 text-sm mt-2 line-clamp-2">
                     {stripHtml(event.full_entry || '') || 'No text added yet.'}
@@ -987,12 +1053,73 @@ export default function EditNotesClient({
 
                 <div>
                   <label className={formStyles.label}>Your memory of Val</label>
+                  <p className={formStyles.hint}>
+                    Describe what happened. Save what it meant for the section below.
+                  </p>
                   <RichTextEditor
                     value={data.full_entry || ''}
                     onChange={(val) => updateField(event.id, 'full_entry', val)}
                     placeholder="Share the memory..."
                     minHeight="120px"
                   />
+
+                  {(lintWarningsById[event.id] || []).length > 0 && (
+                    <div className={formStyles.guidanceContainer}>
+                      <div className={formStyles.guidanceHeader}>
+                        <span className={formStyles.guidanceDot} />
+                        <span className={formStyles.guidanceLabel}>Writing guidance</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setGuidanceWhyOpen((prev) => ({
+                              ...prev,
+                              [event.id]: !prev[event.id],
+                            }))
+                          }
+                          className={formStyles.guidanceToggle}
+                        >
+                          {guidanceWhyOpen[event.id] ? 'hide' : 'why?'}
+                        </button>
+                      </div>
+                      {guidanceWhyOpen[event.id] && (
+                        <p className={formStyles.guidanceExplainer}>
+                          Anchor notes in concrete scenes—who, where, what happened—so memories stay verifiable and personal.
+                        </p>
+                      )}
+                      <div className="space-y-3">
+                        {(lintWarningsById[event.id] || []).map((warning, idx) => {
+                          const tone = lintTone(warning.severity);
+                          const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                          return (
+                            <div key={`${warning.code}-${idx}`} className="space-y-0.5">
+                              <p className={tone.message}>
+                                {warning.match && (
+                                  <span className={formStyles.guidanceMatch}>
+                                    &ldquo;{warning.match}&rdquo;
+                                  </span>
+                                )}
+                                {warning.match ? ' — ' : ''}{warning.message}
+                              </p>
+                              {suggestion && (
+                                <p className={tone.suggestion}>{suggestion}</p>
+                              )}
+                              {warning.code === 'MEANING_ASSERTION' && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setWhyOpen((prev) => ({ ...prev, [event.id]: true }))
+                                  }
+                                  className={formStyles.guidanceAction}
+                                >
+                                  Move this to &ldquo;Why it matters to you&rdquo;
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1021,13 +1148,13 @@ export default function EditNotesClient({
                       className={formStyles.buttonGhost}
                     >
                       <span className={formStyles.disclosureArrow}>▶</span>
-                      Add why it&apos;s meaningful
+                      Add why it matters to you (optional)
                     </button>
                   ) : (
                     <div>
                       <div className="flex items-center justify-between">
                         <label className={formStyles.label}>
-                          Why it&apos;s meaningful <span className={formStyles.required}>*</span>
+                          Why it matters to you
                         </label>
                         <button
                           type="button"
@@ -1035,7 +1162,7 @@ export default function EditNotesClient({
                             setWhyOpen((prev) => ({ ...prev, [event.id]: false }));
                             updateField(event.id, 'why_included', '');
                           }}
-                          className="text-xs text-white/40 hover:text-white transition-colors"
+                          className="text-xs text-white/50 hover:text-white transition-colors"
                         >
                           Hide
                         </button>
@@ -1043,9 +1170,12 @@ export default function EditNotesClient({
                       <RichTextEditor
                         value={data.why_included || ''}
                         onChange={(val) => updateField(event.id, 'why_included', val)}
-                        placeholder="Explain the connection or significance"
+                        placeholder="How it landed for you, and why you still carry it..."
                         minHeight="80px"
                       />
+                      <p className={formStyles.hint}>
+                        Optional: your personal impact. Appears as an italic note beneath your memory.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1070,7 +1200,7 @@ export default function EditNotesClient({
                 <div className="opacity-50">
                   <div className="flex items-center gap-2">
                     <label className={formStyles.label}>Privacy</label>
-                    <span className="text-[10px] px-2 py-0.5 bg-white/10 rounded text-white/40">Coming soon</span>
+                    <span className="text-xs px-2 py-0.5 bg-white/10 rounded text-white/50">Coming soon</span>
                   </div>
                   <select
                     disabled
@@ -1107,7 +1237,7 @@ export default function EditNotesClient({
                             [event.id]: { type: 'image', url: '', caption: '' },
                           }))
                         }
-                        className="text-xs text-white/40 hover:text-white transition-colors"
+                        className="text-xs text-white/50 hover:text-white transition-colors"
                       >
                         Remove
                       </button>
@@ -1202,7 +1332,7 @@ export default function EditNotesClient({
                   <button
                     type="button"
                     onClick={() => setDeletingId(event.id)}
-                    className="text-xs text-white/40 hover:text-red-400 transition-colors"
+                    className="text-xs text-white/50 hover:text-red-400 transition-colors"
                   >
                     Delete memory
                   </button>

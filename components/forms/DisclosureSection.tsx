@@ -17,9 +17,28 @@ export type DisclosureSectionProps = {
   hasContent?: boolean;
   /** Additional class for the container */
   className?: string;
+  /** Visual variant for different contexts */
+  variant?: 'default' | 'inset';
   /** Content to show when expanded */
   children: React.ReactNode;
 };
+
+/** SVG Chevron that animates rotation */
+function Chevron({ isOpen }: { isOpen: boolean }) {
+  return (
+    <svg
+      className={`${formStyles.disclosureChevron} ${isOpen ? formStyles.disclosureChevronOpen : ''}`}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 4l4 4-4 4" />
+    </svg>
+  );
+}
 
 /**
  * Reusable disclosure/accordion section for optional form fields.
@@ -51,6 +70,7 @@ export function DisclosureSection({
   onClear,
   hasContent = false,
   className = '',
+  variant = 'default',
   children,
 }: DisclosureSectionProps) {
   const shouldShow = isOpen || hasContent;
@@ -67,13 +87,18 @@ export function DisclosureSection({
       <button
         type="button"
         onClick={() => onToggle(true)}
-        className={`${formStyles.buttonGhost} ${className}`}
+        className={`${formStyles.disclosureButton} ${className}`}
       >
-        <span className={formStyles.disclosureArrow}>▶</span>
+        <Chevron isOpen={false} />
         {resolvedAddLabel}
       </button>
     );
   }
+
+  // Inset variant for "Why it matters" - more subdued styling
+  const contentClass = variant === 'inset'
+    ? 'pl-4 border-l-2 border-[#7c8a78]/25'
+    : '';
 
   // Expanded state
   return (
@@ -81,12 +106,16 @@ export function DisclosureSection({
       <button
         type="button"
         onClick={handleCollapse}
-        className={`${formStyles.buttonGhost} mb-2`}
+        className={`${formStyles.disclosureButton} mb-2`}
       >
-        <span className={formStyles.disclosureArrow}>▼</span>
-        {label}
+        <Chevron isOpen={true} />
+        <span className={variant === 'inset' ? 'font-serif italic text-white/70' : ''}>
+          {label}
+        </span>
       </button>
-      {children}
+      <div className={`${formStyles.disclosureContent} ${contentClass}`}>
+        {children}
+      </div>
     </div>
   );
 }

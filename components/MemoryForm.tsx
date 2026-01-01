@@ -6,10 +6,18 @@ import {
   getDefaultProvenanceForEntryType,
   mapToLegacyPersonRole,
   provenanceToSource,
+  provenanceToRecurrence,
+  provenanceToWitnessType,
 } from '@/lib/form-types';
-import { parseYear, parseYearFromDate, validateYearRange } from '@/lib/form-validation';
-import { hasContent } from '@/lib/html-utils';
+import {
+  buildTimingRawText,
+  parseYear,
+  parseYearFromDate,
+  validateYearRange,
+} from '@/lib/form-validation';
+import { hasContent, stripHtml } from '@/lib/html-utils';
 import { buildSmsLink } from '@/lib/invites';
+import { getLintSuggestion } from '@/lib/lint-copy';
 import { formStyles } from '@/lib/styles';
 import {
   ENTRY_TYPE_CONTENT_LABELS,
@@ -19,7 +27,7 @@ import {
   THREAD_RELATIONSHIP_DESCRIPTIONS,
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TimingMode } from './forms';
 import { DisclosureSection, PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
 import RichTextEditor from './RichTextEditor';
@@ -36,6 +44,14 @@ type PendingName = {
   status: string;
 };
 
+type LintWarning = {
+  code: string;
+  message: string;
+  suggestion?: string;
+  severity?: 'soft' | 'strong';
+  match?: string;
+};
+
 type UserProfile = {
   name: string;
   relation: string;
@@ -50,6 +66,11 @@ type Props = {
 };
 
 type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
+
+const lintTone = (severity?: LintWarning['severity']) => ({
+  message: severity === 'soft' ? formStyles.guidanceWarningMessageSoft : formStyles.guidanceWarningMessage,
+  suggestion: severity === 'soft' ? formStyles.guidanceSuggestionSoft : formStyles.guidanceSuggestion,
+});
 
 export default function MemoryForm({ respondingToEventId, storytellerName, userProfile }: Props) {
   const [formData, setFormData] = useState({
@@ -102,6 +123,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [showLocation, setShowLocation] = useState(false);
   const [showWhyMeaningful, setShowWhyMeaningful] = useState(false);
   const [showPeople, setShowPeople] = useState(false);
+  const [showGuidanceWhy, setShowGuidanceWhy] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -109,6 +131,58 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   const [llmReviewMessage, setLlmReviewMessage] = useState<string | null>(null);
   const [llmReviewReasons, setLlmReviewReasons] = useState<string[]>([]);
+  const [lintWarnings, setLintWarnings] = useState<LintWarning[]>([]);
+  const lintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lintAbortRef = useRef<AbortController | null>(null);
+  const whyMeaningfulRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (isSubmitted) return;
+
+    const rawText = stripHtml(formData.content || '').trim();
+    if (rawText.length < 10) {
+      setLintWarnings([]);
+      return;
+    }
+
+    if (lintTimeoutRef.current) {
+      clearTimeout(lintTimeoutRef.current);
+    }
+
+    lintTimeoutRef.current = setTimeout(async () => {
+      if (lintAbortRef.current) {
+        lintAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      lintAbortRef.current = controller;
+
+      try {
+        const res = await fetch('/api/lint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: formData.content }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          return;
+        }
+
+        const result = await res.json().catch(() => ({}));
+        setLintWarnings(Array.isArray(result?.lintWarnings) ? result.lintWarnings : []);
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.warn('Lint preview failed', err);
+        }
+      }
+    }, 600);
+
+    return () => {
+      if (lintTimeoutRef.current) {
+        clearTimeout(lintTimeoutRef.current);
+      }
+    };
+  }, [formData.content, isSubmitted]);
 
   const addLinkRef = () => {
     const url = newLinkUrl.trim();
@@ -136,6 +210,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
     setError('');
     setLlmReviewMessage(null);
     setLlmReviewReasons([]);
+    setLintWarnings([]);
 
     // Validate and derive year based on entry type and timing mode
     let year: number | null = null;
@@ -221,6 +296,14 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         heardFrom = { name: toldBy, relationship: '', email: '', shouldInvite: false };
       }
 
+      const timingRawText = buildTimingRawText({
+        timingInputType: timingInputType as 'date' | 'year' | 'year_range' | 'life_stage',
+        exactDate: formData.exact_date,
+        year: formData.year,
+        yearEnd: formData.year_end,
+        lifeStage: formData.life_stage,
+      });
+
       const response = await fetch('/api/memories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -230,6 +313,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           year_end: yearEnd,
           timing_certainty: formData.is_approximate ? 'approximate' : 'exact',
           timing_input_type: timingInputType,
+          timing_raw_text: timingRawText,
+          witness_type: provenanceToWitnessType(provenance),
+          recurrence: provenanceToRecurrence(provenance),
           source_name: sourceName,
           source_url: sourceUrl,
           heard_from: heardFrom,
@@ -260,6 +346,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (Array.isArray(result?.lintWarnings)) {
+          setLintWarnings(result.lintWarnings);
+        }
         if (response.status === 422) {
           setLlmReviewMessage('LLM review blocked submission. Please address the issues below.');
           setLlmReviewReasons(result?.reasons || []);
@@ -277,6 +366,10 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setPendingNames(result.pendingNames);
       }
 
+      if (Array.isArray(result?.lintWarnings)) {
+        setLintWarnings(result.lintWarnings);
+      }
+
       setIsSubmitted(true);
     } catch (err) {
       setError('Something went wrong. Please try again.');
@@ -286,14 +379,23 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
     }
   };
 
+  const openWhyMeaningful = () => {
+    setShowWhyMeaningful(true);
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        whyMeaningfulRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
+
   if (isSubmitted) {
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
     return (
       <div className="py-16 text-center text-white">
         <h1 className="text-3xl sm:text-4xl font-serif text-white mb-4">Thank you</h1>
-        <p className="text-lg text-white/60 mb-8">
-          Your memory has been added to the score.
+        <p className="text-lg text-white/60 mb-12">
+          Your note has been added to the score.
         </p>
 
         {/* Show "Text them" buttons if invites were created */}
@@ -317,25 +419,55 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 );
               })}
             </div>
-            <p className="text-xs text-white/40 mt-3">
+            <p className="text-xs text-white/50 mt-3">
               Opens your messaging app. They can respond without logging in.
             </p>
           </div>
         )}
 
-        {/* Show pending names notice */}
+        {/* Identity guardian notice for pending names */}
         {pendingNames.length > 0 && (
-          <div className="mb-8 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 text-left">
+          <div className="mb-8 p-5 rounded-2xl border border-amber-500/10 bg-white/[0.03] text-left max-w-lg mx-auto">
             <p className="text-sm font-medium text-white mb-2">
-              Some names will appear blurred until confirmed
+              Identity guardian: we hide names until people confirm how they want to appear
             </p>
-            <p className="text-sm text-white/60 mb-3">
-              {pendingNames.map((p) => p.name).join(', ')} will appear blurred to others until they
-              confirm they&apos;re okay being named.
+            <p className="text-sm text-white/50">
+              {pendingNames.map((p) => p.name).join(', ')} shows for you, but others will see
+              "person" until they confirm how they want to be named and how visible they want to be.
             </p>
-            <p className="text-xs text-white/40">
-              You can invite them to respond, which will confirm their identity.
+          </div>
+        )}
+
+        {lintWarnings.length > 0 && (
+          <div className="mb-8 p-5 rounded-2xl border border-white/10 bg-white/[0.05] text-left max-w-lg mx-auto">
+            <p className="text-sm font-medium text-white mb-2">
+              Writing guidance (optional)
             </p>
+            <p className="text-sm text-white/50 mb-3">
+              These are gentle suggestions if you want to refine this note.
+            </p>
+            <p className="text-xs text-white/40 mb-3">
+              Quoted text is the phrase we noticed.
+            </p>
+            <div className="space-y-3">
+              {lintWarnings.map((warning, idx) => {
+                const tone = lintTone(warning.severity);
+                const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                return (
+                  <div key={`${warning.code}-${idx}`} className="space-y-1">
+                    <p className={tone.message}>
+                      {warning.match && (
+                        <span className="font-medium text-white/80">"{warning.match}"</span>
+                      )}
+                      {warning.match ? ' — ' : ''}{warning.message}
+                    </p>
+                    {suggestion && (
+                      <p className={tone.suggestion}>{suggestion}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -344,6 +476,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             setIsSubmitted(false);
             setCreatedInvites([]);
             setPendingNames([]);
+            setLintWarnings([]);
             setFormData({
               entry_type: 'memory',
               exact_date: '',
@@ -373,15 +506,20 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           }}
           className={formStyles.buttonPrimary}
         >
-          Share Another Memory
+          Share Another Note
         </button>
+        <div className="mt-4 flex justify-center">
+          <Link href="/score" className={formStyles.buttonSecondary}>
+            View The Score
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      <p className="text-xs uppercase tracking-[0.3em] text-white/40">
+      <p className="text-xs uppercase tracking-[0.3em] text-white/50">
         Contributors
       </p>
       {respondingToEventId && storytellerName ? (
@@ -454,6 +592,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               <label className={formStyles.label}>
                 {ENTRY_TYPE_CONTENT_LABELS[formData.entry_type as keyof typeof ENTRY_TYPE_CONTENT_LABELS] || 'The memory'} <span className={formStyles.required}>*</span>
               </label>
+              <p className={formStyles.hint}>
+                Describe what happened. Save what it meant for the section below.
+              </p>
               <RichTextEditor
                 value={formData.content}
                 onChange={(val) => setFormData({ ...formData, content: val })}
@@ -461,26 +602,81 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                 minHeight="120px"
               />
 
+              {lintWarnings.length > 0 && (
+                <div className={formStyles.guidanceContainer}>
+                <div className={formStyles.guidanceHeader}>
+                  <span className={formStyles.guidanceDot} />
+                  <span className={formStyles.guidanceLabel}>Writing guidance</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowGuidanceWhy(!showGuidanceWhy)}
+                    className={formStyles.guidanceToggle}
+                  >
+                    {showGuidanceWhy ? 'hide' : 'why?'}
+                  </button>
+                </div>
+                <p className="text-xs text-white/40 mb-3">
+                  Quoted text is the phrase we noticed.
+                </p>
+                {showGuidanceWhy && (
+                  <p className={formStyles.guidanceExplainer}>
+                    Anchor notes in concrete scenes—who, where, what happened—so memories stay verifiable and personal.
+                  </p>
+                )}
+                  <div className="space-y-3">
+                    {lintWarnings.map((warning, idx) => {
+                      const tone = lintTone(warning.severity);
+                      const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                      return (
+                        <div key={`${warning.code}-${idx}`} className="space-y-0.5">
+                          <p className={tone.message}>
+                            {warning.match && (
+                              <span className={formStyles.guidanceMatch}>&ldquo;{warning.match}&rdquo;</span>
+                            )}
+                            {warning.match ? ' — ' : ''}{warning.message}
+                          </p>
+                          {suggestion && (
+                            <p className={tone.suggestion}>{suggestion}</p>
+                          )}
+                          {warning.code === 'MEANING_ASSERTION' && (
+                            <button
+                              type="button"
+                              onClick={openWhyMeaningful}
+                              className={formStyles.guidanceAction}
+                            >
+                              Move this to &ldquo;Why it matters to you&rdquo;
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
             </div>
 
-            <DisclosureSection
-              label="Why it's meaningful"
-              addLabel="Add why it's meaningful"
-              isOpen={showWhyMeaningful}
-              onToggle={setShowWhyMeaningful}
-              hasContent={hasContent(formData.why_included)}
-              onClear={() => setFormData({ ...formData, why_included: '' })}
-            >
-              <p className={formStyles.hint}>
-                Appears as an italic quote beneath your note
-              </p>
-              <RichTextEditor
-                value={formData.why_included}
-                onChange={(val) => setFormData({ ...formData, why_included: val })}
-                placeholder="What it shows about her, why it matters to you..."
-                minHeight="80px"
-              />
-            </DisclosureSection>
+            <div ref={whyMeaningfulRef}>
+              <DisclosureSection
+                label="Why it matters to you"
+                addLabel="Add why it matters to you (optional)"
+                isOpen={showWhyMeaningful}
+                onToggle={setShowWhyMeaningful}
+                hasContent={hasContent(formData.why_included)}
+                onClear={() => setFormData({ ...formData, why_included: '' })}
+                variant="inset"
+              >
+                <p className="text-xs text-white/40 mb-2 italic">
+                  Optional: your personal impact. Appears as an italic note beneath your memory.
+                </p>
+                <RichTextEditor
+                  value={formData.why_included}
+                  onChange={(val) => setFormData({ ...formData, why_included: val })}
+                  placeholder="How it landed for you, why it still matters..."
+                  minHeight="80px"
+                />
+              </DisclosureSection>
+            </div>
           </div>
         </div>
 
@@ -665,7 +861,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                   <button
                     type="button"
                     onClick={() => setShowPeople(false)}
-                    className="text-xs text-white/40 hover:text-white transition-colors"
+                    className="text-xs text-white/50 hover:text-white transition-colors"
                   >
                     Hide
                   </button>
@@ -786,7 +982,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                     setShowAttachment(false);
                     setAttachment({ type: 'image', url: '', caption: '' });
                   }}
-                  className="text-xs text-white/40 hover:text-white transition-colors"
+                  className="text-xs text-white/50 hover:text-white transition-colors"
                 >
                   Remove
                 </button>
@@ -822,7 +1018,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               </div>
               <div className="mt-4">
                 <label htmlFor="attachment_caption" className={formStyles.label}>
-                  Caption <span className="text-white/40">(optional)</span>
+                  Caption <span className="text-white/50">(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -838,17 +1034,20 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         </div>
 
         {/* Review notice */}
-        <div className="space-y-2">
-          <p className="text-sm text-white/50 leading-relaxed">
-            We run a quick LLM check before publishing. If it flags something, we&rsquo;ll ask you to revise.
+        <div className="p-5 rounded-2xl border border-white/5 bg-white/[0.03] text-left">
+          <p className="text-sm font-medium text-white mb-2">
+            Every note is reviewed before it goes live
+          </p>
+          <p className="text-sm text-white/50">
+            We look for private info that shouldn&rsquo;t be public and flag anything that needs a second look. Names are fine — people you mention can choose how they appear.
           </p>
           {llmReviewMessage && (
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-white/70 mt-3">
               {llmReviewMessage}
             </p>
           )}
           {llmReviewReasons.length > 0 && (
-            <ul className="list-disc list-inside text-sm text-white/70">
+            <ul className="list-disc list-inside text-sm text-white/70 mt-2">
               {llmReviewReasons.map((r, idx) => (
                 <li key={idx}>{r}</li>
               ))}
