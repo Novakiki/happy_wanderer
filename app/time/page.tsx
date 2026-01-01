@@ -12,7 +12,7 @@ export default function TimePage() {
       <div className="max-w-2xl mx-auto px-6 py-24">
         <Link
           href="/score"
-          className="text-xs uppercase tracking-[0.2em] text-white/40 hover:text-white/60 transition-colors"
+          className="text-xs uppercase tracking-[0.2em] text-white/50 hover:text-white/70 transition-colors"
         >
           &larr; Back to the score
         </Link>

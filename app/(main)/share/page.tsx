@@ -45,7 +45,7 @@ export default async function SharePage({ searchParams }: Props) {
       style={subtleBackground}
     >
       <Nav userProfile={userProfile} />
-      <section className="max-w-2xl mx-auto px-6 py-16">
+      <section className="max-w-2xl mx-auto px-6 pt-24 pb-16">
         <MemoryForm
           respondingToEventId={respondingTo}
           storytellerName={storytellerName}

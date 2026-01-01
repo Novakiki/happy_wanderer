@@ -67,24 +67,53 @@ export default async function MemoryPage({
   const linkedStories: LinkedStory[] = [];
 
   if (admin) {
-    const { data, error } = await admin
+    const baseSelect = `
+      *,
+      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
+      media:event_media(media:media(*)),
+      references:event_references(id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name))
+    `;
+    const selectWithTrigger = `
+      ${baseSelect},
+      trigger_event:timeline_events!timeline_events_trigger_event_id_fkey(id, title, privacy_level)
+    `;
+
+    const withTrigger = await admin
       .from("timeline_events")
-      .select(
-        `
-        *,
-        contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
-        media:event_media(media:media(*)),
-        references:event_references(id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name)),
-        trigger_event:timeline_events!timeline_events_trigger_event_id_fkey(id, title, privacy_level)
-      `
-      )
+      .select(selectWithTrigger)
       .eq("id", id)
       .single();
+
+    let data = withTrigger.data;
+    let error = withTrigger.error;
+
+    if (error?.code === "PGRST200") {
+      const fallback = await admin
+        .from("timeline_events")
+        .select(baseSelect)
+        .eq("id", id)
+        .single();
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       // Soft-fail: fall back to getEventById; avoid dev overlay noise
       console.warn("Error fetching event via admin client:", error);
-    } else {
+    } else if (data) {
+      const triggerEventId = (data as { trigger_event_id?: string | null }).trigger_event_id;
+      const hasTrigger = Object.prototype.hasOwnProperty.call(data, "trigger_event");
+      if (triggerEventId && !hasTrigger) {
+        const { data: triggerEvent } = await admin
+          .from("timeline_events")
+          .select("id, title, privacy_level")
+          .eq("id", triggerEventId)
+          .single();
+        if (triggerEvent) {
+          (data as { trigger_event?: typeof triggerEvent }).trigger_event = triggerEvent;
+        }
+      }
+
       // Redact private names before rendering (include author payload so owner can see real names)
       const rawRefs = (data.references || []) as unknown as ReferenceRow[];
       event = {
@@ -210,12 +239,17 @@ export default async function MemoryPage({
     : formatYearLabel(event);
   const primaryText = event.full_entry || event.preview || "";
 
-  // Find "heard from" reference for invite button
+  // Find "heard from" reference for invite button and attribution
   const heardFromRef = event.references?.find((r) => r.role === "heard_from");
-  const heardFromName =
-    heardFromRef?.render_label ||
-    heardFromRef?.person_display_name ||
-    null;
+  // Try to get story source from: 1) heard_from reference, 2) source_name "Told to me by X" pattern
+  const heardFromName = (() => {
+    if (heardFromRef?.render_label) return heardFromRef.render_label;
+    if (heardFromRef?.person_display_name) return heardFromRef.person_display_name;
+    // Fallback: extract from source_name if it's "Told to me by X"
+    const sourceMatch = event.source_name?.match(/told to me by\s+(.+)/i);
+    if (sourceMatch) return sourceMatch[1].trim();
+    return null;
+  })();
   const hasLinkedResponse = linkedStories.some((s) => !s.isOriginal);
 
   const mediaItems = event.media
@@ -254,86 +288,36 @@ export default async function MemoryPage({
       <div className="max-w-3xl mx-auto px-6 py-16">
         <Nav variant="back" />
 
-        <div className="flex items-start justify-between gap-4 mt-8">
-          <div className="flex-1">
-            <p className="text-xs uppercase tracking-[0.3em] text-white/40">
-              A note in the score
-            </p>
-            {canShowTrigger && triggerEvent && (
-              <TriggerEventLink
-                triggerEvent={triggerEvent}
-                currentEventId={event.id}
-              />
+        {/* Header: Title + simplified metadata */}
+        <div className="mt-8">
+          {canShowTrigger && triggerEvent && (
+            <TriggerEventLink
+              triggerEvent={triggerEvent}
+              currentEventId={event.id}
+            />
+          )}
+          <h1 className="text-3xl sm:text-4xl font-serif text-white">
+            {event.title}
+          </h1>
+          <p className="text-sm text-white/50 mt-2">
+            {dateLine}
+            {event.life_stage && event.life_stage in LIFE_STAGES && (
+              <span> · {LIFE_STAGES[event.life_stage as keyof typeof LIFE_STAGES]}</span>
             )}
-            <h1 className="text-3xl sm:text-4xl font-serif text-white mt-4">
-              {event.title}
-            </h1>
-          </div>
-          {viewerIsOwner && editLink && (
-            <Link
-              href={editLink}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-colors text-xs"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-              Edit
-            </Link>
-          )}
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-white/40 mt-4">
-          {/* Owner-only status badges inline with metadata */}
-          {viewerIsOwner && (
-            <>
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${
-                event.status === "published"
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                  : event.status === "draft"
-                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                  : "bg-white/5 text-white/40 border border-white/10"
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  event.status === "published" ? "bg-emerald-400" : event.status === "draft" ? "bg-amber-400" : "bg-white/40"
-                }`} />
-                {event.status || "pending"}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-white/5 text-white/40 border border-white/10">
-                {event.privacy_level === "public" && "Public"}
-                {event.privacy_level === "family" && "Family only"}
-                {event.privacy_level === "private" && "Private"}
-                {!event.privacy_level && "Family only"}
-              </span>
-            </>
-          )}
-          <span>{dateLine}</span>
-          {event.location && <span>Location: {event.location}</span>}
-          {event.people_involved && event.people_involved.length > 0 && (
-            <span>People: {event.people_involved.join(", ")}</span>
-          )}
-          {event.timing_certainty && event.timing_certainty !== "exact" && (
-            <span>
-              Timing: {event.timing_certainty === "approximate" ? "Approximate" : "Vague"}
-            </span>
-          )}
-          {event.timing_input_type === "age_range"
-            && event.age_start !== null
-            && event.age_end !== null && (
-            <span>Ages {event.age_start}–{event.age_end}</span>
-          )}
-          {event.life_stage && event.life_stage in LIFE_STAGES && (
-            <span>Life stage: {LIFE_STAGES[event.life_stage as keyof typeof LIFE_STAGES]}</span>
-          )}
-        </div>
-
+        {/* Hero: The memory content */}
         {displayText ? (
-          <div
-            className="mt-8 space-y-6 text-white/70 leading-relaxed prose prose-sm prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: displayText }}
-          />
+          <div className="mt-8 relative">
+            <div className="absolute -left-4 top-0 bottom-0 w-0.5 bg-gradient-to-b from-[#e07a5f]/40 via-[#e07a5f]/20 to-transparent" />
+            <div
+              className="pl-4 text-lg sm:text-xl text-white/80 leading-relaxed prose prose-lg prose-invert max-w-none [&>p:first-child]:mt-0"
+              dangerouslySetInnerHTML={{ __html: displayText }}
+            />
+          </div>
         ) : (
-          <p className="mt-8 text-white/50">
+          <p className="mt-8 text-white/50 italic">
             This note is in the score, but the full text has not been added yet.
           </p>
         )}
@@ -376,7 +360,7 @@ export default async function MemoryPage({
                   </a>
                 )}
                 {item.caption && (
-                  <p className="text-xs text-white/40 mt-3">{item.caption}</p>
+                  <p className="text-xs text-white/50 mt-3">{item.caption}</p>
                 )}
               </div>
             ))}
@@ -384,18 +368,41 @@ export default async function MemoryPage({
         )}
 
         <div className="mt-10 pt-6 border-t border-white/10 space-y-4">
-          <div className="text-xs text-white/40">
-            Added by{" "}
-            <span className="text-white/60">
-              {event.contributor?.name || "Someone who loved her"}
-            </span>
-            {event.contributor?.relation &&
-              event.contributor.relation !== "synthesized" && (
-                <span className="text-white/40">
-                  {" "}
-                  ({event.contributor.relation})
-                </span>
+          {/* Attribution */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-white/50">
+              Added by{" "}
+              <span className="text-white/70">
+                {event.contributor?.name || "Someone who loved her"}
+              </span>
+              {event.contributor?.relation &&
+                event.contributor.relation !== "synthesized" && (
+                  <span className="text-white/40">
+                    {" "}({event.contributor.relation})
+                  </span>
+                )}
+              {/* Story source attribution - show when story came from someone else */}
+              {heardFromName && (
+                <>
+                  <span className="text-white/30"> · </span>
+                  <span className="text-white/50">Story from </span>
+                  <span className="text-white/70">{heardFromName}</span>
+                </>
               )}
+            </p>
+            {/* Owner-only: subtle edit link */}
+            {viewerIsOwner && editLink && (
+              <Link
+                href={editLink}
+                className="text-white/30 hover:text-white/60 transition-colors"
+                title={`${event.status || 'pending'} · ${event.privacy_level || 'family'}`}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </Link>
+            )}
           </div>
           {event.references && event.references.length > 0 && (
             <ReferencesList
@@ -426,7 +433,7 @@ export default async function MemoryPage({
         {/* Linked notes */}
         {linkedStories.length > 0 && (
           <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-white/40 mb-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/50 mb-4">
               Other Notes in this Measure
             </p>
             <div className="space-y-3">
@@ -445,7 +452,7 @@ export default async function MemoryPage({
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm text-white">{story.title}</p>
-                          <span className="text-[10px] uppercase tracking-[0.2em] text-[#e07a5f]">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#e07a5f]">
                             {relationshipLabel}
                           </span>
                         </div>
@@ -454,7 +461,7 @@ export default async function MemoryPage({
                             {story.threadNote}
                           </p>
                         )}
-                        <p className="text-xs text-white/40 mt-1">
+                        <p className="text-xs text-white/50 mt-1">
                           {story.isOriginal ? "Original note" : "Told by"}{" "}
                           <span className="text-white/60">
                             {story.contributor?.name || "Someone"}
@@ -486,16 +493,11 @@ export default async function MemoryPage({
           viewerIsOwner={viewerIsOwner}
         />
 
-        <div className="mt-10 flex flex-wrap gap-3">
-          <Link
-            href="/score"
-            className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
-          >
-            Back to the score
-          </Link>
+        {/* Single CTA - respond/add perspective */}
+        <div className="mt-10">
           <Link
             href={respondLink}
-            className="inline-flex items-center gap-2 rounded-full border border-white/15 px-5 py-2 text-xs uppercase tracking-[0.2em] text-white/70 hover:text-white hover:border-white/30 transition-colors"
+            className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2.5 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
           >
             {respondLabel}
           </Link>

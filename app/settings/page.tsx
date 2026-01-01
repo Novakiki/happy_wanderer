@@ -419,7 +419,7 @@ export default function SettingsPage() {
       <div className="max-w-xl mx-auto px-6 py-24">
         <Link
           href="/score"
-          className="text-xs uppercase tracking-[0.2em] text-white/40 hover:text-white/60 transition-colors"
+          className="text-xs uppercase tracking-[0.2em] text-white/50 hover:text-white/70 transition-colors"
         >
           &larr; Back to the score
         </Link>
@@ -476,7 +476,7 @@ export default function SettingsPage() {
               <button
                 type="submit"
                 disabled={passwordSaving || !password || !confirmPassword}
-                className="text-xs px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/15 disabled:bg-white/5 disabled:text-white/40 transition-colors"
+                className="text-xs px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/15 disabled:bg-white/5 disabled:text-white/50 transition-colors"
               >
                 {passwordSaving ? 'Updating...' : 'Update password'}
               </button>
@@ -508,14 +508,14 @@ export default function SettingsPage() {
                   disabled={profileLoading}
                   required
                 />
-                {profileLoading && <p className="text-xs text-white/40">Loading your profile...</p>}
+                {profileLoading && <p className="text-xs text-white/50">Loading your profile...</p>}
                 {profileError && <p className={formStyles.error}>{profileError}</p>}
               </div>
 
               <button
                 type="submit"
                 disabled={relationSaving || profileLoading || !relation}
-                className="text-xs px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/15 disabled:bg-white/5 disabled:text-white/40 transition-colors"
+                className="text-xs px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/15 disabled:bg-white/5 disabled:text-white/50 transition-colors"
               >
                 {relationSaving ? 'Saving...' : 'Save relationship'}
               </button>
@@ -541,7 +541,7 @@ export default function SettingsPage() {
             </div>
 
             {identityLoading ? (
-              <p className="text-xs text-white/40 mt-3">Loading identity settings...</p>
+              <p className="text-xs text-white/50 mt-3">Loading identity settings...</p>
             ) : identityError ? (
               <p className={`${formStyles.error} mt-3`}>{identityError}</p>
             ) : !identity?.person ? (
@@ -551,7 +551,7 @@ export default function SettingsPage() {
                   appears across notes.
                 </p>
                 {identity?.contributor_name && (
-                  <p className="text-xs text-white/40">
+                  <p className="text-xs text-white/50">
                     We will claim the identity for {identity.contributor_name}.
                   </p>
                 )}
@@ -568,7 +568,7 @@ export default function SettingsPage() {
               <div className="mt-4 space-y-6">
                 {/* Display name */}
                 <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/50">
                     Display name
                   </p>
                   {displayNameEditing ? (
@@ -608,7 +608,7 @@ export default function SettingsPage() {
                     >
                       <span className="text-sm">{identity?.person?.name || 'Set your name'}</span>
                       <svg
-                        className="w-3.5 h-3.5 text-white/40 group-hover:text-white/60 transition-colors"
+                        className="w-3.5 h-3.5 text-white/50 group-hover:text-white/70 transition-colors"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -617,17 +617,17 @@ export default function SettingsPage() {
                       </svg>
                     </button>
                   )}
-                  <p className="text-xs text-white/40">
+                  <p className="text-xs text-white/50">
                     This is how your name appears when you choose &ldquo;Full name&rdquo; visibility.
                   </p>
                 </div>
 
                 <div className="space-y-3">
                   <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/50">
                       Default for all notes
                     </p>
-                    <p className="text-[10px] text-white/30">
+                    <p className="text-xs text-white/40">
                       Others&apos; notes only
                     </p>
                   </div>
@@ -655,8 +655,8 @@ export default function SettingsPage() {
                           } ${identitySaving ? 'opacity-50 cursor-wait' : ''}`}
                         >
                           <span className="flex items-center gap-2">
-                            <span className={`text-[10px] tracking-widest ${
-                              isSelected ? 'text-[#e07a5f]' : 'text-white/25'
+                            <span className={`text-xs tracking-widest ${
+                              isSelected ? 'text-[#e07a5f]' : 'text-white/30'
                             }`}>
                               {option.icon}
                             </span>
@@ -664,8 +664,8 @@ export default function SettingsPage() {
                               {option.label}
                             </span>
                           </span>
-                          <span className={`block text-[11px] mt-1 ${
-                            isSelected ? 'text-white/50' : 'text-white/35'
+                          <span className={`block text-xs mt-1 ${
+                            isSelected ? 'text-white/50' : 'text-white/40'
                           }`}>
                             {option.description}
                           </span>
@@ -678,14 +678,14 @@ export default function SettingsPage() {
                       );
                     })}
                   </div>
-                  <p className="text-xs text-white/40">
+                  <p className="text-xs text-white/50">
                     You can override specific notes below.
                   </p>
                 </div>
 
                 {identity.author_preferences.length > 0 && (
                   <div className="space-y-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/50">
                       Trusted authors
                     </p>
                     <div className="space-y-3">
@@ -700,7 +700,7 @@ export default function SettingsPage() {
                                 {pref.name || 'Unknown contributor'}
                               </p>
                               {pref.relation && (
-                                <p className="text-xs text-white/40">{pref.relation}</p>
+                                <p className="text-xs text-white/50">{pref.relation}</p>
                               )}
                             </div>
                             {pref.contributor_id && (
@@ -725,11 +725,11 @@ export default function SettingsPage() {
                 )}
 
                 <div className="space-y-3">
-                  <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/50">
                     Notes that mention you
                   </p>
                   {identity.notes.length === 0 ? (
-                    <p className="text-xs text-white/40">
+                    <p className="text-xs text-white/50">
                       No notes mention you yet.
                     </p>
                   ) : (
@@ -752,7 +752,7 @@ export default function SettingsPage() {
                           >
                             <div className="flex flex-col gap-3">
                               <div>
-                                <p className="text-xs text-white/40">
+                                <p className="text-xs text-white/50">
                                   {yearLabel} - {authorName}
                                   {authorRelation ? ` (${authorRelation})` : ''}
                                 </p>
@@ -762,7 +762,7 @@ export default function SettingsPage() {
                                 >
                                   {note.event.title}
                                 </Link>
-                                <p className="text-xs text-white/40 mt-1">
+                                <p className="text-xs text-white/50 mt-1">
                                   Current: {currentLabel}
                                 </p>
                               </div>
@@ -785,7 +785,7 @@ export default function SettingsPage() {
                                   <option value="removed">Hidden</option>
                                 </select>
                                 {noteSavingId === note.reference_id && (
-                                  <p className="text-xs text-white/40">Saving...</p>
+                                  <p className="text-xs text-white/50">Saving...</p>
                                 )}
                               </div>
                             </div>
@@ -802,7 +802,7 @@ export default function SettingsPage() {
           {/* Notifications */}
           <div className="p-4 rounded-xl border border-white/10 bg-white/[0.02]">
             <h2 className="text-sm font-medium text-white/80 mb-1">Notifications</h2>
-            <p className="text-xs text-white/40 mb-3">Email preferences for new notes and responses</p>
+            <p className="text-xs text-white/50 mb-3">Email preferences for new notes and responses</p>
             <button
               disabled
               className="text-xs px-3 py-1.5 rounded-lg bg-white/5 text-white/30 cursor-not-allowed"

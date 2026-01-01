@@ -30,6 +30,7 @@
 
 import FirstTimeGuide from '@/components/FirstTimeGuide';
 import { formatRelationshipContext } from '@/lib/invites';
+import { getLintSuggestion } from '@/lib/lint-copy';
 import { formStyles, subtleBackground } from '@/lib/styles';
 import { RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 import Link from 'next/link';
@@ -54,6 +55,19 @@ type InviteData = {
 
 type VisibilityScope = 'this_note' | 'by_author' | 'all_notes';
 type Visibility = 'approved' | 'blurred' | 'anonymized' | 'removed';
+
+type LintWarning = {
+  code: string;
+  message: string;
+  suggestion?: string;
+  severity?: 'soft' | 'strong';
+  match?: string;
+};
+
+const lintTone = (severity?: LintWarning['severity']) => ({
+  message: severity === 'soft' ? 'text-sm text-white/50' : 'text-sm text-white/70',
+  suggestion: severity === 'soft' ? 'text-xs text-white/40' : 'text-xs text-white/50',
+});
 
 type ViewerIdentity = {
   is_authenticated: boolean;
@@ -128,6 +142,7 @@ export default function RespondPage() {
   const [error, setError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [llmReasons, setLlmReasons] = useState<string[]>([]);
+  const [lintWarnings, setLintWarnings] = useState<LintWarning[]>([]);
 
   const [viewerIdentity, setViewerIdentity] = useState<ViewerIdentity | null>(null);
   const [identityOverrideEnabled, setIdentityOverrideEnabled] = useState(false);
@@ -228,6 +243,7 @@ export default function RespondPage() {
 
     setSubmitError('');
     setLlmReasons([]);
+    setLintWarnings([]);
     const shouldSendIdentity = !canUseDefaultVisibility || identityOverrideEnabled;
 
     setIsSubmitting(true);
@@ -246,6 +262,9 @@ export default function RespondPage() {
 
       if (!res.ok) {
         const result = await res.json().catch(() => ({}));
+        if (Array.isArray(result?.lintWarnings)) {
+          setLintWarnings(result.lintWarnings);
+        }
         if (res.status === 422) {
           setSubmitError('LLM review blocked submission. Please address the issues below.');
           setLlmReasons(result?.reasons || []);
@@ -258,6 +277,9 @@ export default function RespondPage() {
       const result = await res.json().catch(() => ({}));
       if (result.contributor_id) {
         setContributorId(result.contributor_id);
+      }
+      if (Array.isArray(result?.lintWarnings)) {
+        setLintWarnings(result.lintWarnings);
       }
       setIsSubmitted(true);
     } catch {
@@ -358,11 +380,50 @@ export default function RespondPage() {
             Your memory has been added. It means a lot to have your perspective.
           </p>
 
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/score" className={formStyles.buttonSecondary}>
+              View The Score
+            </Link>
+          </div>
+
+          {lintWarnings.length > 0 && (
+            <div className={`${formStyles.section} mt-8`}>
+              <p className="text-xs uppercase tracking-wider text-white/50 mb-3">
+                Writing guidance (optional)
+              </p>
+              <p className="text-sm text-white/50 mb-3">
+                Gentle suggestions if you want to refine this note.
+              </p>
+              <p className="text-xs text-white/40 mb-3">
+                Quoted text is the phrase we noticed.
+              </p>
+              <div className="space-y-3">
+                {lintWarnings.map((warning, idx) => {
+                  const tone = lintTone(warning.severity);
+                  const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                  return (
+                    <div key={`${warning.code}-${idx}`} className="space-y-1">
+                      <p className={tone.message}>
+                        {warning.match && (
+                          <span className="font-medium text-white/80">"{warning.match}"</span>
+                        )}
+                        {warning.match ? ' — ' : ''}{warning.message}
+                      </p>
+                      {suggestion && (
+                        <p className={tone.suggestion}>{suggestion}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Visibility management - show current choice with option to change */}
           <div className={`${formStyles.section} mt-8`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-wider text-white/40 mb-1">
+                <p className="text-xs uppercase tracking-wider text-white/50 mb-1">
                   Your name appears as
                 </p>
                 <p className="text-white/80">
@@ -385,7 +446,7 @@ export default function RespondPage() {
               <div className="mt-4 space-y-4">
                 {/* Visibility options */}
                 <div className="space-y-2">
-                  <p className="text-xs text-white/40 uppercase tracking-wider">How to show my name</p>
+                  <p className="text-xs text-white/50 uppercase tracking-wider">How to show my name</p>
                   {IDENTITY_VISIBILITY_OPTIONS.map((option) => (
                     <label
                       key={option.value}
@@ -413,7 +474,7 @@ export default function RespondPage() {
 
                 {/* Scope options */}
                 <div className="space-y-2">
-                  <p className="text-xs text-white/40 uppercase tracking-wider">Apply to</p>
+                  <p className="text-xs text-white/50 uppercase tracking-wider">Apply to</p>
                   <label
                     className={`flex items-start gap-3 w-full text-left rounded-xl border px-3 py-2 text-sm transition-colors cursor-pointer ${
                       visibilityScope === 'this_note'
@@ -599,7 +660,7 @@ export default function RespondPage() {
           </p>
 
           <div className={`${formStyles.section} mt-8`}>
-            <p className="text-xs text-white/40 mb-2">{yearDisplay}</p>
+            <p className="text-xs text-white/50 mb-2">{yearDisplay}</p>
             <h2 className="text-lg font-medium text-white mb-2">{invite.event.title}</h2>
             <p className="text-white/60 text-sm">
               Current setting: {identityLabel}
@@ -689,7 +750,7 @@ export default function RespondPage() {
 
         {/* The original memory */}
         <div className={`${formStyles.section} mt-8`}>
-          <p className="text-xs text-white/40 mb-2">{yearDisplay}</p>
+          <p className="text-xs text-white/50 mb-2">{yearDisplay}</p>
           <h2 className="text-lg font-medium text-white mb-3">{invite.event.title}</h2>
           {invite.event.content ? (
             <div
@@ -701,7 +762,7 @@ export default function RespondPage() {
               This note is in The Score, but the full text has not been added yet.
             </p>
           )}
-          <p className="text-xs text-white/40 mt-4">— {invite.sender_name}</p>
+          <p className="text-xs text-white/50 mt-4">— {invite.sender_name}</p>
         </div>
 
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">

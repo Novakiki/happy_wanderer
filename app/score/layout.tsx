@@ -38,7 +38,7 @@ export default async function ChaptersLayout({
             </svg>
           </Link>
           {/* Nav items */}
-          <div className="flex items-center gap-5 text-xs text-white/40">
+          <div className="flex items-center gap-5 text-xs text-white/50">
             <Link href="/share" className="hover:text-white/70 transition-colors tracking-wide">
               Add a note
             </Link>

@@ -19,7 +19,7 @@ export default async function LetterPage({ searchParams }: Props) {
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={immersiveBackground}>
       <div className="max-w-2xl mx-auto px-6 py-16">
-        <p className="text-xs uppercase tracking-[0.3em] text-white/40 mb-8">
+        <p className="text-xs uppercase tracking-[0.3em] text-white/50 mb-8">
           Valerie Park Anderson
         </p>
 

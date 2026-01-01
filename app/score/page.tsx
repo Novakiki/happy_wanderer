@@ -150,19 +150,38 @@ export default function ChaptersPage() {
 
     fetchData();
   }, []);
-  // Position bundles evenly across the timeline (index-based, not time-based)
-  const getBundlePosition = (index: number) => {
-    if (bundles.length <= 1) return 50;
+  // Group bundles by year into "harmonic clusters" (same year = same beat = chord)
+  const harmonicClusters = useMemo(() => {
+    const clusterMap = new Map<number, StoryBundle[]>();
+    for (const bundle of bundles) {
+      const year = bundle.rootEvent.year;
+      const existing = clusterMap.get(year) || [];
+      existing.push(bundle);
+      clusterMap.set(year, existing);
+    }
+    // Convert to array sorted by year
+    return Array.from(clusterMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([year, clusterBundles]) => ({
+        year,
+        bundles: clusterBundles,
+        isChord: clusterBundles.length > 1,
+      }));
+  }, [bundles]);
+
+  // Position clusters evenly across the timeline (index-based, not time-based)
+  const getClusterPosition = (index: number) => {
+    if (harmonicClusters.length <= 1) return 50;
     const padding = 5; // % padding on each side
     const usableWidth = 100 - (padding * 2);
-    return padding + (index / (bundles.length - 1)) * usableWidth;
+    return padding + (index / (harmonicClusters.length - 1)) * usableWidth;
   };
 
-  const bundlePositions = bundles.map((_, index) => getBundlePosition(index));
+  const clusterPositions = harmonicClusters.map((_, index) => getClusterPosition(index));
 
-  const decadeGroups = bundles.reduce<Array<{ decade: number; startIndex: number; endIndex: number }>>(
-    (acc, bundle, index) => {
-      const decade = Math.floor(bundle.rootEvent.year / 10) * 10;
+  const decadeGroups = harmonicClusters.reduce<Array<{ decade: number; startIndex: number; endIndex: number }>>(
+    (acc, cluster, index) => {
+      const decade = Math.floor(cluster.year / 10) * 10;
       const lastGroup = acc[acc.length - 1];
       if (!lastGroup || lastGroup.decade !== decade) {
         acc.push({ decade, startIndex: index, endIndex: index });
@@ -175,8 +194,8 @@ export default function ChaptersPage() {
   );
 
   const measureLabels = decadeGroups.map((group) => {
-    const startPos = bundlePositions[group.startIndex];
-    const endPos = bundlePositions[group.endIndex];
+    const startPos = clusterPositions[group.startIndex];
+    const endPos = clusterPositions[group.endIndex];
     return {
       label: `Measure ${group.decade}s`,
       shortLabel: `M. ${group.decade}s`,
@@ -186,7 +205,7 @@ export default function ChaptersPage() {
 
   const measureBarlines = decadeGroups.slice(1).map((group, index) => {
     const prevGroup = decadeGroups[index];
-    const position = (bundlePositions[prevGroup.endIndex] + bundlePositions[group.startIndex]) / 2;
+    const position = (clusterPositions[prevGroup.endIndex] + clusterPositions[group.startIndex]) / 2;
     return { position };
   });
 
@@ -209,7 +228,7 @@ export default function ChaptersPage() {
       <section className={`transition-opacity duration-1000 ${isReady ? 'opacity-100' : 'opacity-0'}`}>
         <div className="max-w-4xl mx-auto px-6 pt-16 pb-6">
           <p
-            className="text-xs uppercase tracking-[0.3em] text-white/40 animate-fade-in-up"
+            className="text-xs uppercase tracking-[0.3em] text-white/50 animate-fade-in-up"
             style={{ animationDelay: '50ms', animationFillMode: 'both' }}
           >
             Valerie Park Anderson
@@ -278,13 +297,17 @@ export default function ChaptersPage() {
       {/* Timeline Visualization */}
       <section className="max-w-4xl mx-auto px-6 mt-12">
         <div className="mb-4 animate-fade-in-up" style={{ animationDelay: '700ms', animationFillMode: 'both' }}>
-          <p className="text-sm uppercase tracking-[0.3em] text-white/40">{SCORE_TITLE}</p>
+          <p className="text-sm uppercase tracking-[0.3em] text-white/50">{SCORE_TITLE}</p>
         </div>
 
         {/* Tabbed card */}
         <div
-          className="rounded-2xl border border-white/10 bg-white/[0.02] animate-fade-in-up overflow-visible"
-          style={{ animationDelay: '720ms', animationFillMode: 'both' }}
+          className="rounded-2xl border border-white/10 animate-fade-in-up overflow-visible"
+          style={{
+            background: 'linear-gradient(135deg, rgba(232, 105, 70, 0.03) 0%, rgba(255,255,255,0.02) 50%, rgba(120, 145, 115, 0.02) 100%)',
+            animationDelay: '720ms',
+            animationFillMode: 'both'
+          }}
         >
           {/* Tabs */}
           <div className="px-4 pt-4 pb-2 border-b border-white/5 relative z-10">
@@ -330,7 +353,7 @@ export default function ChaptersPage() {
                 <div className="flex items-center justify-between mb-2">
                   <button
                     onClick={() => setShowKey(!showKey)}
-                    className="text-[11px] tracking-[0.15em] uppercase text-white/40 hover:text-white/60 transition-colors"
+                    className="text-[11px] tracking-[0.15em] uppercase text-white/50 hover:text-white/70 transition-colors"
                   >
                     {showKey ? '− Key' : '+ Key'}
                   </button>
@@ -339,7 +362,7 @@ export default function ChaptersPage() {
                     <button
                       type="button"
                       onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}
-                      className="w-6 h-6 rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-xs flex items-center justify-center"
+                      className="w-6 h-6 rounded bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-colors text-xs flex items-center justify-center"
                     >
                       −
                     </button>
@@ -347,7 +370,7 @@ export default function ChaptersPage() {
                     <button
                       type="button"
                       onClick={() => setZoomLevel(z => Math.min(3, z + 0.25))}
-                      className="w-6 h-6 rounded bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/60 transition-colors text-xs flex items-center justify-center"
+                      className="w-6 h-6 rounded bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70 transition-colors text-xs flex items-center justify-center"
                     >
                       +
                     </button>
@@ -361,18 +384,18 @@ export default function ChaptersPage() {
                     <div className="flex flex-col gap-2 text-xs text-white/50">
                       <div className="inline-flex items-center gap-2">
                         <span className="h-4 w-[3px] rounded-full bg-white/80" />
-                        <span>Outside patterns <span className="text-white/40">— <em>{LEGEND_LABELS.origin}</em></span></span>
+                        <span>Outside patterns <span className="text-white/50">— <em>{LEGEND_LABELS.origin}</em></span></span>
                       </div>
                       <div className="inline-flex items-center gap-2">
                         <span className="h-4 w-[3px] rounded-full bg-[#e07a5f]" />
-                        <span>Dated events <span className="text-white/40">— <em>{LEGEND_LABELS.milestone}</em></span></span>
+                        <span>Dated events <span className="text-white/50">— <em>{LEGEND_LABELS.milestone}</em></span></span>
                       </div>
                       <div className="inline-flex items-center gap-2">
                         <span
                           className="h-4 w-[3px] rounded-full"
                           style={{ background: 'repeating-linear-gradient(to bottom, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 2px, transparent 2px, transparent 4px)' }}
                         />
-                        <span>Personal <span className="text-white/40">— <em>{LEGEND_LABELS.memory}</em></span></span>
+                        <span>Personal <span className="text-white/50">— <em>{LEGEND_LABELS.memory}</em></span></span>
                       </div>
                     </div>
                   </div>
@@ -407,13 +430,15 @@ export default function ChaptersPage() {
           ) : (
             <>
               {/* Measure labels */}
-              {measureLabels.map((measure) => (
+              {measureLabels.map((measure, index) => (
                 <div
                   key={measure.label}
-                  className="absolute top-[18%] -translate-x-1/2 pointer-events-none z-10 hidden sm:block"
+                  className={`absolute top-[18%] pointer-events-none z-10 hidden sm:block ${
+                    index === 0 ? '' : index === measureLabels.length - 1 ? '-translate-x-full' : '-translate-x-1/2'
+                  }`}
                   style={{ left: `${measure.position}%` }}
                 >
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-white/35 whitespace-nowrap">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-white/50 whitespace-nowrap">
                     {zoomLevel < 0.75 ? measure.shortLabel : measure.label}
                   </span>
                 </div>
@@ -435,177 +460,190 @@ export default function ChaptersPage() {
               <div className="absolute left-0 right-0 top-[52%] h-px bg-white/[0.07]" />
               <div className="absolute left-0 right-0 top-[60%] h-px bg-white/[0.07]" />
 
-              {/* Event bars - evenly spaced, grouped by story bundle */}
-              {bundles.map((bundle, i) => {
-                const event = bundle.rootEvent;
-                const perspectiveCount = bundle.totalCount - 1;
-                const isOrigin = event.type === 'origin';
-                const isMilestone = event.type === 'milestone';
-                const isHovered = hoveredEvent?.id === event.id;
-                const isApproximate = event.timingCertainty === 'approximate';
-                const isVague = event.timingCertainty === 'vague';
-                const yearLabel = formatYearLabel(event);
-                const baseHeight = isOrigin ? 'h-36' : isMilestone ? 'h-28' : 'h-16';
-                const baseColor = isOrigin
-                  ? 'bg-white/80'
-                  : isMilestone
-                    ? 'bg-[#e07a5f]'
-                    : isVague
-                      ? 'bg-white/20'
-                      : isApproximate
-                        ? 'bg-white/25'
-                        : 'bg-white/30';
-                const hoverColor = !isOrigin && !isMilestone ? 'group-hover:bg-white/50' : '';
-                const hoverHeight = !isOrigin && !isMilestone ? 'group-hover:h-20' : '';
-                const noteHeadClass = isOrigin
-                  ? 'w-3 h-3 rotate-45 rounded-[2px] bg-white/70'
-                  : isMilestone
-                    ? 'w-3.5 h-2.5 -rotate-12 rounded-full border border-[#e07a5f] bg-transparent'
-                    : 'w-3.5 h-2.5 -rotate-12 rounded-full bg-white/70';
-                const chordHeadClass = isOrigin
-                  ? 'w-2.5 h-2.5 rotate-45 rounded-[2px] bg-white/40'
-                  : isMilestone
-                    ? 'w-3 h-2 -rotate-12 rounded-full border border-[#e07a5f]/70 bg-transparent'
-                    : 'w-3 h-2 -rotate-12 rounded-full bg-white/40';
-                const chordOffsets = perspectiveCount > 1
-                  ? [
-                      { x: -6, y: 4 },
-                      { x: 6, y: -4 },
-                    ]
-                  : perspectiveCount === 1
-                    ? [{ x: 5, y: -3 }]
-                    : [];
-                const dotSize = isVague ? 'w-1.5 h-1.5' : 'w-1 h-1';
-                const dotColor = isMilestone
-                  ? 'bg-[#e07a5f]/70'
-                  : isOrigin
-                    ? 'bg-white/70'
-                    : 'bg-white/50';
-                const slurClass = isHovered ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+              {/* Event bars - evenly spaced, grouped by harmonic clusters (same year = chord) */}
+              {harmonicClusters.map((cluster, clusterIndex) => {
+                const isChord = cluster.isChord;
+                const clusterBundles = cluster.bundles;
+
+                // For chord clusters, compute the stem offsets for each voice
+                const stemOffsets = isChord
+                  ? clusterBundles.map((_, idx) => (idx - (clusterBundles.length - 1) / 2) * 20)
+                  : [0];
 
                 return (
                   <div
-                    key={event.id || `${event.year}-${event.title}`}
-                    className={`absolute bottom-12 group cursor-pointer ${isHovered ? 'z-[100]' : 'z-10'}`}
-                    style={{ left: `${getBundlePosition(i)}%` }}
-                    onMouseEnter={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
-                      setHoveredEvent(event);
-                      setHoveredBundle(bundle);
-                    }}
-                    onMouseLeave={() => {
-                      setHoveredEvent(null);
-                      setHoveredBundle(null);
-                      setTooltipPos(null);
-                    }}
-                    onClick={() => {
-                      if (!event.id) return;
-                      // Interaction rule: hover previews on desktop; click/tap opens the full note.
-                      router.push(`/memory/${event.id}`);
-                    }}
+                    key={`cluster-${cluster.year}`}
+                    className="absolute bottom-12 z-10"
+                    style={{ left: `${getClusterPosition(clusterIndex)}%` }}
                   >
-                    {/* The bar */}
-                    <div
-                      className="relative flex items-end justify-center w-8 animate-rise"
-                      style={{ animationDelay: `${500 + i * 50}ms`, animationFillMode: 'both' }}
-                    >
-                      <span
-                        className={`
-                          relative w-[3px] transition-all duration-300 rounded-full
-                          ${baseHeight} ${isOrigin || isMilestone ? baseColor : ''} ${hoverColor} ${hoverHeight}
-                          ${isHovered ? 'scale-x-[2]' : ''}
-                        `}
-                        style={!isOrigin && !isMilestone ? {
-                          background: `repeating-linear-gradient(to bottom, rgba(255,255,255,${isVague ? 0.2 : isApproximate ? 0.25 : 0.3}) 0px, rgba(255,255,255,${isVague ? 0.2 : isApproximate ? 0.25 : 0.3}) 3px, transparent 3px, transparent 6px)`
-                        } : undefined}
-                      />
-                      {/* Notehead + chord */}
-                      <div className="absolute left-1/2 -translate-x-1/2 -top-1 pointer-events-none">
-                        <div className="relative">
-                          <span className={`block ${noteHeadClass}`} />
-                          {chordOffsets.map((offset, offsetIndex) => (
-                            <span
-                              key={`chord-${offsetIndex}`}
-                              className={`absolute ${chordHeadClass}`}
-                              style={{ left: `${offset.x}px`, top: `${offset.y}px` }}
-                            />
-                          ))}
-                          {(isApproximate || isVague) && (
-                            <span
-                              className={`absolute left-full ml-1 top-1 rounded-full ${dotSize} ${dotColor}`}
-                            />
-                          )}
-                          {perspectiveCount > 0 && (
-                            <svg
-                              className={`absolute -left-5 -top-4 ${slurClass}`}
-                              width="34"
-                              height="14"
-                              viewBox="0 0 34 14"
-                              aria-hidden="true"
+                    {/* Render each bundle in the cluster */}
+                    <div className="relative flex items-end justify-center">
+                      {clusterBundles.map((bundle, bundleIdx) => {
+                        const event = bundle.rootEvent;
+                        const perspectiveCount = bundle.totalCount - 1;
+                        const isOrigin = event.type === 'origin';
+                        const isMilestone = event.type === 'milestone';
+                        const isHovered = hoveredEvent?.id === event.id;
+                        const isApproximate = event.timingCertainty === 'approximate';
+                        const isVague = event.timingCertainty === 'vague';
+
+                        // Heights vary by type to create chord voicing
+                        const baseHeightPx = isOrigin ? 144 : isMilestone ? 112 : 64;
+                        // In chords, vary heights slightly for visual interest
+                        const heightVariation = isChord ? (bundleIdx % 2 === 0 ? 0 : 16) : 0;
+                        const finalHeight = baseHeightPx + heightVariation;
+
+                        const baseColor = isOrigin
+                          ? 'bg-white/80'
+                          : isMilestone
+                            ? 'bg-[#e07a5f]'
+                            : isVague
+                              ? 'bg-white/20'
+                              : isApproximate
+                                ? 'bg-white/25'
+                                : 'bg-white/30';
+                        const hoverColor = !isOrigin && !isMilestone ? 'group-hover:bg-white/50' : '';
+                        const noteHeadClass = isOrigin
+                          ? 'w-3 h-3 rotate-45 rounded-[2px] bg-white/70'
+                          : isMilestone
+                            ? 'w-3.5 h-2.5 -rotate-12 rounded-full border border-[#e07a5f] bg-transparent'
+                            : 'w-3.5 h-2.5 -rotate-12 rounded-full bg-white/70';
+                        const chordHeadClass = isOrigin
+                          ? 'w-2.5 h-2.5 rotate-45 rounded-[2px] bg-white/40'
+                          : isMilestone
+                            ? 'w-3 h-2 -rotate-12 rounded-full border border-[#e07a5f]/70 bg-transparent'
+                            : 'w-3 h-2 -rotate-12 rounded-full bg-white/40';
+                        const perspectiveOffsets = perspectiveCount > 1
+                          ? [{ x: -6, y: 4 }, { x: 6, y: -4 }]
+                          : perspectiveCount === 1
+                            ? [{ x: 5, y: -3 }]
+                            : [];
+                        const dotSize = isVague ? 'w-1.5 h-1.5' : 'w-1 h-1';
+                        const dotColor = isMilestone
+                          ? 'bg-[#e07a5f]/70'
+                          : isOrigin
+                            ? 'bg-white/70'
+                            : 'bg-white/50';
+                        const slurClass = isHovered ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+                        const stemOffset = stemOffsets[bundleIdx];
+
+                        return (
+                          <div
+                            key={event.id || `${event.year}-${event.title}`}
+                            className={`absolute group cursor-pointer ${isHovered ? 'z-[100]' : 'z-10'}`}
+                            style={{
+                              left: `${stemOffset}px`,
+                              transform: 'translateX(-50%)',
+                            }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+                              setHoveredEvent(event);
+                              setHoveredBundle(bundle);
+                            }}
+                            onMouseLeave={() => {
+                              setHoveredEvent(null);
+                              setHoveredBundle(null);
+                              setTooltipPos(null);
+                            }}
+                            onClick={() => {
+                              if (!event.id) return;
+                              router.push(`/memory/${event.id}`);
+                            }}
+                          >
+                            {/* The stem */}
+                            <div
+                              className="relative flex items-end justify-center w-8 animate-rise"
+                              style={{ animationDelay: `${500 + clusterIndex * 50 + bundleIdx * 20}ms`, animationFillMode: 'both' }}
                             >
-                              <path
-                                d="M 2 12 Q 17 0 32 12"
-                                stroke="rgba(224, 122, 95, 0.35)"
-                                strokeWidth="1.2"
-                                fill="none"
+                              <span
+                                className={`
+                                  relative w-[3px] transition-all duration-300 rounded-full
+                                  ${isOrigin || isMilestone ? baseColor : ''} ${hoverColor}
+                                  ${isHovered ? 'scale-x-[2]' : ''}
+                                `}
+                                style={{
+                                  height: `${finalHeight}px`,
+                                  ...(!isOrigin && !isMilestone ? {
+                                    background: `repeating-linear-gradient(to bottom, rgba(255,255,255,${isVague ? 0.2 : isApproximate ? 0.25 : 0.3}) 0px, rgba(255,255,255,${isVague ? 0.2 : isApproximate ? 0.25 : 0.3}) 3px, transparent 3px, transparent 6px)`
+                                  } : {})
+                                }}
                               />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                      {/* Horizontal bracket along timeline for approximate dates */}
-                      {(isApproximate || isVague) && (
-                        <span
-                          className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none"
-                          style={{ width: isVague ? '32px' : '20px' }}
-                        >
-                          {/* Left bracket [ */}
-                          <span
-                            className={`
-                              absolute left-0 h-2.5 w-[1px]
-                              ${isOrigin ? 'bg-white/40' : isMilestone ? 'bg-[#e07a5f]/50' : 'bg-white/20'}
-                            `}
-                          />
-                          {/* Horizontal line */}
-                          <span
-                            className={`
-                              absolute bottom-0 left-0 right-0 h-[1px]
-                              ${isOrigin ? 'bg-white/30' : isMilestone ? 'bg-[#e07a5f]/40' : 'bg-white/15'}
-                            `}
-                          />
-                          {/* Right bracket ] */}
-                          <span
-                            className={`
-                              absolute right-0 h-2.5 w-[1px]
-                              ${isOrigin ? 'bg-white/40' : isMilestone ? 'bg-[#e07a5f]/50' : 'bg-white/20'}
-                            `}
-                          />
-                        </span>
-                      )}
+                              {/* Notehead + perspective chord */}
+                              <div className="absolute left-1/2 -translate-x-1/2 -top-1 pointer-events-none">
+                                <div className="relative">
+                                  <span className={`block ${noteHeadClass}`} />
+                                  {perspectiveOffsets.map((offset, offsetIndex) => (
+                                    <span
+                                      key={`chord-${offsetIndex}`}
+                                      className={`absolute ${chordHeadClass}`}
+                                      style={{ left: `${offset.x}px`, top: `${offset.y}px` }}
+                                    />
+                                  ))}
+                                  {(isApproximate || isVague) && (
+                                    <span
+                                      className={`absolute left-full ml-1 top-1 rounded-full ${dotSize} ${dotColor}`}
+                                    />
+                                  )}
+                                  {perspectiveCount > 0 && (
+                                    <svg
+                                      className={`absolute -left-5 -top-4 ${slurClass}`}
+                                      width="34"
+                                      height="14"
+                                      viewBox="0 0 34 14"
+                                      aria-hidden="true"
+                                    >
+                                      <path
+                                        d="M 2 12 Q 17 0 32 12"
+                                        stroke="rgba(224, 122, 95, 0.35)"
+                                        strokeWidth="1.2"
+                                        fill="none"
+                                      />
+                                    </svg>
+                                  )}
+                                </div>
+                              </div>
+                              {/* Horizontal bracket for approximate dates */}
+                              {(isApproximate || isVague) && (
+                                <span
+                                  className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none"
+                                  style={{ width: isVague ? '32px' : '20px' }}
+                                >
+                                  <span className={`absolute left-0 h-2.5 w-[1px] ${isOrigin ? 'bg-white/40' : isMilestone ? 'bg-[#e07a5f]/50' : 'bg-white/20'}`} />
+                                  <span className={`absolute bottom-0 left-0 right-0 h-[1px] ${isOrigin ? 'bg-white/30' : isMilestone ? 'bg-[#e07a5f]/40' : 'bg-white/15'}`} />
+                                  <span className={`absolute right-0 h-2.5 w-[1px] ${isOrigin ? 'bg-white/40' : isMilestone ? 'bg-[#e07a5f]/50' : 'bg-white/20'}`} />
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Perspective count badge */}
+                            {perspectiveCount > 0 && (
+                              <span
+                                className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-[#e07a5f]/80 text-white text-[10px] font-medium animate-fade-in-up"
+                                style={{ animationDelay: `${600 + clusterIndex * 50 + bundleIdx * 20}ms`, animationFillMode: 'both' }}
+                              >
+                                +{perspectiveCount}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    {/* Perspective count badge */}
-                    {perspectiveCount > 0 && (
-                      <span
-                        className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full bg-[#e07a5f]/80 text-white text-[10px] font-medium animate-fade-in-up"
-                        style={{ animationDelay: `${600 + i * 50}ms`, animationFillMode: 'both' }}
-                      >
-                        +{perspectiveCount}
-                      </span>
-                    )}
-
-                    {/* Year label - always visible */}
+                    {/* Year label - shared for the cluster */}
                     <span
                       className={`absolute -bottom-8 left-1/2 -translate-x-1/2 text-xs whitespace-nowrap animate-fade-in-up transition-colors ${
-                        isHovered ? 'text-white/80' : isOrigin ? 'text-white/50' : isMilestone ? 'text-white/40' : 'text-white/25'
+                        clusterBundles.some(b => hoveredEvent?.id === b.rootEvent.id)
+                          ? 'text-white/80'
+                          : clusterBundles.some(b => b.rootEvent.type === 'origin')
+                            ? 'text-white/55'
+                            : 'text-white/50'
                       }`}
-                      style={{ animationDelay: `${700 + i * 50}ms`, animationFillMode: 'both' }}
+                      style={{ animationDelay: `${700 + clusterIndex * 50}ms`, animationFillMode: 'both' }}
                     >
-                      {yearLabel}
+                      {formatYearLabel(clusterBundles[0].rootEvent)}
+                      {isChord && <span className="text-[#e07a5f]/60 ml-1">♫</span>}
                     </span>
-
-                    {/* Tooltip rendered via portal */}
                   </div>
                 );
               })}
@@ -714,7 +752,7 @@ export default function ChaptersPage() {
                         <div className="w-8 h-1 rounded-full bg-white/15" />
                       </div>
                     </div>
-                    <p className="text-white/40 text-sm max-w-md leading-relaxed text-center mx-auto font-light italic">
+                    <p className="text-white/50 text-sm max-w-md leading-relaxed text-center mx-auto font-light italic">
                       <span className="block">Patterns that echo across time.</span>
                       <span className="block mt-1 text-white/30">Meaningful coincidences that add melody or harmony.</span>
                     </p>
@@ -774,10 +812,10 @@ export default function ChaptersPage() {
             }}
           />
           <div
-            className="fixed z-[9999] px-3 py-2.5 bg-black/95 backdrop-blur-sm rounded-lg min-w-[180px] max-w-[280px] animate-fade-in border border-white/10 cursor-pointer md:pointer-events-none"
+            className="fixed z-[9999] px-4 py-3.5 bg-black/95 backdrop-blur-sm rounded-xl min-w-[200px] max-w-[320px] animate-fade-in border border-white/10 cursor-pointer md:pointer-events-none"
             style={{
               left: tooltipPos.x,
-              top: tooltipPos.y - 8,
+              top: tooltipPos.y - 12,
               transform: 'translate(-50%, -100%)',
             }}
             onClick={() => {
@@ -785,39 +823,61 @@ export default function ChaptersPage() {
               router.push(`/memory/${hoveredEvent.id}`);
             }}
           >
-            <p className="text-white/50 text-[10px] tracking-wide">
+            <p className="text-white/40 text-[11px] tracking-wide">
               {hoveredEvent.year}{hoveredEvent.yearEnd && hoveredEvent.yearEnd !== hoveredEvent.year ? `–${hoveredEvent.yearEnd}` : ''}
               {hoveredEvent.location && ` · ${hoveredEvent.location}`}
             </p>
-            <p className="text-white text-sm font-medium mt-0.5">{hoveredEvent.title}</p>
+            <p className="text-white text-[15px] font-medium mt-1">{hoveredEvent.title}</p>
             {hoveredEvent.preview && (
-              <p className="text-white/60 text-xs mt-1.5 leading-relaxed line-clamp-3">
+              <p className="text-white/55 text-[13px] mt-2 leading-relaxed line-clamp-3">
                 {hoveredEvent.preview.replace(/<[^>]*>/g, '').slice(0, 150)}
                 {hoveredEvent.preview.replace(/<[^>]*>/g, '').length > 150 ? '…' : ''}
               </p>
             )}
+            {hoveredEvent.whyIncluded && (
+              <div className="mt-3 pl-3 border-l-2 border-[#7080c9]">
+                <p className="text-[#a0b0f0] text-[13px] leading-relaxed italic line-clamp-2">
+                  {hoveredEvent.whyIncluded.replace(/<[^>]*>/g, '').slice(0, 120)}
+                  {hoveredEvent.whyIncluded.replace(/<[^>]*>/g, '').length > 120 ? '…' : ''}
+                </p>
+              </div>
+            )}
             {hoveredEvent.triggerEventId && eventLookup.get(hoveredEvent.triggerEventId) && (
-              <p className="text-white/40 text-[10px] mt-2">
+              <p className="text-white/40 text-[11px] mt-3">
                 In response to:{' '}
-                <span className="text-white/60">
+                <span className="text-white/50">
                   {eventLookup.get(hoveredEvent.triggerEventId)?.title}
                 </span>
               </p>
             )}
-            <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
-              <p className="text-white/40 text-[10px]">
+            <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between">
+              <p className="text-white/45 text-[11px]">
                 {hoveredEvent.contributor}
                 {hoveredEvent.contributorRelation && hoveredEvent.contributorRelation !== 'synthesized' && (
                   <span className="text-white/30"> ({hoveredEvent.contributorRelation})</span>
                 )}
+                {/* Story source attribution - extract from sourceName if "Told to me by X" */}
+                {(() => {
+                  const sourceMatch = hoveredEvent.sourceName?.match(/told to me by\s+(.+)/i);
+                  if (sourceMatch) {
+                    return (
+                      <>
+                        <span className="text-white/25"> · </span>
+                        <span className="text-white/35">via </span>
+                        <span className="text-white/50">{sourceMatch[1].trim()}</span>
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               </p>
               {hoveredBundle && hoveredBundle.totalCount > 1 && (
-                <span className="text-[#e07a5f] text-[10px]">
+                <span className="text-[#e07a5f] text-[11px]">
                   +{hoveredBundle.totalCount - 1} other perspective{hoveredBundle.totalCount > 2 ? 's' : ''}
                 </span>
               )}
             </div>
-            <p className="text-white/30 text-[10px] mt-1.5 italic">
+            <p className="text-white/30 text-[10px] mt-2 italic">
               <span className="hidden md:inline">Click the note to open</span>
               <span className="md:hidden">Tap the note to open</span>
             </p>
