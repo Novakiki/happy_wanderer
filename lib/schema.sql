@@ -310,13 +310,13 @@ CREATE TABLE motif_links (
   UNIQUE (motif_id, note_id, link_type)
 );
 
--- View specs - named projection definitions
+-- View specs - projection metadata
 CREATE TABLE view_specs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL UNIQUE,
   version INTEGER NOT NULL DEFAULT 1,
-  rules JSONB NOT NULL DEFAULT '{}'::jsonb,
-  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  projection_version TEXT NOT NULL DEFAULT 'v1',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
