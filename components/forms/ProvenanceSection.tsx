@@ -55,7 +55,7 @@ export default function ProvenanceSection({
         {value.type === 'secondhand' && (
           <div className="mt-3">
             <label className={formStyles.labelMuted}>
-              Who told you? <span className="text-white/40">(optional)</span>
+              Who told you? <span className="text-white/50">(optional)</span>
             </label>
             <input
               type="text"
@@ -71,7 +71,7 @@ export default function ProvenanceSection({
           <div className="mt-3 space-y-3">
             <div>
               <label className={formStyles.labelMuted}>
-                What record? <span className="text-white/40">(optional)</span>
+                What record? <span className="text-white/50">(optional)</span>
               </label>
               <input
                 type="text"
@@ -83,7 +83,7 @@ export default function ProvenanceSection({
             </div>
             <div>
               <label className={formStyles.labelMuted}>
-                Link <span className="text-white/40">(optional)</span>
+                Link <span className="text-white/50">(optional)</span>
               </label>
               <input
                 type="url"
@@ -231,7 +231,7 @@ export default function ProvenanceSection({
               </div>
               <div>
                 <label className={formStyles.labelMuted}>
-                  Link <span className="text-white/40">(optional)</span>
+                  Link <span className="text-white/50">(optional)</span>
                 </label>
                 <input
                   type="url"

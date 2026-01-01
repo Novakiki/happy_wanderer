@@ -34,7 +34,7 @@ export default function NoteContentSection({
   preview,
   showWhyMeaningful = true,
 }: Props) {
-  // Progressive disclosure for "why meaningful"
+  // Progressive disclosure for "why it matters"
   const [showWhy, setShowWhy] = useState(!!whyIncluded);
 
   const contentLabel =
@@ -60,6 +60,9 @@ export default function NoteContentSection({
         <label className={formStyles.label}>
           {contentLabel} <span className={formStyles.required}>*</span>
         </label>
+        <p className={formStyles.hint}>
+          The memory is the moment itself. Use &ldquo;Why it matters to you&rdquo; for how it landed.
+        </p>
         {mode === 'rich' ? (
           <RichTextEditor
             value={content}
@@ -80,7 +83,7 @@ export default function NoteContentSection({
             <div className="flex justify-end mt-1">
               <span
                 className={`text-xs ${
-                  content.length > 2000 ? formStyles.required : 'text-white/40'
+                  content.length > 2000 ? formStyles.required : 'text-white/50'
                 }`}
               >
                 {content.length} characters
@@ -108,7 +111,7 @@ export default function NoteContentSection({
         </div>
       )}
 
-      {/* Why meaningful - with progressive disclosure for add mode */}
+      {/* Why it matters - with progressive disclosure for add mode */}
       {onWhyIncludedChange && showWhyMeaningful && (
         <>
           {!showWhy && !whyIncluded ? (
@@ -118,7 +121,7 @@ export default function NoteContentSection({
               className={formStyles.buttonGhost}
             >
               <span className={formStyles.disclosureArrow}>&#9654;</span>Add why
-              it&apos;s meaningful
+              it matters to you
             </button>
           ) : (
             <div>
@@ -132,24 +135,24 @@ export default function NoteContentSection({
                   className={`${formStyles.buttonGhost} mb-2`}
                 >
                   <span className={formStyles.disclosureArrow}>&#9660;</span>Why
-                  it&apos;s meaningful
+                  it matters to you
                 </button>
               )}
               {mode === 'rich' && (
                 <label className={formStyles.label}>
-                  Why it&apos;s meaningful
+                  Why it matters to you
                 </label>
               )}
               {mode === 'plain' && (
                 <p className={formStyles.hint}>
-                  Appears as an italic quote beneath your note
+                  Optional: your personal impact. Appears as an italic note beneath your memory.
                 </p>
               )}
               {mode === 'rich' ? (
                 <RichTextEditor
                   value={whyIncluded}
                   onChange={onWhyIncludedChange}
-                  placeholder="Explain the connection or significance"
+                  placeholder="How it landed for you, and why you still carry it..."
                   minHeight="80px"
                 />
               ) : (
@@ -157,7 +160,7 @@ export default function NoteContentSection({
                   rows={2}
                   value={whyIncluded}
                   onChange={(e) => onWhyIncludedChange(e.target.value)}
-                  placeholder="What it shows about her, why it matters to you..."
+                  placeholder="How it landed for you, and why you still carry it..."
                   className={`${formStyles.textarea} mt-2`}
                 />
               )}

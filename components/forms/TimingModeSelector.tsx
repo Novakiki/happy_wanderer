@@ -107,7 +107,7 @@ export function TimingModeSelector({
           </div>
           <div>
             <p className="text-sm font-medium text-white">Around a year</p>
-            <p className="text-xs text-white/50">I know roughly when</p>
+            <p className="text-xs text-white/50">I know the year or a rough range</p>
           </div>
         </div>
         {mode === 'year' && (
@@ -136,7 +136,7 @@ export function TimingModeSelector({
           </div>
           <div>
             <p className="text-sm font-medium text-white">Chapter of her life</p>
-            <p className="text-xs text-white/50">I remember the era, not the year</p>
+            <p className="text-xs text-white/50">I only remember the era / life stage</p>
           </div>
         </div>
         {mode === 'chapter' && (

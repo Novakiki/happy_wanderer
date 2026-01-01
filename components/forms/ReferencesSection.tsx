@@ -53,11 +53,11 @@ export default function ReferencesSection({
           className="space-y-2 p-3 rounded-lg bg-white/5 border border-white/10"
         >
           <div className="flex items-center justify-between">
-            <label className="text-xs text-white/40">Reference {index + 1}</label>
+            <label className="text-xs text-white/50">Reference {index + 1}</label>
             <button
               type="button"
               onClick={() => removeReference(index)}
-              className="text-xs text-white/40 hover:text-red-400 transition-colors"
+              className="text-xs text-white/50 hover:text-red-400 transition-colors"
             >
               Remove
             </button>

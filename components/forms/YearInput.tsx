@@ -148,7 +148,7 @@ export function YearInput({
   return (
     <div className={className}>
       {label && (
-        <label className="text-xs text-white/40 uppercase tracking-wider">
+        <label className="text-xs text-white/50 uppercase tracking-wider">
           {hasYearEnd ? `${label} range` : label}
         </label>
       )}
@@ -189,7 +189,7 @@ export function YearInput({
             <button
               type="button"
               onClick={addEndYear}
-              className="text-white/40 hover:text-white/70 text-xs transition-colors"
+              className="text-white/50 hover:text-white/70 text-xs transition-colors"
             >
               + end year
             </button>

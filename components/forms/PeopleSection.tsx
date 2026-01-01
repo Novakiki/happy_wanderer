@@ -196,11 +196,11 @@ export default function PeopleSection({
             className="space-y-2 p-3 rounded-lg bg-white/5 border border-white/10"
           >
             <div className="flex items-center justify-between">
-              <label className="text-xs text-white/40">Person {index + 1}</label>
+              <label className="text-xs text-white/50">Person {index + 1}</label>
               <button
                 type="button"
                 onClick={() => removePerson(index)}
-                className="text-xs text-white/40 hover:text-red-400 transition-colors"
+                className="text-xs text-white/50 hover:text-red-400 transition-colors"
               >
                 Remove
               </button>
@@ -306,7 +306,7 @@ export default function PeopleSection({
                     <span className="text-sm text-white truncate">
                       {person.display_name}
                     </span>
-                    <span className="text-xs text-white/40 flex-shrink-0">
+                    <span className="text-xs text-white/50 flex-shrink-0">
                       {person.relationship &&
                         RELATIONSHIP_OPTIONS[
                           person.relationship as keyof typeof RELATIONSHIP_OPTIONS
@@ -353,7 +353,7 @@ export default function PeopleSection({
               placeholder="Phone (optional - to invite them)"
               className={`flex-1 ${formStyles.inputSmall}`}
             />
-            <span className="text-xs text-white/40 whitespace-nowrap">
+            <span className="text-xs text-white/50 whitespace-nowrap">
               They can add their side
             </span>
           </div>
