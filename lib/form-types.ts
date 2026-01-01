@@ -17,6 +17,35 @@ export type ProvenanceData = {
 };
 
 // =============================================================================
+// Witnessing + recurrence (submission provenance fields)
+// =============================================================================
+
+export type WitnessType = 'direct' | 'secondhand' | 'mixed' | 'unsure';
+export type Recurrence = 'one_time' | 'repeated' | 'ongoing';
+
+export function provenanceToWitnessType(prov: ProvenanceData): WitnessType {
+  switch (prov.type) {
+    case 'firsthand':
+      return 'direct';
+    case 'secondhand':
+      return 'secondhand';
+    case 'from_references':
+      return 'secondhand';
+    case 'pattern_observed':
+      return 'direct';
+    default:
+      return 'unsure';
+  }
+}
+
+export function provenanceToRecurrence(prov: ProvenanceData): Recurrence {
+  if (prov.type === 'pattern_observed') {
+    return 'repeated';
+  }
+  return 'one_time';
+}
+
+// =============================================================================
 // Timing - When this happened
 // =============================================================================
 

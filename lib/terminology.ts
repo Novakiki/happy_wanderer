@@ -31,7 +31,7 @@ export const LEGEND_LABELS = {
 // Labels for modal sections
 export const MODAL_LABELS = {
   originContent: "The synchronicity",
-  whyIncluded: "Why it's meaningful",
+  whyIncluded: "Why it matters to you",
 } as const;
 
 // Labels for the content field in the form

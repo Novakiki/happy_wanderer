@@ -655,6 +655,7 @@ export type Database = {
           preview: string | null
           privacy_level: string | null
           prompted_by_event_id: string | null
+          recurrence: string | null
           trigger_event_id: string | null
           root_event_id: string | null
           source_name: string | null
@@ -664,8 +665,10 @@ export type Database = {
           timing_certainty: string | null
           timing_input_type: string | null
           timing_note: string | null
+          timing_raw_text: string | null
           title: string
           type: string
+          witness_type: string | null
           why_included: string | null
           year: number
           year_end: number | null
@@ -685,6 +688,7 @@ export type Database = {
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
+          recurrence?: string | null
           trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
@@ -694,8 +698,10 @@ export type Database = {
           timing_certainty?: string | null
           timing_input_type?: string | null
           timing_note?: string | null
+          timing_raw_text?: string | null
           title: string
           type: string
+          witness_type?: string | null
           why_included?: string | null
           year: number
           year_end?: number | null
@@ -715,6 +721,7 @@ export type Database = {
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
+          recurrence?: string | null
           trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
@@ -724,8 +731,10 @@ export type Database = {
           timing_certainty?: string | null
           timing_input_type?: string | null
           timing_note?: string | null
+          timing_raw_text?: string | null
           title?: string
           type?: string
+          witness_type?: string | null
           why_included?: string | null
           year?: number
           year_end?: number | null

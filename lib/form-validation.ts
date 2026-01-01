@@ -127,6 +127,53 @@ export function formatYearRange(year: number, yearEnd?: number | null): string {
   return String(year);
 }
 
+type TimingRawInput = {
+  timingInputType: 'date' | 'year' | 'year_range' | 'age_range' | 'life_stage';
+  exactDate?: string | null;
+  year?: string | number | null;
+  yearEnd?: string | number | null;
+  lifeStage?: string | null;
+  ageStart?: string | number | null;
+  ageEnd?: string | number | null;
+};
+
+const normalizeTimingToken = (value?: string | number | null): string | null => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
+};
+
+export function buildTimingRawText(input: TimingRawInput): string | null {
+  switch (input.timingInputType) {
+    case 'date': {
+      return normalizeTimingToken(input.exactDate);
+    }
+    case 'year_range': {
+      const start = normalizeTimingToken(input.year);
+      const end = normalizeTimingToken(input.yearEnd);
+      if (start && end) return `${start}-${end}`;
+      return start || end;
+    }
+    case 'year': {
+      return normalizeTimingToken(input.year);
+    }
+    case 'life_stage': {
+      return normalizeTimingToken(input.lifeStage);
+    }
+    case 'age_range': {
+      const start = normalizeTimingToken(input.ageStart);
+      const end = normalizeTimingToken(input.ageEnd);
+      if (start && end) return `age ${start}-${end}`;
+      if (start) return `age ${start}`;
+      return null;
+    }
+    default:
+      return normalizeTimingToken(input.exactDate)
+        || normalizeTimingToken(input.year)
+        || normalizeTimingToken(input.lifeStage);
+  }
+}
+
 /**
  * Validate timing input and return parsed values.
  * Combines multiple validation checks into a single call.
