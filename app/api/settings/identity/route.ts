@@ -11,6 +11,14 @@ const ALLOWED_VISIBILITY = new Set<Visibility>([
   'pending',
 ]);
 
+const PRIVACY_RANK: Record<Visibility, number> = {
+  approved: 0,
+  blurred: 1,
+  anonymized: 1,
+  pending: 1,
+  removed: 2,
+};
+
 type VisibilityPreference = {
   person_id: string;
   contributor_id: string | null;
@@ -24,6 +32,10 @@ function escapeIlikePattern(value: string) {
 function normalizeVisibility(value: string | null | undefined): Visibility {
   if (!value) return 'pending';
   return ALLOWED_VISIBILITY.has(value as Visibility) ? (value as Visibility) : 'pending';
+}
+
+function isMorePrivateOrEqual(candidate: Visibility, base: Visibility): boolean {
+  return PRIVACY_RANK[candidate] >= PRIVACY_RANK[base];
 }
 
 function resolveVisibility(
@@ -48,7 +60,7 @@ function resolveVisibility(
 }
 
 async function getContributorId(admin: ReturnType<typeof createAdminClient>, userId: string) {
-  const { data } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+  const { data } = await admin.from('profiles')
     .select('contributor_id')
     .eq('id', userId)
     .single();
@@ -56,7 +68,7 @@ async function getContributorId(admin: ReturnType<typeof createAdminClient>, use
 }
 
 async function getPersonIdForContributor(admin: ReturnType<typeof createAdminClient>, contributorId: string) {
-  const { data } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+  const { data } = await admin.from('person_claims')
     .select('person_id, status')
     .eq('contributor_id', contributorId);
 
@@ -92,7 +104,7 @@ export async function GET() {
 
     const personId = await getPersonIdForContributor(admin, contributorId);
     if (!personId) {
-      const { data: contributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: contributor } = await admin.from('contributors')
         .select('name')
         .eq('id', contributorId)
         .single();
@@ -106,14 +118,14 @@ export async function GET() {
       });
     }
 
-    const { data: person } = await (admin.from('people') as ReturnType<typeof admin.from>)
+    const { data: person } = await admin.from('people')
       .select('id, canonical_name, visibility')
       .eq('id', personId)
       .single();
 
     // Load visibility preferences for this person
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: prefs } = await (admin.from('visibility_preferences' as any) as any)
+    const { data: prefs } = await admin.from('visibility_preferences' as any)
       .select('person_id, contributor_id, visibility')
       .eq('person_id', personId);
 
@@ -128,7 +140,7 @@ export async function GET() {
 
     let authorLookup = new Map<string, { name: string | null; relation: string | null }>();
     if (authorIds.length > 0) {
-      const { data: contributors } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: contributors } = await admin.from('contributors')
         .select('id, name, relation')
         .in('id', authorIds);
       if (contributors) {
@@ -138,7 +150,7 @@ export async function GET() {
       }
     }
 
-    const { data: references } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data: references } = await admin.from('event_references')
       .select(`
         id,
         visibility,
@@ -187,6 +199,12 @@ export async function GET() {
       .map((ref) => {
         const eventContributorId = ref.event?.contributor_id ?? null;
         const contributorPref = eventContributorId ? preferenceMap.get(eventContributorId) ?? null : null;
+        const baseVisibility = resolveVisibility(
+          'pending',
+          (person as { visibility?: string | null } | null)?.visibility ?? null,
+          contributorPref,
+          globalPreference
+        );
         const effectiveVisibility = resolveVisibility(
           ref.visibility,
           (person as { visibility?: string | null } | null)?.visibility ?? null,
@@ -198,6 +216,7 @@ export async function GET() {
           reference_id: ref.id,
           visibility_override: normalizeVisibility(ref.visibility),
           effective_visibility: effectiveVisibility,
+          base_visibility: baseVisibility,
           relationship_to_subject: ref.relationship_to_subject ?? null,
           role: ref.role ?? null,
           event: ref.event,
@@ -259,7 +278,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (scope === 'claim') {
-      const { data: contributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: contributor } = await admin.from('contributors')
         .select('id, name')
         .eq('id', contributorId)
         .single();
@@ -271,21 +290,21 @@ export async function POST(request: NextRequest) {
 
       const existingPersonId = await getPersonIdForContributor(admin, contributorId);
       if (existingPersonId) {
-        await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+        await admin.from('person_claims')
           .update({
             status: 'approved',
             approved_at: new Date().toISOString(),
             approved_by: contributorId,
           })
           .eq('contributor_id', contributorId);
-        await (admin.from('people') as ReturnType<typeof admin.from>)
+        await admin.from('people')
           .update({ visibility: 'approved' })
           .eq('id', existingPersonId);
         return NextResponse.json({ success: true, person_id: existingPersonId });
       }
 
       const escapedName = escapeIlikePattern(contributorName);
-      const { data: existingPeople } = await (admin.from('people') as ReturnType<typeof admin.from>)
+      const { data: existingPeople } = await admin.from('people')
         .select('id')
         .ilike('canonical_name', escapedName)
         .limit(1);
@@ -293,7 +312,7 @@ export async function POST(request: NextRequest) {
       let personId = (existingPeople as Array<{ id?: string }>)?.[0]?.id ?? null;
 
       if (!personId) {
-        const { data: newPerson } = await (admin.from('people') as ReturnType<typeof admin.from>)
+        const { data: newPerson } = await admin.from('people')
           .insert({
             canonical_name: contributorName,
             visibility: 'approved',
@@ -308,7 +327,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Failed to create identity' }, { status: 500 });
       }
 
-      await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+      await admin.from('person_claims')
         .upsert({
           person_id: personId,
           contributor_id: contributorId,
@@ -320,7 +339,7 @@ export async function POST(request: NextRequest) {
           onConflict: 'contributor_id',
         });
 
-      await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+      await admin.from('person_aliases')
         .insert({
           person_id: personId,
           alias: contributorName,
@@ -341,7 +360,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No identity claim found' }, { status: 400 });
       }
 
-      const { error: updateError } = await (admin.from('people') as ReturnType<typeof admin.from>)
+      const { error: updateError } = await admin.from('people')
         .update({ canonical_name: trimmedName })
         .eq('id', personId);
 
@@ -368,8 +387,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'reference_id is required' }, { status: 400 });
       }
 
-      const { data: reference } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
-        .select('id')
+      const { data: reference } = await admin.from('event_references')
+        .select('id, event_id')
         .eq('id', reference_id)
         .eq('person_id', personId)
         .single();
@@ -378,7 +397,44 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Reference not found' }, { status: 404 });
       }
 
-      const { error: updateError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      if (normalizedVisibility !== 'pending') {
+        const { data: eventRow } = await admin.from('timeline_events')
+          .select('contributor_id')
+          .eq('id', (reference as { event_id?: string | null }).event_id ?? '')
+          .single();
+
+        const { data: personRow } = await admin.from('people')
+          .select('visibility')
+          .eq('id', personId)
+          .single();
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: prefs } = await admin.from('visibility_preferences' as any)
+          .select('person_id, contributor_id, visibility')
+          .eq('person_id', personId);
+
+        const preferences = (prefs as VisibilityPreference[] | null) ?? [];
+        const globalPreference = preferences.find((pref) => pref.contributor_id === null)?.visibility ?? null;
+        const contributorPreference = preferences.find(
+          (pref) => pref.contributor_id === (eventRow as { contributor_id?: string | null } | null)?.contributor_id
+        )?.visibility ?? null;
+
+        const baseVisibility = resolveVisibility(
+          'pending',
+          (personRow as { visibility?: string | null } | null)?.visibility ?? null,
+          contributorPreference,
+          globalPreference
+        );
+
+        if (!isMorePrivateOrEqual(normalizedVisibility, baseVisibility)) {
+          return NextResponse.json(
+            { error: 'Per-note visibility can only be more private than your default.' },
+            { status: 400 }
+          );
+        }
+      }
+
+      const { error: updateError } = await admin.from('event_references')
         .update({ visibility: normalizedVisibility })
         .eq('id', reference_id);
 
@@ -397,7 +453,7 @@ export async function POST(request: NextRequest) {
 
       if (normalizedVisibility === 'pending') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin.from('visibility_preferences' as any) as any)
+        await admin.from('visibility_preferences' as any)
           .delete()
           .eq('person_id', personId)
           .eq('contributor_id', contributor_id);
@@ -405,7 +461,7 @@ export async function POST(request: NextRequest) {
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: prefError } = await (admin.from('visibility_preferences' as any) as any)
+      const { error: prefError } = await admin.from('visibility_preferences' as any)
         .upsert({
           person_id: personId,
           contributor_id,
@@ -428,13 +484,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Default visibility cannot be pending' }, { status: 400 });
     }
 
-    await (admin.from('people') as ReturnType<typeof admin.from>)
+    await admin.from('people')
       .update({ visibility: normalizedVisibility })
       .eq('id', personId);
 
     const now = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: defaultRows, error: defaultLookupError } = await (admin.from('visibility_preferences' as any) as any)
+    const { data: defaultRows, error: defaultLookupError } = await admin.from('visibility_preferences' as any)
       .select('id')
       .eq('person_id', personId)
       .is('contributor_id', null)
@@ -448,7 +504,7 @@ export async function POST(request: NextRequest) {
 
     const existingDefault = (defaultRows as Array<{ id?: string }> | null)?.[0];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const defaultQuery = (admin.from('visibility_preferences' as any) as any);
+    const defaultQuery = admin.from('visibility_preferences' as any);
     const { error: defaultError } = existingDefault?.id
       ? await defaultQuery
           .update({ visibility: normalizedVisibility, updated_at: now })

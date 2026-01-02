@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/api/auth') &&
     !request.nextUrl.pathname.startsWith('/api/respond') &&
+    !request.nextUrl.pathname.startsWith('/api/test/fixtures') &&
     !request.nextUrl.pathname.startsWith('/api/graph') &&
     !request.nextUrl.pathname.startsWith('/respond') &&
     !request.nextUrl.pathname.startsWith('/graph')

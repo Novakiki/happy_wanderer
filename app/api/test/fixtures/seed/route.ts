@@ -154,6 +154,39 @@ async function ensureIdentityClaim(email: string): Promise<IdentityInfo | null> 
   };
 }
 
+async function ensureDefaultVisibility(identity: IdentityInfo): Promise<void> {
+  if (!admin) return;
+
+  const now = new Date().toISOString();
+  const { data: existingRows } = await admin
+    .from('visibility_preferences')
+    .select('id')
+    .eq('person_id', identity.personId)
+    .is('contributor_id', null)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  const existingId = existingRows?.[0]?.id ?? null;
+
+  if (existingId) {
+    await admin
+      .from('visibility_preferences')
+      .update({ visibility: 'approved', updated_at: now })
+      .eq('id', existingId);
+    return;
+  }
+
+  await admin
+    .from('visibility_preferences')
+    .insert({
+      person_id: identity.personId,
+      contributor_id: null,
+      visibility: 'approved',
+      updated_at: now,
+      created_at: now,
+    });
+}
+
 async function seedIdentityNotes(identity: IdentityInfo): Promise<NoteFixture[]> {
   if (!admin) return [];
 
@@ -190,12 +223,12 @@ async function seedIdentityNotes(identity: IdentityInfo): Promise<NoteFixture[]>
 
   if (error || !events || events.length < 2) return [];
 
-  const references = events.map((event) => ({
+  const references = events.map((event, index) => ({
     event_id: event.id,
     type: 'person',
     person_id: identity.personId,
     role: 'witness',
-    visibility: 'pending',
+    visibility: index === 0 ? 'blurred' : 'pending',
     relationship_to_subject: null,
     added_by: null,
   }));
@@ -231,6 +264,8 @@ export async function POST(request: Request) {
     if (!identity) {
       return NextResponse.json({ error: 'Failed to ensure identity' }, { status: 500 });
     }
+
+    await ensureDefaultVisibility(identity);
 
     const notes = await seedIdentityNotes(identity);
 

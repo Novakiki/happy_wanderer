@@ -30,7 +30,9 @@ const loadEnvFile = (filename: string) => {
 loadEnvFile('.env.e2e');
 loadEnvFile('.env.local');
 
+const fixtureEnabled = process.env.E2E_FIXTURE_ENABLED === 'true';
 const shouldStartServer = process.env.E2E_START_SERVER !== 'false';
+const shouldReuseServer = !process.env.CI && !fixtureEnabled;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -49,7 +51,7 @@ export default defineConfig({
     ? {
         command: 'npm run dev',
         port: 3000,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: shouldReuseServer,
       }
     : undefined,
 });

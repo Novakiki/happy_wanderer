@@ -20,6 +20,7 @@ type IdentityNote = {
   reference_id: string;
   visibility_override: Visibility;
   effective_visibility: Visibility;
+  base_visibility: Visibility;
   relationship_to_subject: string | null;
   role: string | null;
   event: {
@@ -96,6 +97,18 @@ const VISIBILITY_LABELS: Record<Visibility, string> = {
   removed: 'Hidden',
   pending: 'Not set',
 };
+
+const VISIBILITY_RANK: Record<Visibility, number> = {
+  approved: 0,
+  blurred: 1,
+  anonymized: 1,
+  pending: 1,
+  removed: 2,
+};
+
+function isLessPrivate(candidate: Visibility, base: Visibility) {
+  return VISIBILITY_RANK[candidate] < VISIBILITY_RANK[base];
+}
 
 const RELATIONSHIP_GROUPS = {
   family: [
@@ -925,6 +938,7 @@ export default function SettingsPage() {
                                         note.event.timing_certainty
                                       );
                                       const authorName = note.event.contributor?.name || 'Someone';
+                                      const baseVisibility = note.base_visibility || identity.default_visibility;
                                       return (
                                         <div key={note.reference_id} className="px-4 py-2 flex items-center justify-between gap-3">
                                           <div className="min-w-0 flex-1">
@@ -945,10 +959,10 @@ export default function SettingsPage() {
                                             className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white/70"
                                           >
                                             <option value="pending">Default</option>
-                                            <option value="approved">Name</option>
-                                            <option value="blurred">Initials only</option>
-                                            <option value="anonymized">Relationship</option>
-                                            <option value="removed">Hidden</option>
+                                            <option value="approved" disabled={isLessPrivate('approved', baseVisibility)}>Name</option>
+                                            <option value="blurred" disabled={isLessPrivate('blurred', baseVisibility)}>Initials only</option>
+                                            <option value="anonymized" disabled={isLessPrivate('anonymized', baseVisibility)}>Relationship</option>
+                                            <option value="removed" disabled={isLessPrivate('removed', baseVisibility)}>Hidden</option>
                                           </select>
                                         </div>
                                       );
@@ -1044,6 +1058,7 @@ export default function SettingsPage() {
                                           note.event.timing_certainty
                                         );
                                         const overrideValue = note.visibility_override || 'pending';
+                                        const baseVisibility = note.base_visibility || identity.default_visibility;
                                         return (
                                           <div key={note.reference_id} className="px-4 py-2 flex items-center justify-between gap-3">
                                             <Link
@@ -1061,10 +1076,10 @@ export default function SettingsPage() {
                                               className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white/70"
                                             >
                                               <option value="pending">Default</option>
-                                              <option value="approved">Name</option>
-                                              <option value="blurred">Initials</option>
-                                              <option value="anonymized">Relationship</option>
-                                              <option value="removed">Hidden</option>
+                                              <option value="approved" disabled={isLessPrivate('approved', baseVisibility)}>Name</option>
+                                              <option value="blurred" disabled={isLessPrivate('blurred', baseVisibility)}>Initials</option>
+                                              <option value="anonymized" disabled={isLessPrivate('anonymized', baseVisibility)}>Relationship</option>
+                                              <option value="removed" disabled={isLessPrivate('removed', baseVisibility)}>Hidden</option>
                                             </select>
                                           </div>
                                         );

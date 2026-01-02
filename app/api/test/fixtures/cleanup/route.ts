@@ -29,21 +29,41 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const noteIds = Array.isArray(body?.noteIds) ? body.noteIds : [];
+    const inviteIds = Array.isArray(body?.inviteIds) ? body.inviteIds : [];
 
-    if (noteIds.length === 0) {
-      return NextResponse.json({ error: 'noteIds required' }, { status: 400 });
+    if (noteIds.length === 0 && inviteIds.length === 0) {
+      return NextResponse.json({ error: 'noteIds or inviteIds required' }, { status: 400 });
     }
 
-    const { error } = await admin
-      .from('timeline_events')
-      .delete()
-      .in('id', noteIds);
+    if (inviteIds.length > 0) {
+      const { error: inviteError } = await admin
+        .from('invites')
+        .delete()
+        .in('id', inviteIds);
 
-    if (error) {
-      return NextResponse.json({ error: 'Failed to delete fixtures' }, { status: 500 });
+      if (inviteError) {
+        return NextResponse.json({ error: 'Failed to delete invite fixtures' }, { status: 500 });
+      }
     }
 
-    return NextResponse.json({ success: true, deleted: noteIds.length });
+    if (noteIds.length > 0) {
+      const { error: noteError } = await admin
+        .from('timeline_events')
+        .delete()
+        .in('id', noteIds);
+
+      if (noteError) {
+        return NextResponse.json({ error: 'Failed to delete note fixtures' }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      deleted: {
+        notes: noteIds.length,
+        invites: inviteIds.length,
+      },
+    });
   } catch (error) {
     console.error('Fixture cleanup error:', error);
     return NextResponse.json({ error: 'Failed to cleanup fixtures' }, { status: 500 });

@@ -155,7 +155,10 @@ describe('settings identity API', () => {
     const admin = createAdminMock([
       { data: { contributor_id: 'contrib-1' }, error: null },
       { data: [{ person_id: 'person-1', status: 'approved' }], error: null },
-      { data: { id: 'ref-1' }, error: null }, // reference found
+      { data: { id: 'ref-1', event_id: 'event-1' }, error: null }, // reference found
+      { data: { contributor_id: 'author-1' }, error: null }, // event lookup
+      { data: { visibility: 'approved' }, error: null }, // person visibility
+      { data: [], error: null }, // visibility preferences
       { data: null, error: null }, // update succeeds
     ]);
     mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
@@ -167,6 +170,27 @@ describe('settings identity API', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
+  });
+
+  it('POST note rejects visibility less private than default', async () => {
+    mockAuthUser('user-1');
+    const admin = createAdminMock([
+      { data: { contributor_id: 'contrib-1' }, error: null },
+      { data: [{ person_id: 'person-1', status: 'approved' }], error: null },
+      { data: { id: 'ref-1', event_id: 'event-1' }, error: null }, // reference found
+      { data: { contributor_id: 'author-1' }, error: null }, // event lookup
+      { data: { visibility: 'blurred' }, error: null }, // person visibility (base blurred)
+      { data: [], error: null }, // visibility preferences
+    ]);
+    mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
+
+    const response = await POST(
+      makePost({ scope: 'note', reference_id: 'ref-1', visibility: 'approved' }) as NextRequest
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBeTruthy();
   });
 
   it('POST default updates visibility successfully', async () => {
