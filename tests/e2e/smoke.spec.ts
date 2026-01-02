@@ -18,6 +18,8 @@ const VIS_LABELS: Record<string, string> = {
   pending: 'Default',
 };
 
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 test.describe('Smoke checks', () => {
   test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
 
@@ -152,6 +154,64 @@ test.describe('Smoke checks', () => {
     return eventId;
   };
 
+  const seedIdentityNotes = async (personId: string, personName: string) => {
+    if (!supabaseAdmin) return null;
+
+    const stamp = Date.now();
+    const payload = [
+      {
+        year: 1991,
+        type: 'memory',
+        title: `E2E Identity Note ${stamp} A`,
+        preview: 'Identity visibility test note A.',
+        full_entry: `I remember talking with ${personName} by the kitchen window.`,
+        why_included: 'Identity visibility test.',
+        status: 'published',
+        privacy_level: 'family',
+        contributor_id: null,
+      },
+      {
+        year: 1994,
+        type: 'memory',
+        title: `E2E Identity Note ${stamp} B`,
+        preview: 'Identity visibility test note B.',
+        full_entry: `${personName} told us a story that night.`,
+        why_included: 'Identity visibility test.',
+        status: 'published',
+        privacy_level: 'family',
+        contributor_id: null,
+      },
+    ];
+
+    const { data: events, error } = await supabaseAdmin
+      .from('timeline_events')
+      .insert(payload)
+      .select('id, title');
+
+    if (error || !events || events.length < 2) return null;
+
+    const refs = events.map((event) => ({
+      event_id: (event as { id: string }).id,
+      type: 'person',
+      person_id: personId,
+      role: 'witness',
+      visibility: 'pending',
+      relationship_to_subject: null,
+      added_by: null,
+    }));
+
+    const { error: refError } = await supabaseAdmin.from('event_references').insert(refs);
+    if (refError) {
+      await supabaseAdmin.from('timeline_events').delete().in('id', events.map((event) => event.id));
+      return null;
+    }
+
+    return events.map((event) => ({
+      id: (event as { id: string }).id,
+      title: (event as { title: string }).title,
+    }));
+  };
+
   let createdNote: { id: string; title: string } | null = null;
 
   test('auth gate redirects to login', async ({ page }) => {
@@ -266,6 +326,89 @@ test.describe('Smoke checks', () => {
     // revert to original to avoid polluting data
     await page.getByRole('button', { name: VIS_LABELS[current] }).first().click();
     await expect(page.getByText('Default visibility updated.')).toBeVisible();
+  });
+
+  test('identity default applies across notes and sessions', async ({ page, browser }) => {
+    await login(page);
+
+    if (!supabaseAdmin) {
+      test.skip(true, 'SUPABASE_URL and SUPABASE_SECRET_KEY are required for identity visibility test.');
+    }
+
+    const identity = await loadIdentity(page);
+    const personId = identity?.person?.id as string | undefined;
+    const personName = (identity?.person?.name || '').trim();
+
+    if (!personId || !personName) {
+      test.skip(true, 'No identity claim available for visibility test.');
+    }
+
+    const current = identity?.default_visibility as string;
+    if (!current || current === 'pending') {
+      test.skip(true, 'Default visibility must be set to run this test.');
+    }
+
+    const next = current === 'approved' ? 'blurred' : 'approved';
+    const seededNotes = await seedIdentityNotes(personId, personName);
+
+    if (!seededNotes || seededNotes.length < 2) {
+      test.skip(true, 'Unable to seed identity notes for visibility test.');
+    }
+
+    const nameRegex = new RegExp(`\\b${escapeRegExp(personName)}\\b`, 'i');
+    const expectVisible = next === 'approved';
+    let didUpdate = false;
+
+    try {
+      await page.goto('/settings');
+      await page.getByRole('button', { name: VIS_LABELS[next] }).first().click();
+      await expect(page.getByText('Default visibility updated.')).toBeVisible();
+      didUpdate = true;
+
+      for (const note of seededNotes) {
+        await page.goto(`/memory/${note.id}`);
+        await expect(page.getByRole('heading', { name: note.title })).toBeVisible();
+        const content = page.locator('.prose').first();
+        await expect(content).toBeVisible();
+        if (expectVisible) {
+          await expect(content).toContainText(nameRegex);
+        } else {
+          await expect(content).not.toContainText(nameRegex);
+        }
+      }
+
+      const freshContext = await browser.newContext();
+      const freshPage = await freshContext.newPage();
+      try {
+        await login(freshPage);
+        for (const note of seededNotes) {
+          await freshPage.goto(`/memory/${note.id}`);
+          await expect(freshPage.getByRole('heading', { name: note.title })).toBeVisible();
+          const content = freshPage.locator('.prose').first();
+          await expect(content).toBeVisible();
+          if (expectVisible) {
+            await expect(content).toContainText(nameRegex);
+          } else {
+            await expect(content).not.toContainText(nameRegex);
+          }
+        }
+      } finally {
+        await freshContext.close();
+      }
+    } finally {
+      if (didUpdate) {
+        await page.request.post('/api/settings/identity', {
+          data: { scope: 'default', visibility: current },
+        });
+      }
+
+      if (seededNotes && supabaseAdmin) {
+        await supabaseAdmin
+          .from('timeline_events')
+          .delete()
+          .in('id', seededNotes.map((note) => note.id));
+      }
+    }
   });
 
   test('per-note override persists', async ({ page }) => {
