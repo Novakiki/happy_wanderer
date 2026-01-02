@@ -158,7 +158,7 @@ async function seedIdentityNotes(admin: AdminClient, identity: IdentityInfo): Pr
       why_included: 'Identity visibility test.',
       status: 'published',
       privacy_level: 'family',
-      contributor_id: identity.contributorId,
+      contributor_id: null,
     },
     {
       year: 1994,
@@ -169,7 +169,7 @@ async function seedIdentityNotes(admin: AdminClient, identity: IdentityInfo): Pr
       why_included: 'Identity visibility test.',
       status: 'published',
       privacy_level: 'family',
-      contributor_id: identity.contributorId,
+      contributor_id: null,
     },
   ];
 
@@ -187,7 +187,7 @@ async function seedIdentityNotes(admin: AdminClient, identity: IdentityInfo): Pr
     role: 'witness',
     visibility: 'pending',
     relationship_to_subject: null,
-    added_by: identity.contributorId,
+    added_by: null,
   }));
 
   const { error: refError } = await admin.from('event_references').insert(references);
