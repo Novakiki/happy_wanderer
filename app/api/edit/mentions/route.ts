@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     }
 
     const { data: eventRow }: { data: { contributor_id: string | null } | null } = await admin
-      .from('timeline_events')
+      .from('current_notes')
       .select('contributor_id')
       .eq('id', mentionRow.event_id)
       .single();
