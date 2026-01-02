@@ -427,6 +427,80 @@ export type Database = {
           },
         ]
       }
+      note_mentions: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          display_label: string | null
+          event_id: string
+          id: string
+          mention_text: string
+          normalized_text: string
+          promoted_person_id: string | null
+          promoted_reference_id: string | null
+          source: string
+          status: string
+          visibility: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          display_label?: string | null
+          event_id: string
+          id?: string
+          mention_text: string
+          normalized_text: string
+          promoted_person_id?: string | null
+          promoted_reference_id?: string | null
+          source?: string
+          status?: string
+          visibility?: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          display_label?: string | null
+          event_id?: string
+          id?: string
+          mention_text?: string
+          normalized_text?: string
+          promoted_person_id?: string | null
+          promoted_reference_id?: string | null
+          source?: string
+          status?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_mentions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_mentions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_mentions_promoted_person_id_fkey"
+            columns: ["promoted_person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_mentions_promoted_reference_id_fkey"
+            columns: ["promoted_reference_id"]
+            isOneToOne: false
+            referencedRelation: "event_references"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           body: string | null
@@ -651,6 +725,8 @@ export type Database = {
           id: string
           life_stage: string | null
           location: string | null
+          latitude: number | null
+          longitude: number | null
           people_involved: string[] | null
           preview: string | null
           privacy_level: string | null
@@ -684,6 +760,8 @@ export type Database = {
           id?: string
           life_stage?: string | null
           location?: string | null
+          latitude?: number | null
+          longitude?: number | null
           people_involved?: string[] | null
           preview?: string | null
           privacy_level?: string | null
@@ -717,6 +795,8 @@ export type Database = {
           id?: string
           life_stage?: string | null
           location?: string | null
+          latitude?: number | null
+          longitude?: number | null
           people_involved?: string[] | null
           preview?: string | null
           privacy_level?: string | null
@@ -830,7 +910,114 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      current_notes: {
+        Row: {
+          age_end: number | null
+          age_start: number | null
+          chain_depth: number | null
+          contributor_id: string | null
+          created_at: string | null
+          date: string | null
+          full_entry: string | null
+          id: string
+          life_stage: string | null
+          location: string | null
+          latitude: number | null
+          longitude: number | null
+          people_involved: string[] | null
+          preview: string | null
+          privacy_level: string | null
+          prompted_by_event_id: string | null
+          recurrence: string | null
+          trigger_event_id: string | null
+          root_event_id: string | null
+          source_name: string | null
+          source_url: string | null
+          status: string | null
+          subject_id: string | null
+          timing_certainty: string | null
+          timing_input_type: string | null
+          timing_note: string | null
+          timing_raw_text: string | null
+          title: string
+          type: string
+          version: number | null
+          version_created_at: string | null
+          version_created_by: string | null
+          witness_type: string | null
+          why_included: string | null
+          year: number
+          year_end: number | null
+        }
+        Relationships: []
+      }
+      note_references: {
+        Row: {
+          added_by: string | null
+          contributor_id: string | null
+          created_at: string | null
+          display_name: string | null
+          event_id: string
+          id: string
+          note: string | null
+          person_id: string | null
+          relationship_to_subject: string | null
+          role: string | null
+          type: string
+          url: string | null
+          visibility: string | null
+        }
+        Relationships: []
+      }
+      note_threads: {
+        Row: {
+          created_at: string | null
+          id: string
+          note: string | null
+          original_event_id: string | null
+          relationship: string | null
+          response_event_id: string | null
+        }
+        Relationships: []
+      }
+      notes: {
+        Row: {
+          age_end: number | null
+          age_start: number | null
+          chain_depth: number | null
+          contributor_id: string | null
+          created_at: string | null
+          date: string | null
+          full_entry: string | null
+          id: string
+          life_stage: string | null
+          location: string | null
+          latitude: number | null
+          longitude: number | null
+          people_involved: string[] | null
+          preview: string | null
+          privacy_level: string | null
+          prompted_by_event_id: string | null
+          recurrence: string | null
+          trigger_event_id: string | null
+          root_event_id: string | null
+          source_name: string | null
+          source_url: string | null
+          status: string | null
+          subject_id: string | null
+          timing_certainty: string | null
+          timing_input_type: string | null
+          timing_note: string | null
+          timing_raw_text: string | null
+          title: string
+          type: string
+          witness_type: string | null
+          why_included: string | null
+          year: number
+          year_end: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

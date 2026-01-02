@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 export async function GET() {
   try {
     const { count, error } = await supabase
-      .from('timeline_events')
+      .from('current_notes')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'published')
       .in('privacy_level', ['public', 'family']);

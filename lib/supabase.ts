@@ -16,12 +16,8 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
   const privacyLevels = options?.privacyLevels;
 
   const { data, error } = await supabase
-    .from('timeline_events')
-    .select(`
-      *,
-      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
-      media:event_media(media:media(*))
-    `)
+    .from('current_notes')
+    .select('*')
     .eq('status', 'published')
     .in('privacy_level', privacyLevels && privacyLevels.length ? privacyLevels : ['public', 'family'])
     .order('year', { ascending: true });
@@ -31,17 +27,68 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
     return [];
   }
 
-  return data;
+  const rows = (data ?? []) as Array<Database['public']['Views']['current_notes']['Row']>;
+  const eventIds = rows.map((event) => event.id);
+  const contributorIds = Array.from(new Set(
+    rows
+      .map((event) => event.contributor_id)
+      .filter((id): id is string => Boolean(id))
+  ));
+
+  const contributorsById = new Map<string, { name: string; relation: string | null }>();
+  if (contributorIds.length > 0) {
+    const { data: contributors, error: contributorError } = await supabase
+      .from('contributors')
+      .select('id, name, relation')
+      .in('id', contributorIds);
+
+    if (contributorError) {
+      console.error('Error fetching contributors:', contributorError);
+    } else {
+      for (const contributor of contributors ?? []) {
+        contributorsById.set(contributor.id, {
+          name: contributor.name,
+          relation: contributor.relation ?? null,
+        });
+      }
+    }
+  }
+
+  const mediaByEventId = new Map<
+    string,
+    Array<{ media: Database['public']['Tables']['media']['Row'] | null }>
+  >();
+  if (eventIds.length > 0) {
+    const { data: mediaRows, error: mediaError } = await supabase
+      .from('event_media')
+      .select('event_id, media:media(*)')
+      .in('event_id', eventIds);
+
+    if (mediaError) {
+      console.error('Error fetching event media:', mediaError);
+    } else {
+      for (const row of (mediaRows ?? []) as Array<{ event_id: string; media: Database['public']['Tables']['media']['Row'] | null }>) {
+        const existing = mediaByEventId.get(row.event_id) ?? [];
+        existing.push({ media: row.media });
+        mediaByEventId.set(row.event_id, existing);
+      }
+    }
+  }
+
+  return rows.map((event) => {
+    const { version, version_created_at, version_created_by, ...safeEvent } = event;
+    return {
+      ...safeEvent,
+      contributor: event.contributor_id ? contributorsById.get(event.contributor_id) ?? null : null,
+      media: mediaByEventId.get(event.id) ?? [],
+    };
+  });
 }
 
 export async function getEventById(id: string) {
   const { data, error } = await supabase
-    .from('timeline_events')
-    .select(`
-      *,
-      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
-      media:event_media(media:media(*))
-    `)
+    .from('current_notes')
+    .select('*')
     .eq('id', id)
     .single();
 
@@ -50,7 +97,47 @@ export async function getEventById(id: string) {
     return null;
   }
 
-  return data;
+  const event = data as Database['public']['Views']['current_notes']['Row'];
+
+  let contributor: { name: string; relation: string | null } | null = null;
+  if (event.contributor_id) {
+    const { data: contributorRow, error: contributorError } = await supabase
+      .from('contributors')
+      .select('id, name, relation')
+      .eq('id', event.contributor_id)
+      .single();
+
+    if (contributorError) {
+      console.error('Error fetching contributor:', contributorError);
+    } else if (contributorRow) {
+      contributor = {
+        name: contributorRow.name,
+        relation: contributorRow.relation ?? null,
+      };
+    }
+  }
+
+  let media: Array<{ media: Database['public']['Tables']['media']['Row'] | null }> = [];
+  const { data: mediaRows, error: mediaError } = await supabase
+    .from('event_media')
+    .select('event_id, media:media(*)')
+    .eq('event_id', event.id);
+
+  if (mediaError) {
+    console.error('Error fetching event media:', mediaError);
+  } else {
+    media = (mediaRows ?? []).map((row) => ({
+      media: (row as { media: Database['public']['Tables']['media']['Row'] | null }).media,
+    }));
+  }
+
+  const { version, version_created_at, version_created_by, ...safeEvent } = event;
+
+  return {
+    ...safeEvent,
+    contributor,
+    media,
+  };
 }
 
 // =============================================================================

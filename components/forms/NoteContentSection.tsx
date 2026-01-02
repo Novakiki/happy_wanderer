@@ -1,95 +1,175 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef } from 'react';
 import { formStyles } from '@/lib/styles';
-import { ENTRY_TYPE_CONTENT_LABELS } from '@/lib/terminology';
-import type { EntryType } from '@/lib/form-types';
+import { getLintSuggestion } from '@/lib/lint-copy';
+import type { LintWarning } from '@/lib/note-lint';
 import RichTextEditor from '@/components/RichTextEditor';
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
+import { DisclosureSection } from './DisclosureSection';
+import {
+  getContentLabel,
+  CONTENT_SECTION,
+  WHY_IT_MATTERS,
+  WRITING_GUIDANCE,
+  TITLE_FIELD,
+} from './note-form-config';
 
 type Props = {
+  // Core values
   title: string;
   content: string;
-  whyIncluded?: string;
-  entryType: EntryType;
+  whyIncluded: string;
+  entryType: string;
+
+  // Callbacks
   onTitleChange: (title: string) => void;
   onContentChange: (content: string) => void;
-  onWhyIncludedChange?: (whyIncluded: string) => void;
-  mode?: 'rich' | 'plain'; // rich = RichTextEditor, plain = textarea
+  onWhyIncludedChange: (whyIncluded: string) => void;
+
+  // Lint warnings
+  lintWarnings?: LintWarning[];
+
+  // Guidance expansion state (controlled)
+  showGuidanceWhy?: boolean;
+  onToggleGuidanceWhy?: () => void;
+
+  // "Why it matters" disclosure state (controlled)
+  showWhyMeaningful: boolean;
+  onToggleWhyMeaningful: (open: boolean) => void;
+
+  // Options
+  showTitle?: boolean;
   showPreview?: boolean;
-  preview?: string;
-  showWhyMeaningful?: boolean; // For add form - progressive disclosure
+  titleRequired?: boolean;
+  contentRequired?: boolean;
 };
 
+/**
+ * Shared content section for note forms.
+ * Handles title, content, lint warnings, and "why it matters".
+ * Used by both MemoryForm (add) and EditNotesClient (edit).
+ */
 export default function NoteContentSection({
   title,
   content,
-  whyIncluded = '',
+  whyIncluded,
   entryType,
   onTitleChange,
   onContentChange,
   onWhyIncludedChange,
-  mode = 'rich',
+  lintWarnings = [],
+  showGuidanceWhy = false,
+  onToggleGuidanceWhy,
+  showWhyMeaningful,
+  onToggleWhyMeaningful,
+  showTitle = true,
   showPreview = false,
-  preview,
-  showWhyMeaningful = true,
+  titleRequired = true,
+  contentRequired = true,
 }: Props) {
-  // Progressive disclosure for "why it matters"
-  const [showWhy, setShowWhy] = useState(!!whyIncluded);
+  const whyMeaningfulRef = useRef<HTMLDivElement | null>(null);
 
-  const contentLabel =
-    ENTRY_TYPE_CONTENT_LABELS[entryType] || 'The memory';
+  const contentLabel = getContentLabel(entryType);
+
+  const lintTone = (severity?: LintWarning['severity']) => ({
+    message: severity === 'soft' ? formStyles.guidanceWarningMessageSoft : formStyles.guidanceWarningMessage,
+    suggestion: severity === 'soft' ? formStyles.guidanceSuggestionSoft : formStyles.guidanceSuggestion,
+  });
+
+  const openWhyMeaningful = () => {
+    onToggleWhyMeaningful(true);
+    setTimeout(() => {
+      whyMeaningfulRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  };
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className={formStyles.label}>
-          Title <span className={formStyles.required}>*</span>
-        </label>
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="e.g., Thanksgiving laughter"
-          className={formStyles.input}
-          required
-        />
-      </div>
-
-      <div>
-        <label className={formStyles.label}>
-          {contentLabel} <span className={formStyles.required}>*</span>
-        </label>
-        <p className={formStyles.hint}>
-          The memory is the moment itself. Use &ldquo;Why it matters to you&rdquo; for how it landed.
-        </p>
-        {mode === 'rich' ? (
-          <RichTextEditor
-            value={content}
-            onChange={onContentChange}
-            placeholder="Share a story, a moment, or a note..."
-            minHeight="120px"
+      {/* Title */}
+      {showTitle && (
+        <div>
+          <label className={formStyles.label}>
+            {TITLE_FIELD.label}
+            {titleRequired && <span className={formStyles.required}> *</span>}
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            placeholder={TITLE_FIELD.placeholder}
+            className={formStyles.input}
+            required={titleRequired}
           />
-        ) : (
-          <>
-            <textarea
-              required
-              rows={6}
-              value={content}
-              onChange={(e) => onContentChange(e.target.value)}
-              placeholder="Share a story, a moment, or a note..."
-              className={formStyles.textarea}
-            />
-            <div className="flex justify-end mt-1">
-              <span
-                className={`text-xs ${
-                  content.length > 2000 ? formStyles.required : 'text-white/50'
-                }`}
-              >
-                {content.length} characters
-              </span>
+        </div>
+      )}
+
+      {/* Content */}
+      <div>
+        <label className={formStyles.label}>
+          {contentLabel}
+          {contentRequired && <span className={formStyles.required}> *</span>}
+        </label>
+        <p className={`${formStyles.hint} mb-2`}>{CONTENT_SECTION.hint}</p>
+        <RichTextEditor
+          value={content}
+          onChange={onContentChange}
+          placeholder={CONTENT_SECTION.placeholder}
+          minHeight="120px"
+        />
+
+        {/* Lint warnings / Writing guidance */}
+        {lintWarnings.length > 0 && (
+          <div className={formStyles.guidanceContainer}>
+            <div className={formStyles.guidanceHeader}>
+              <span className={formStyles.guidanceDot} />
+              <span className={formStyles.guidanceLabel}>{WRITING_GUIDANCE.label}</span>
+              {onToggleGuidanceWhy && (
+                <button
+                  type="button"
+                  onClick={onToggleGuidanceWhy}
+                  className={formStyles.guidanceToggle}
+                >
+                  {showGuidanceWhy ? WRITING_GUIDANCE.toggleHide : WRITING_GUIDANCE.toggleShow}
+                </button>
+              )}
             </div>
-          </>
+            {showGuidanceWhy && (
+              <p className={formStyles.guidanceExplainer}>
+                {WRITING_GUIDANCE.explainer}
+              </p>
+            )}
+            <div className="space-y-3">
+              {lintWarnings.map((warning, idx) => {
+                const tone = lintTone(warning.severity);
+                const suggestion = getLintSuggestion(warning.code, warning.suggestion, warning.message);
+                return (
+                  <div key={`${warning.code}-${idx}`} className="space-y-0.5">
+                    <p className={tone.message}>
+                      {warning.match && (
+                        <span className={formStyles.guidanceMatch}>
+                          &ldquo;{warning.match}&rdquo;
+                        </span>
+                      )}
+                      {warning.match ? ' - ' : ''}{warning.message}
+                    </p>
+                    {suggestion && (
+                      <p className={tone.suggestion}>{suggestion}</p>
+                    )}
+                    {warning.code === 'MEANING_ASSERTION' && (
+                      <button
+                        type="button"
+                        onClick={openWhyMeaningful}
+                        className={formStyles.guidanceAction}
+                      >
+                        {WRITING_GUIDANCE.meaningAssertionAction}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
@@ -98,76 +178,39 @@ export default function NoteContentSection({
         <div>
           <div className="flex items-center justify-between">
             <label className={formStyles.label}>Preview (timeline hover)</label>
-            <span className={formStyles.hint}>auto-trimmed to 160 chars</span>
+            <span className={formStyles.hint}>auto-trimmed to {PREVIEW_MAX_LENGTH} chars</span>
           </div>
           <textarea
             readOnly
-            value={(() => {
-              return generatePreviewFromHtml(content || preview || '', PREVIEW_MAX_LENGTH);
-            })()}
+            value={generatePreviewFromHtml(content || '', PREVIEW_MAX_LENGTH)}
             rows={3}
             className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm cursor-not-allowed"
           />
         </div>
       )}
 
-      {/* Why it matters - with progressive disclosure for add mode */}
-      {onWhyIncludedChange && showWhyMeaningful && (
-        <>
-          {!showWhy && !whyIncluded ? (
-            <button
-              type="button"
-              onClick={() => setShowWhy(true)}
-              className={formStyles.buttonGhost}
-            >
-              <span className={formStyles.disclosureArrow}>&#9654;</span>Add why
-              it matters to you
-            </button>
-          ) : (
-            <div>
-              {mode === 'plain' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowWhy(false);
-                    onWhyIncludedChange('');
-                  }}
-                  className={`${formStyles.buttonGhost} mb-2`}
-                >
-                  <span className={formStyles.disclosureArrow}>&#9660;</span>Why
-                  it matters to you
-                </button>
-              )}
-              {mode === 'rich' && (
-                <label className={formStyles.label}>
-                  Why it matters to you
-                </label>
-              )}
-              {mode === 'plain' && (
-                <p className={formStyles.hint}>
-                  Optional: your personal impact. Appears as an italic note beneath your memory.
-                </p>
-              )}
-              {mode === 'rich' ? (
-                <RichTextEditor
-                  value={whyIncluded}
-                  onChange={onWhyIncludedChange}
-                  placeholder="How it landed for you, and why you still carry it..."
-                  minHeight="80px"
-                />
-              ) : (
-                <textarea
-                  rows={2}
-                  value={whyIncluded}
-                  onChange={(e) => onWhyIncludedChange(e.target.value)}
-                  placeholder="How it landed for you, and why you still carry it..."
-                  className={`${formStyles.textarea} mt-2`}
-                />
-              )}
-            </div>
-          )}
-        </>
-      )}
+      {/* Why it matters to you */}
+      <div ref={whyMeaningfulRef}>
+        <DisclosureSection
+          label={WHY_IT_MATTERS.label}
+          addLabel={WHY_IT_MATTERS.addLabel}
+          isOpen={showWhyMeaningful}
+          onToggle={onToggleWhyMeaningful}
+          hasContent={Boolean(whyIncluded)}
+          onClear={() => onWhyIncludedChange('')}
+          variant="inset"
+        >
+          <p className="text-xs text-white/40 mb-2 italic">
+            {WHY_IT_MATTERS.hint}
+          </p>
+          <RichTextEditor
+            value={whyIncluded}
+            onChange={onWhyIncludedChange}
+            placeholder={WHY_IT_MATTERS.placeholder}
+            minHeight="80px"
+          />
+        </DisclosureSection>
+      </div>
     </div>
   );
 }

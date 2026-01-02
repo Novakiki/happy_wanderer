@@ -27,7 +27,7 @@ export type TimelineEvent = {
   // Story chain fields
   rootEventId?: string | null;
   chainDepth?: number;
-  triggerEventId?: string | null;
+  promptedByEventId?: string | null;
 };
 
 // A bundle of related events (perspectives on the same story)
@@ -79,7 +79,7 @@ export function mapTimelineEvent(event: RawTimelineEvent): TimelineEvent {
     references: event.references ?? [],
     rootEventId: event.root_event_id ?? null,
     chainDepth: event.chain_depth ?? 0,
-    triggerEventId: (event as { trigger_event_id?: string | null }).trigger_event_id ?? null,
+    promptedByEventId: (event as { prompted_by_event_id?: string | null }).prompted_by_event_id ?? null,
   };
 }
 

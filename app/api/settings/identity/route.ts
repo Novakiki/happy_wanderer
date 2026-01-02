@@ -432,16 +432,35 @@ export async function POST(request: NextRequest) {
       .update({ visibility: normalizedVisibility })
       .eq('id', personId);
 
+    const now = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: defaultError } = await (admin.from('visibility_preferences' as any) as any)
-      .upsert({
-        person_id: personId,
-        contributor_id: null,
-        visibility: normalizedVisibility,
-        updated_at: new Date().toISOString(),
-      }, {
-        onConflict: 'person_id,contributor_id',
-      });
+    const { data: defaultRows, error: defaultLookupError } = await (admin.from('visibility_preferences' as any) as any)
+      .select('id')
+      .eq('person_id', personId)
+      .is('contributor_id', null)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (defaultLookupError) {
+      console.error('Failed to load default preference:', defaultLookupError);
+      return NextResponse.json({ error: 'Failed to update default visibility' }, { status: 500 });
+    }
+
+    const existingDefault = (defaultRows as Array<{ id?: string }> | null)?.[0];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const defaultQuery = (admin.from('visibility_preferences' as any) as any);
+    const { error: defaultError } = existingDefault?.id
+      ? await defaultQuery
+          .update({ visibility: normalizedVisibility, updated_at: now })
+          .eq('id', existingDefault.id)
+      : await defaultQuery
+          .insert({
+            person_id: personId,
+            contributor_id: null,
+            visibility: normalizedVisibility,
+            created_at: now,
+            updated_at: now,
+          });
 
     if (defaultError) {
       console.error('Failed to update default preference:', defaultError);

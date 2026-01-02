@@ -43,10 +43,9 @@
  */
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { recordEventVersion } from '@/lib/event-versions';
 import { llmReviewGate } from '@/lib/llm-review';
 import { lintNote } from '@/lib/note-lint';
-import { detectAndCreatePendingReferences } from '@/lib/pending-names';
+import { detectAndStoreMentions } from '@/lib/pending-names';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
@@ -245,7 +244,28 @@ export async function GET(request: NextRequest) {
   let maskedContent =
     (typedInvite.event as unknown as { full_entry?: string })?.full_entry || '';
 
-  if (eventId && referenceRows.length > 0) {
+  let mentionRows: Array<{
+    mention_text: string;
+    status: string | null;
+    visibility: string | null;
+    display_label: string | null;
+  }> = [];
+
+  if (eventId) {
+    const { data: mentionData, error: mentionError } = await admin
+      .from('note_mentions')
+      .select('mention_text, status, visibility, display_label')
+      .eq('event_id', eventId);
+    if (mentionError) {
+      if (mentionError.code !== 'PGRST200') {
+        console.warn('Error fetching mentions:', mentionError);
+      }
+    } else {
+      mentionRows = (mentionData ?? []) as typeof mentionRows;
+    }
+  }
+
+  if (eventId && (referenceRows.length > 0 || mentionRows.length > 0)) {
     const personIds = referenceRows
       .map((ref) => ref.person?.id)
       .filter((id): id is string => Boolean(id));
@@ -285,7 +305,7 @@ export async function GET(request: NextRequest) {
     }));
 
     const redactedRefs = redactReferences(enrichedRefs as ReferenceRow[], { includeAuthorPayload: true });
-    maskedContent = maskContentWithReferences(maskedContent, redactedRefs);
+    maskedContent = maskContentWithReferences(maskedContent, redactedRefs, mentionRows);
   }
 
   // Mark as opened if first time
@@ -435,7 +455,6 @@ export async function POST(request: NextRequest) {
         contributor_id: contributorId,
         subject_id: typedEvent?.subject_id,
         prompted_by_event_id: typedInvite.event_id,
-        trigger_event_id: typedInvite.event_id,
         privacy_level: typedEvent?.privacy_level || 'family',
         source_name: 'Invited response',
         timing_certainty: 'approximate',
@@ -455,8 +474,6 @@ export async function POST(request: NextRequest) {
     }
 
     const typedNewEvent = newEvent as { id: string };
-
-    await recordEventVersion(admin, typedNewEvent.id, contributorId);
 
     // Create a memory thread linking the response to the original
     // TODO: After inserting, check if original contributor has email and send notification
@@ -486,7 +503,7 @@ export async function POST(request: NextRequest) {
       .eq('id', invite_id);
 
     // Detect names in content and create pending references for those without consent
-    const nameResult = await detectAndCreatePendingReferences(
+    const nameResult = await detectAndStoreMentions(
       content.trim(),
       typedNewEvent.id,
       admin,
@@ -497,7 +514,7 @@ export async function POST(request: NextRequest) {
       success: true,
       event_id: typedNewEvent.id,
       contributor_id: contributorId,
-      pendingNames: nameResult.pendingNames,
+      mentionCandidates: nameResult.mentions,
       lintWarnings,
     });
   } catch (error) {

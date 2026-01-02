@@ -10,8 +10,7 @@ import {
   provenanceToWitnessType,
 } from '@/lib/form-types';
 import { buildTimingRawText, validateYearRange } from '@/lib/form-validation';
-import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH, stripHtml } from '@/lib/html-utils';
-import { getLintSuggestion } from '@/lib/lint-copy';
+import { stripHtml } from '@/lib/html-utils';
 import type { ReferenceVisibility } from '@/lib/references';
 import { formStyles } from '@/lib/styles';
 import {
@@ -24,8 +23,7 @@ import {
 } from '@/lib/terminology';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import RichTextEditor from './RichTextEditor';
-import { PeopleSection, ProvenanceSection, ReferencesSection } from './forms';
+import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection } from './forms';
 import type { TimingMode } from './forms/TimingModeSelector';
 import { TimingModeSelector } from './forms/TimingModeSelector';
 
@@ -69,6 +67,15 @@ type EditableEvent = {
   }[];
 };
 
+type NoteMention = {
+  id: string;
+  mention_text: string;
+  status?: string | null;
+  visibility?: string | null;
+  display_label?: string | null;
+  promoted_person_id?: string | null;
+};
+
 // IncomingEvent uses looser types for values coming from the database
 // The component will normalize these to the stricter EditableEvent types internally
 type IncomingEvent = {
@@ -109,6 +116,7 @@ type IncomingEvent = {
     person_id?: string | null;
     person?: { id?: string | null; canonical_name?: string | null } | null;
   }[];
+  mentions?: NoteMention[];
 };
 
 type Props = {
@@ -127,11 +135,6 @@ type LintWarning = {
   severity?: 'soft' | 'strong';
   match?: string;
 };
-
-const lintTone = (severity?: LintWarning['severity']) => ({
-  message: severity === 'soft' ? 'text-sm text-white/50' : 'text-sm text-white/70',
-  suggestion: severity === 'soft' ? 'text-xs text-white/40' : 'text-xs text-white/50',
-});
 
 export default function EditNotesClient({
   token,
@@ -195,6 +198,17 @@ export default function EditNotesClient({
       return acc;
     }, {} as Record<string, EditableEvent>)
   );
+  const [mentionsByEvent, setMentionsByEvent] = useState<Record<string, NoteMention[]>>(() =>
+    initialEvents.reduce((acc, event) => {
+      acc[event.id] = (event.mentions ?? []).map((mention) => ({
+        ...mention,
+        status: mention.status ?? 'pending',
+        visibility: mention.visibility ?? 'pending',
+        display_label: mention.display_label ?? null,
+      }));
+      return acc;
+    }, {} as Record<string, NoteMention[]>)
+  );
   const [status, setStatus] = useState<Record<string, string>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [timingMode, setTimingMode] = useState<Record<string, TimingMode>>(() =>
@@ -218,12 +232,17 @@ export default function EditNotesClient({
       return acc;
     }, {} as Record<string, boolean>)
   );
-  const [attachments, setAttachments] = useState<Record<string, { type: 'image' | 'audio' | 'link'; url: string; caption: string }>>(
-    () =>
-      initialEvents.reduce((acc, event) => {
-        acc[event.id] = { type: 'image', url: '', caption: '' };
-        return acc;
-      }, {} as Record<string, { type: 'image' | 'audio' | 'link'; url: string; caption: string }>)
+  const [timingNoteOpen, setTimingNoteOpen] = useState<Record<string, boolean>>(() =>
+    initialEvents.reduce((acc, event) => {
+      acc[event.id] = Boolean(event.timing_note);
+      return acc;
+    }, {} as Record<string, boolean>)
+  );
+  const [locationOpen, setLocationOpen] = useState<Record<string, boolean>>(() =>
+    initialEvents.reduce((acc, event) => {
+      acc[event.id] = Boolean(event.location);
+      return acc;
+    }, {} as Record<string, boolean>)
   );
   const [linkRelationships, setLinkRelationships] = useState<Record<string, ThreadRelationship>>(
     () =>
@@ -402,11 +421,6 @@ export default function EditNotesClient({
 
     setStatus((prev) => ({ ...prev, [eventId]: 'saving' }));
     try {
-      const attachment = attachments[eventId];
-      const attachment_type =
-        attachment && attachment.url.trim() ? attachment.type : 'none';
-      const attachment_url = attachment?.url?.trim() || '';
-      const attachment_caption = attachment?.caption?.trim() || '';
       const timingRawText = buildTimingRawText({
         timingInputType: timingInputType as EditableEvent['timing_input_type'],
         exactDate: date,
@@ -453,9 +467,9 @@ export default function EditNotesClient({
           source_name: trimmedSourceName,
           source_url: trimmedSourceUrl,
           privacy_level: payload.privacy_level,
-          attachment_type,
-          attachment_url,
-          attachment_caption,
+          attachment_type: 'none',
+          attachment_url: '',
+          attachment_caption: '',
           references: {
             links: payload.references,
             people: (payload.person_refs || []).map((p) => ({
@@ -575,11 +589,6 @@ export default function EditNotesClient({
     setLlmReasons((prev) => ({ ...prev, [eventId]: [] }));
     setStatus((prev) => ({ ...prev, [eventId]: 'linking' }));
     try {
-      const attachment = attachments[eventId];
-      const attachment_type =
-        attachment && attachment.url.trim() ? attachment.type : 'none';
-      const attachment_url = attachment?.url?.trim() || '';
-      const attachment_caption = attachment?.caption?.trim() || '';
       const timingRawText = buildTimingRawText({
         timingInputType: timingInputType as EditableEvent['timing_input_type'],
         exactDate: date,
@@ -627,9 +636,9 @@ export default function EditNotesClient({
           source_name: trimmedSourceName,
           source_url: trimmedSourceUrl,
           privacy_level: payload.privacy_level,
-          attachment_type,
-          attachment_url,
-          attachment_caption,
+          attachment_type: 'none',
+          attachment_url: '',
+          attachment_caption: '',
           references: {
             links: payload.references,
             people: (payload.person_refs || []).map((p) => ({
@@ -834,6 +843,84 @@ export default function EditNotesClient({
     });
   };
 
+  const updateMentionField = (eventId: string, mentionId: string, updates: Partial<NoteMention>) => {
+    setMentionsByEvent((prev) => {
+      const current = prev[eventId] ?? [];
+      const next = current.map((mention) => (
+        mention.id === mentionId ? { ...mention, ...updates } : mention
+      ));
+      return { ...prev, [eventId]: next };
+    });
+  };
+
+  const upsertMention = (eventId: string, mention: NoteMention) => {
+    setMentionsByEvent((prev) => {
+      const current = prev[eventId] ?? [];
+      const existingIndex = current.findIndex((item) => item.id === mention.id);
+      const next = [...current];
+      if (existingIndex >= 0) {
+        next[existingIndex] = { ...current[existingIndex], ...mention };
+      } else {
+        next.push(mention);
+      }
+      return { ...prev, [eventId]: next };
+    });
+  };
+
+  const handleMentionAction = async (
+    eventId: string,
+    mention: NoteMention,
+    action: 'context' | 'ignore' | 'promote'
+  ) => {
+    try {
+      const response = await fetch('/api/edit/mentions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          mention_id: mention.id,
+          action,
+          display_label: mention.display_label?.trim() || null,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Mention update failed');
+      }
+
+      if (result.mention) {
+        upsertMention(eventId, result.mention as NoteMention);
+      }
+
+      if (result.reference?.person) {
+        setFormState((prev) => {
+          const current = prev[eventId];
+          if (!current) return prev;
+          const personId = result.reference.person.id as string | undefined;
+          if (!personId) return prev;
+          if (current.person_refs.some((ref) => ref.person_id === personId)) {
+            return prev;
+          }
+          const nextRefs = [
+            ...current.person_refs,
+            {
+              person_id: personId,
+              name: result.reference.person.name || mention.mention_text,
+              relationship: '',
+              role: 'related',
+              phone: '',
+            },
+          ];
+          return { ...prev, [eventId]: { ...current, person_refs: nextRefs } };
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus((prev) => ({ ...prev, [eventId]: 'mention update failed' }));
+    }
+  };
+
   const deleteNote = async (eventId: string) => {
     setStatus((prev) => ({ ...prev, [eventId]: 'deleting' }));
     try {
@@ -886,6 +973,7 @@ export default function EditNotesClient({
         const isEditing = editingId === event.id;
         const statusText = status[event.id];
         const summaryEvent = data || event;
+        const mentions = mentionsByEvent[event.id] ?? [];
 
         return (
           <div key={event.id} className={formStyles.section}>
@@ -909,7 +997,7 @@ export default function EditNotesClient({
             ) : null}
 
             {isEditing && data && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="flex justify-end">
                   <button
                     type="button"
@@ -919,48 +1007,133 @@ export default function EditNotesClient({
                     Close
                   </button>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={formStyles.label}>
-                      Entry type
-                    </label>
-                    <select
-                      value={data.type}
-                      onChange={(e) => updateField(event.id, 'type', e.target.value)}
-                      className={formStyles.select}
-                    >
-                      <option value="memory">{ENTRY_TYPE_LABELS.memory}</option>
-                      <option value="milestone">{ENTRY_TYPE_LABELS.milestone}</option>
-                      <option value="origin">{ENTRY_TYPE_LABELS.origin}</option>
-                    </select>
-                    <p className={formStyles.hint}>
-                      {ENTRY_TYPE_DESCRIPTIONS[data.type]}
-                    </p>
-                  </div>
-                  <div>
-                    <label className={formStyles.label}>Year</label>
-                    <input
-                      type="number"
-                      value={data.year}
-                      onChange={(e) => updateField(event.id, 'year', e.target.value)}
-                      className={formStyles.input}
-                    />
-                  </div>
-                  <div>
-                    <label className={formStyles.label}>Location (optional)</label>
-                    <input
-                      type="text"
-                      value={data.location || ''}
-                      onChange={(e) => updateField(event.id, 'location', e.target.value)}
-                      placeholder="e.g., St. Paul, MN"
-                      className={formStyles.input}
-                    />
-                  </div>
+
+                {/* Entry type - at top, like add form */}
+                <div>
+                  <label className={formStyles.label}>Entry type</label>
+                  <select
+                    value={data.type}
+                    onChange={(e) => updateField(event.id, 'type', e.target.value)}
+                    className={formStyles.select}
+                  >
+                    <option value="memory">{ENTRY_TYPE_LABELS.memory}</option>
+                    <option value="milestone">{ENTRY_TYPE_LABELS.milestone}</option>
+                    <option value="origin">{ENTRY_TYPE_LABELS.origin}</option>
+                  </select>
+                  <p className={formStyles.hint}>
+                    {ENTRY_TYPE_DESCRIPTIONS[data.type]}
+                  </p>
                 </div>
 
-                <div className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-4">
-                  <p className={formStyles.sectionLabel}>Timing</p>
-                  <p className={formStyles.hint}>Choose one way to place this memory in time</p>
+                {/* YOUR NOTE - card matching add form */}
+                <div className="rounded-2xl border border-white/10 bg-white/[0.07] p-5">
+                  <p className={formStyles.sectionLabel}>Your Note</p>
+                  <p className={`${formStyles.hint} mb-4`}>This appears on the timeline</p>
+
+                  <NoteContentSection
+                    title={data.title}
+                    content={data.full_entry || ''}
+                    whyIncluded={data.why_included || ''}
+                    entryType={data.type || 'memory'}
+                    onTitleChange={(val) => updateField(event.id, 'title', val)}
+                    onContentChange={(val) => updateField(event.id, 'full_entry', val)}
+                    onWhyIncludedChange={(val) => updateField(event.id, 'why_included', val)}
+                    lintWarnings={lintWarningsById[event.id] || []}
+                    showGuidanceWhy={guidanceWhyOpen[event.id] || false}
+                    onToggleGuidanceWhy={() => setGuidanceWhyOpen((prev) => ({ ...prev, [event.id]: !prev[event.id] }))}
+                    showWhyMeaningful={whyOpen[event.id] || false}
+                    onToggleWhyMeaningful={(open) => setWhyOpen((prev) => ({ ...prev, [event.id]: open }))}
+                    showTitle={true}
+                    showPreview={false}
+                  />
+
+                  {/* References - sources that support this note */}
+                  <div className="mt-6 pt-6 border-t border-white/10">
+                    <ReferencesSection
+                      value={data.references.map((r) => ({
+                        id: r.id,
+                        displayName: r.display_name,
+                        url: r.url,
+                      }))}
+                      onChange={(refs) => updateReferences(event.id, refs)}
+                    />
+                  </div>
+
+                  {mentions.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-white/10">
+                      <p className={formStyles.sectionLabel}>Detected names</p>
+                      <p className={`${formStyles.hint} mb-3`}>
+                        These are suggestions from the name detector. Promote only when you intend to create a person.
+                      </p>
+                      <div className="space-y-3">
+                        {mentions.map((mention) => {
+                          const statusLabel = mention.status ?? 'pending';
+                          const isResolved = statusLabel === 'promoted' || statusLabel === 'ignored';
+
+                          return (
+                            <div key={mention.id} className="rounded-xl border border-white/10 bg-white/[0.06] p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm text-white">{mention.mention_text}</p>
+                                  <p className="text-xs text-white/40 mt-1 capitalize">
+                                    {statusLabel}
+                                  </p>
+                                </div>
+                                {statusLabel === 'promoted' && (
+                                  <span className="text-[10px] uppercase tracking-[0.2em] text-[#e07a5f]">
+                                    Promoted
+                                  </span>
+                                )}
+                              </div>
+
+                              {!isResolved && (
+                                <div className="mt-3 space-y-2">
+                                  <input
+                                    type="text"
+                                    value={mention.display_label ?? ''}
+                                    onChange={(e) =>
+                                      updateMentionField(event.id, mention.id, { display_label: e.target.value })
+                                    }
+                                    placeholder="Context label (e.g., a neighbor)"
+                                    className={formStyles.inputSmall}
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      className={formStyles.buttonSecondary}
+                                      onClick={() => handleMentionAction(event.id, mention, 'context')}
+                                    >
+                                      Keep as context
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={formStyles.buttonSecondary}
+                                      onClick={() => handleMentionAction(event.id, mention, 'promote')}
+                                    >
+                                      Make person
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={formStyles.buttonSecondary}
+                                      onClick={() => handleMentionAction(event.id, mention, 'ignore')}
+                                    >
+                                      Ignore
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* WHEN & WHERE */}
+                <div className={formStyles.section}>
+                  <p className={formStyles.sectionLabel}>When & Where</p>
+                  <p className={`${formStyles.hint} mb-4`}>Choose one way to place this memory in time</p>
 
                   <TimingModeSelector
                     mode={timingMode[event.id] ?? 'year'}
@@ -995,308 +1168,74 @@ export default function EditNotesClient({
                     }}
                   />
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={formStyles.label}>Timing certainty</label>
-                      <select
-                        value={data.timing_certainty}
-                        onChange={(e) => updateField(event.id, 'timing_certainty', e.target.value)}
-                        className={formStyles.select}
-                      >
-                        {Object.entries(TIMING_CERTAINTY).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                      <p className={formStyles.hint}>
-                        {TIMING_CERTAINTY_DESCRIPTIONS[
-                          data.timing_certainty as keyof typeof TIMING_CERTAINTY_DESCRIPTIONS
-                        ]}
-                      </p>
-                    </div>
-                    <div>
-                      <label className={formStyles.label}>Timing note (optional)</label>
-                      <textarea
+                  {/* Optional timing details - disclosure pattern */}
+                  <div className="flex flex-col items-start gap-3 mt-6">
+                    <DisclosureSection
+                      label="Timing note"
+                      isOpen={timingNoteOpen[event.id] || false}
+                      onToggle={(open) => setTimingNoteOpen((prev) => ({ ...prev, [event.id]: open }))}
+                      hasContent={!!data.timing_note}
+                      onClear={() => updateField(event.id, 'timing_note', '')}
+                    >
+                      <input
+                        type="text"
                         value={data.timing_note || ''}
                         onChange={(e) => updateField(event.id, 'timing_note', e.target.value)}
-                        rows={2}
-                        className={formStyles.textarea}
+                        placeholder="e.g., Summer before college, around Christmas"
+                        className={formStyles.input}
                       />
-                    </div>
+                    </DisclosureSection>
+
+                    <DisclosureSection
+                      label="Location"
+                      isOpen={locationOpen[event.id] || false}
+                      onToggle={(open) => setLocationOpen((prev) => ({ ...prev, [event.id]: open }))}
+                      hasContent={!!data.location}
+                      onClear={() => updateField(event.id, 'location', '')}
+                    >
+                      <input
+                        type="text"
+                        value={data.location || ''}
+                        onChange={(e) => updateField(event.id, 'location', e.target.value)}
+                        placeholder="e.g., Riverton, UT or Anchorage, AK"
+                        className={formStyles.input}
+                      />
+                    </DisclosureSection>
                   </div>
                 </div>
 
-                <div>
-                  <label className={formStyles.label}>Title</label>
-                  <input
-                    type="text"
-                    value={data.title}
-                    onChange={(e) => updateField(event.id, 'title', e.target.value)}
-                    className={formStyles.input}
-                  />
-                </div>
-
-                {event.type === 'origin' ? (
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10">
-                    <p className={formStyles.hint}>
-                      This synchronicity is recorded as your personal observation.
-                    </p>
-                  </div>
-                ) : (
+                {/* THE CHAIN - provenance */}
+                <div className={formStyles.section}>
+                  <p className={formStyles.sectionLabel}>The Chain</p>
+                  <p className={`${formStyles.hint} mb-4`}>
+                    These fields help keep memories connected without turning them into a single official story.
+                  </p>
                   <ProvenanceSection
                     value={data.provenance}
                     onChange={(prov) => updateProvenance(event.id, prov)}
                     required
                   />
-                )}
-
-                <div>
-                  <label className={formStyles.label}>Your memory of Val</label>
-                  <p className={formStyles.hint}>
-                    Describe what happened. Save what it meant for the section below.
-                  </p>
-                  <RichTextEditor
-                    value={data.full_entry || ''}
-                    onChange={(val) => updateField(event.id, 'full_entry', val)}
-                    placeholder="Share the memory..."
-                    minHeight="120px"
-                  />
-
-                  {(lintWarningsById[event.id] || []).length > 0 && (
-                    <div className={formStyles.guidanceContainer}>
-                      <div className={formStyles.guidanceHeader}>
-                        <span className={formStyles.guidanceDot} />
-                        <span className={formStyles.guidanceLabel}>Writing guidance</span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setGuidanceWhyOpen((prev) => ({
-                              ...prev,
-                              [event.id]: !prev[event.id],
-                            }))
-                          }
-                          className={formStyles.guidanceToggle}
-                        >
-                          {guidanceWhyOpen[event.id] ? 'hide' : 'why?'}
-                        </button>
-                      </div>
-                      {guidanceWhyOpen[event.id] && (
-                        <p className={formStyles.guidanceExplainer}>
-                          Anchor notes in concrete scenes—who, where, what happened—so memories stay verifiable and personal.
-                        </p>
-                      )}
-                      <div className="space-y-3">
-                        {(lintWarningsById[event.id] || []).map((warning, idx) => {
-                          const tone = lintTone(warning.severity);
-                          const suggestion = getLintSuggestion(warning.code, warning.suggestion);
-                          return (
-                            <div key={`${warning.code}-${idx}`} className="space-y-0.5">
-                              <p className={tone.message}>
-                                {warning.match && (
-                                  <span className={formStyles.guidanceMatch}>
-                                    &ldquo;{warning.match}&rdquo;
-                                  </span>
-                                )}
-                                {warning.match ? ' — ' : ''}{warning.message}
-                              </p>
-                              {suggestion && (
-                                <p className={tone.suggestion}>{suggestion}</p>
-                              )}
-                              {warning.code === 'MEANING_ASSERTION' && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setWhyOpen((prev) => ({ ...prev, [event.id]: true }))
-                                  }
-                                  className={formStyles.guidanceAction}
-                                >
-                                  Move this to &ldquo;Why it matters to you&rdquo;
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className={formStyles.label}>Preview (timeline hover)</label>
-                    <span className={formStyles.hint}>auto-trimmed to 160 chars</span>
-                  </div>
-                  <textarea
-                    readOnly
-                    value={(() => {
-                      return generatePreviewFromHtml(
-                        data.full_entry || data.preview || '',
-                        PREVIEW_MAX_LENGTH
-                      );
-                    })()}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white/70 text-sm cursor-not-allowed"
-                  />
-                </div>
-
-                <div>
-                  {!whyOpen[event.id] && !data.why_included ? (
-                    <button
-                      type="button"
-                      onClick={() => setWhyOpen((prev) => ({ ...prev, [event.id]: true }))}
-                      className={formStyles.buttonGhost}
-                    >
-                      <span className={formStyles.disclosureArrow}>▶</span>
-                      Add why it matters to you (optional)
-                    </button>
-                  ) : (
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <label className={formStyles.label}>
-                          Why it matters to you
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setWhyOpen((prev) => ({ ...prev, [event.id]: false }));
-                            updateField(event.id, 'why_included', '');
-                          }}
-                          className="text-xs text-white/50 hover:text-white transition-colors"
-                        >
-                          Hide
-                        </button>
-                      </div>
-                      <RichTextEditor
-                        value={data.why_included || ''}
-                        onChange={(val) => updateField(event.id, 'why_included', val)}
-                        placeholder="How it landed for you, and why you still carry it..."
-                        minHeight="80px"
-                      />
-                      <p className={formStyles.hint}>
-                        Optional: your personal impact. Appears as an italic note beneath your memory.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* People references - only for memories */}
+                {/* PEOPLE - separate section, only for memories */}
                 {event.type === 'memory' && (
-                  <PeopleSection
-                    value={(data.person_refs || []).map((p) => ({
-                      id: p.id,
-                      personId: p.person_id,
-                      name: p.name,
-                      relationship: p.relationship,
-                      role: p.role,
-                      phone: p.phone,
-                    }))}
-                    onChange={(people) => updatePeople(event.id, people)}
-                    mode="cards"
-                    showTypeahead={false}
-                  />
-                )}
-
-                <div className="opacity-50">
-                  <div className="flex items-center gap-2">
-                    <label className={formStyles.label}>Privacy</label>
-                    <span className="text-xs px-2 py-0.5 bg-white/10 rounded text-white/50">Coming soon</span>
-                  </div>
-                  <select
-                    disabled
-                    value="family"
-                    className={`${formStyles.select} cursor-not-allowed`}
-                  >
-                    <option value="family">Family (default)</option>
-                  </select>
-                  <p className={formStyles.hint}>
-                    Privacy settings are being finalized with family input.
-                  </p>
-                </div>
-
-                {/* References (external links) */}
-                <ReferencesSection
-                  value={data.references.map((r) => ({
-                    id: r.id,
-                    displayName: r.display_name,
-                    url: r.url,
-                  }))}
-                  onChange={(refs) => updateReferences(event.id, refs)}
-                />
-
-                {/* Attachments */}
-                <div className={formStyles.section}>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className={formStyles.sectionLabel}>Attachment</p>
-                    {attachments[event.id]?.url ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAttachments((prev) => ({
-                            ...prev,
-                            [event.id]: { type: 'image', url: '', caption: '' },
-                          }))
-                        }
-                        className="text-xs text-white/50 hover:text-white transition-colors"
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={formStyles.label}>Type</label>
-                      <select
-                        value={attachments[event.id]?.type || 'image'}
-                        onChange={(e) =>
-                          setAttachments((prev) => ({
-                            ...prev,
-                            [event.id]: {
-                              ...(prev[event.id] || { type: 'image', url: '', caption: '' }),
-                              type: e.target.value as 'image' | 'audio' | 'link',
-                            },
-                          }))
-                        }
-                        className={formStyles.select}
-                      >
-                        <option value="image">Image</option>
-                        <option value="audio">Audio</option>
-                        <option value="link">Link</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={formStyles.label}>URL</label>
-                      <input
-                        type="url"
-                        value={attachments[event.id]?.url || ''}
-                        onChange={(e) =>
-                          setAttachments((prev) => ({
-                            ...prev,
-                            [event.id]: { ...(prev[event.id] || { type: 'image', url: '', caption: '' }), url: e.target.value },
-                          }))
-                        }
-                        placeholder="https://..."
-                        className={formStyles.input}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className={formStyles.label}>Caption (optional)</label>
-                    <input
-                      type="text"
-                      value={attachments[event.id]?.caption || ''}
-                      onChange={(e) =>
-                        setAttachments((prev) => ({
-                          ...prev,
-                          [event.id]: { ...(prev[event.id] || { type: 'image', url: '', caption: '' }), caption: e.target.value },
-                        }))
-                      }
-                      placeholder="A short description"
-                      className={formStyles.input}
+                  <div className={formStyles.section}>
+                    <p className={formStyles.sectionLabel}>People</p>
+                    <PeopleSection
+                      value={(data.person_refs || []).map((p) => ({
+                        id: p.id,
+                        personId: p.person_id,
+                        name: p.name,
+                        relationship: p.relationship,
+                        role: p.role,
+                        phone: p.phone,
+                      }))}
+                      onChange={(people) => updatePeople(event.id, people)}
+                      mode="cards"
+                      showTypeahead={false}
                     />
                   </div>
-                  <p className={formStyles.hint}>Leave URL blank if you don&apos;t want to attach anything.</p>
-                </div>
+                )}
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">

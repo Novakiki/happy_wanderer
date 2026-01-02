@@ -41,6 +41,9 @@
 ## Reference roles
 - `heard_from`, `witness`, `source`, `related`
 
+## Maintenance
+- See `docs/maintenance.md` for cleanup after E2E runs and schema sync reminders.
+
 ## See also
 - `docs/llm-notes.md` (branding, auth vs public, Supabase, roles)
 - `AGENTS.md` (purpose, tone, metaphor, guardrails)

@@ -165,7 +165,13 @@ export function maskContentWithReferences(
     author_payload?: {
       author_label: string;
     };
-  }>
+  }>,
+  mentions: Array<{
+    mention_text: string;
+    status?: string | null;
+    visibility?: string | null;
+    display_label?: string | null;
+  }> = []
 ): string {
   // Build a list of names to mask from references that aren't fully approved
   const namesToMask: Array<{ text: string; replacement: string }> = [];
@@ -180,6 +186,36 @@ export function maskContentWithReferences(
     // Only mask if the replacement is different from original
     if (originalName && replacement && originalName !== replacement) {
       namesToMask.push({ text: originalName, replacement });
+    }
+  }
+
+  const mentionReplacement = (mentionText: string, visibility: string, displayLabel?: string | null): string => {
+    if (visibility === 'blurred') {
+      const parts = mentionText.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}.${parts[parts.length - 1][0]}.`;
+      }
+      return mentionText[0] ? `${mentionText[0]}.` : 'someone';
+    }
+
+    if (displayLabel) return displayLabel;
+
+    return 'someone';
+  };
+
+  for (const mention of mentions) {
+    const status = mention.status ?? 'pending';
+    if (status === 'ignored' || status === 'promoted') continue;
+
+    const mentionText = mention.mention_text?.trim();
+    if (!mentionText) continue;
+
+    const visibility = mention.visibility ?? 'pending';
+    if (visibility === 'approved') continue;
+
+    const replacement = mentionReplacement(mentionText, visibility, mention.display_label);
+    if (replacement && replacement !== mentionText) {
+      namesToMask.push({ text: mentionText, replacement });
     }
   }
 

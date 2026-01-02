@@ -4,6 +4,7 @@ import { formStyles } from '@/lib/styles';
 import {
   MEMORY_PROVENANCE,
   MEMORY_PROVENANCE_DESCRIPTIONS,
+  RELATIONSHIP_OPTIONS,
 } from '@/lib/terminology';
 import type { ProvenanceData, ProvenanceType } from '@/lib/form-types';
 
@@ -27,6 +28,55 @@ export default function ProvenanceSection({
   const updateField = (field: keyof ProvenanceData, fieldValue: string) => {
     onChange({ ...value, [field]: fieldValue });
   };
+
+  const RELATIONSHIP_GROUPS = {
+    family: [
+      'parent',
+      'child',
+      'sibling',
+      'cousin',
+      'aunt_uncle',
+      'niece_nephew',
+      'grandparent',
+      'grandchild',
+      'in_law',
+      'spouse',
+    ],
+    social: ['friend', 'neighbor', 'coworker', 'classmate'],
+    other: ['acquaintance', 'other', 'unknown'],
+  } as const;
+
+  const renderRelationshipOptions = (customValue?: string) => (
+    <>
+      <option value="">Relationship to Val</option>
+      {customValue ? (
+        <optgroup label="Custom">
+          <option value={customValue}>{customValue}</option>
+        </optgroup>
+      ) : null}
+      <optgroup label="Family">
+        {RELATIONSHIP_GROUPS.family.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key as keyof typeof RELATIONSHIP_OPTIONS]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Social">
+        {RELATIONSHIP_GROUPS.social.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key as keyof typeof RELATIONSHIP_OPTIONS]}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="Other">
+        {RELATIONSHIP_GROUPS.other.map((key) => (
+          <option key={key} value={key}>
+            {RELATIONSHIP_OPTIONS[key as keyof typeof RELATIONSHIP_OPTIONS]}
+          </option>
+        ))}
+      </optgroup>
+    </>
+  );
 
   // Compact mode: simple dropdown
   if (compact) {
@@ -64,6 +114,23 @@ export default function ProvenanceSection({
               placeholder="e.g., Uncle John, my mother"
               className={formStyles.input}
             />
+            <div className="mt-3">
+              <label className={formStyles.labelMuted}>
+                Relationship to Val <span className="text-white/50">(optional)</span>
+              </label>
+              <select
+                value={value.toldByRelationship || ''}
+                onChange={(e) => updateField('toldByRelationship', e.target.value)}
+                className={formStyles.select}
+              >
+                {renderRelationshipOptions(
+                  value.toldByRelationship &&
+                  !(value.toldByRelationship in RELATIONSHIP_OPTIONS)
+                    ? value.toldByRelationship
+                    : undefined
+                )}
+              </select>
+            </div>
           </div>
         )}
 
@@ -181,6 +248,23 @@ export default function ProvenanceSection({
                 placeholder="e.g., Uncle John, my mother"
                 className={formStyles.input}
               />
+              <div className="mt-3">
+                <label className={formStyles.labelMuted}>
+                  Relationship to Val <span className="text-white/50">(optional)</span>
+                </label>
+                <select
+                  value={value.toldByRelationship || ''}
+                  onChange={(e) => updateField('toldByRelationship', e.target.value)}
+                  className={formStyles.select}
+                >
+                  {renderRelationshipOptions(
+                    value.toldByRelationship &&
+                    !(value.toldByRelationship in RELATIONSHIP_OPTIONS)
+                      ? value.toldByRelationship
+                      : undefined
+                  )}
+                </select>
+              </div>
             </div>
           )}
         </button>

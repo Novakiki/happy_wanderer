@@ -16,3 +16,14 @@ export { TimingModeSelector } from './TimingModeSelector';
 export type { TimingMode, TimingModeData, TimingModeSelectorProps } from './TimingModeSelector';
 export { DisclosureSection } from './DisclosureSection';
 export type { DisclosureSectionProps } from './DisclosureSection';
+
+// Shared form configuration
+export {
+  getContentLabel,
+  CONTENT_SECTION,
+  WHY_IT_MATTERS,
+  WRITING_GUIDANCE,
+  THE_CHAIN,
+  TITLE_FIELD,
+} from './note-form-config';
+export type { EntryType } from './note-form-config';

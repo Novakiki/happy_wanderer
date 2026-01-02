@@ -165,6 +165,9 @@ Most family stories are **retold, not witnessed**. The `heard_from` field makes 
 - Do not add dependencies unless asked
 - Do not modify package-lock.json or package.json unless requested
 
+## Maintenance
+- After E2E runs, use `lib/cleanup.sql` (see `docs/maintenance.md`).
+
 ## Workflow expectations
 - If instructions are ambiguous, ask a short clarification first
 - Summarize changes and list files touched

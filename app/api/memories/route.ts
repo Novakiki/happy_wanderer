@@ -17,8 +17,7 @@ import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
 import { lintNote } from '@/lib/note-lint';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
-import { detectAndCreatePendingReferences } from '@/lib/pending-names';
-import { recordEventVersion } from '@/lib/event-versions';
+import { detectAndStoreMentions } from '@/lib/pending-names';
 // TODO: Enable geocoding when map feature is implemented
 // import { geocodeLocation } from '@/lib/claude';
 
@@ -221,7 +220,6 @@ export async function POST(request: NextRequest) {
         status: 'published',
         privacy_level: effectivePrivacy,
         prompted_by_event_id: prompted_by_event_id || null,
-        trigger_event_id: prompted_by_event_id || null,
         root_event_id: chainInfo.rootEventId,
         chain_depth: chainInfo.chainDepth,
       })
@@ -239,10 +237,6 @@ export async function POST(request: NextRequest) {
     // Save references if provided
     const eventId = (eventData as { id?: string } | null)?.id;
     const createdInvites: Array<{ id: string; name: string; phone: string }> = [];
-
-    if (eventId) {
-      await recordEventVersion(admin, eventId, contributorId);
-    }
 
     // If this is a standalone event (no parent), set root_event_id to self
     if (eventId && !chainInfo.rootEventId) {
@@ -444,24 +438,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Detect names in content and create pending references for those without consent
-    // These names will appear blurred until the person grants permission
-    let pendingNames: Array<{ name: string; personId: string; status: string }> = [];
+    // Detect names in content and store mention candidates (no people created)
+    let mentionCandidates: Array<{ name: string; mentionId: string; status: string }> = [];
     if (eventId) {
-      const nameResult = await detectAndCreatePendingReferences(
+      const nameResult = await detectAndStoreMentions(
         trimmedContent,
         eventId,
         admin,
         contributorId
       );
-      pendingNames = nameResult.pendingNames;
+      mentionCandidates = nameResult.mentions;
     }
 
     return NextResponse.json({
       success: true,
       event: eventData,
       invites: createdInvites,
-      pendingNames,
+      mentionCandidates,
       lintWarnings,
     });
   } catch (error) {

@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
     const admin = createAdminClient();
 
     // Get the event's contributor_id for preference lookups
-    const { data: eventData } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: eventData } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
       .select('contributor_id')
       .eq('id', eventId)
       .single();

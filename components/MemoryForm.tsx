@@ -5,8 +5,8 @@ import {
   DEFAULT_PROVENANCE,
   getDefaultProvenanceForEntryType,
   mapToLegacyPersonRole,
-  provenanceToSource,
   provenanceToRecurrence,
+  provenanceToSource,
   provenanceToWitnessType,
 } from '@/lib/form-types';
 import {
@@ -20,17 +20,22 @@ import { buildSmsLink } from '@/lib/invites';
 import { getLintSuggestion } from '@/lib/lint-copy';
 import { formStyles } from '@/lib/styles';
 import {
-  ENTRY_TYPE_CONTENT_LABELS,
   ENTRY_TYPE_DESCRIPTIONS,
   ENTRY_TYPE_LABELS,
   LIFE_STAGE_YEAR_RANGES,
   THREAD_RELATIONSHIP_DESCRIPTIONS,
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { TimingMode } from './forms';
-import { DisclosureSection, PeopleSection, ProvenanceSection, TimingModeSelector } from './forms';
-import RichTextEditor from './RichTextEditor';
+import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection, TimingModeSelector } from './forms';
+
+// Helper for lint warning styling in success screen
+const lintTone = (severity?: 'soft' | 'strong') => ({
+  message: severity === 'soft' ? formStyles.guidanceWarningMessageSoft : formStyles.guidanceWarningMessage,
+  suggestion: severity === 'soft' ? formStyles.guidanceSuggestionSoft : formStyles.guidanceSuggestion,
+});
 
 type CreatedInvite = {
   id: string;
@@ -38,9 +43,9 @@ type CreatedInvite = {
   phone: string;
 };
 
-type PendingName = {
+type MentionCandidate = {
   name: string;
-  personId: string;
+  mentionId: string;
   status: string;
 };
 
@@ -67,11 +72,6 @@ type Props = {
 
 type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
-const lintTone = (severity?: LintWarning['severity']) => ({
-  message: severity === 'soft' ? formStyles.guidanceWarningMessageSoft : formStyles.guidanceWarningMessage,
-  suggestion: severity === 'soft' ? formStyles.guidanceSuggestionSoft : formStyles.guidanceSuggestion,
-});
-
 export default function MemoryForm({ respondingToEventId, storytellerName, userProfile }: Props) {
   const [formData, setFormData] = useState({
     entry_type: 'memory',
@@ -96,24 +96,14 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   // Link references (external sources)
   const [linkRefs, setLinkRefs] = useState<{ displayName: string; url: string }[]>([]);
-  const [newLinkName, setNewLinkName] = useState('');
-  const [newLinkUrl, setNewLinkUrl] = useState('');
-  const [showLinks, setShowLinks] = useState(false);
 
   // Invites created after submission (for "Text them" buttons)
   const [createdInvites, setCreatedInvites] = useState<CreatedInvite[]>([]);
-  const [pendingNames, setPendingNames] = useState<PendingName[]>([]);
+  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidate[]>([]);
 
   const [threadRelationship, setThreadRelationship] = useState<ThreadRelationship>('perspective');
   const [threadNote, setThreadNote] = useState('');
 
-  // Attachment (collapsed by default)
-  const [showAttachment, setShowAttachment] = useState(false);
-  const [attachment, setAttachment] = useState({
-    type: 'image' as 'image' | 'audio',
-    url: '',
-    caption: '',
-  });
 
   // Timing mode: which method user chooses to enter timing (null = none selected yet)
   const [timingMode, setTimingMode] = useState<TimingMode>(null);
@@ -122,7 +112,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [showTimingDetails, setShowTimingDetails] = useState(false);
   const [showLocation, setShowLocation] = useState(false);
   const [showWhyMeaningful, setShowWhyMeaningful] = useState(false);
-  const [showPeople, setShowPeople] = useState(false);
   const [showGuidanceWhy, setShowGuidanceWhy] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -134,7 +123,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   const [lintWarnings, setLintWarnings] = useState<LintWarning[]>([]);
   const lintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lintAbortRef = useRef<AbortController | null>(null);
-  const whyMeaningfulRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isSubmitted) return;
@@ -183,20 +171,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
       }
     };
   }, [formData.content, isSubmitted]);
-
-  const addLinkRef = () => {
-    const url = newLinkUrl.trim();
-    const name = newLinkName.trim();
-    if (url && name) {
-      setLinkRefs([...linkRefs, { displayName: name, url }]);
-      setNewLinkName('');
-      setNewLinkUrl('');
-    }
-  };
-
-  const removeLinkRef = (index: number) => {
-    setLinkRefs(linkRefs.filter((_, i) => i !== index));
-  };
 
   // Handle entry type change - update provenance default
   const handleEntryTypeChange = (newEntryType: string) => {
@@ -271,13 +245,10 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
       return;
     }
 
-    // Require an attachment for synchronicity/origin entries
+    // Require at least one reference for synchronicity/origin entries
     if (formData.entry_type === 'origin') {
-      const hasAttachment = attachment.url.trim().length > 0;
-      const hasLinkRefs = linkRefs.length > 0;
-      if (!hasAttachment && !hasLinkRefs) {
-        setShowAttachment(true);
-        setError('Please add an attachment (image/audio) or an external link for a synchronicity.');
+      if (linkRefs.length === 0) {
+        setError('Please add at least one reference (external link) for a synchronicity.');
         return;
       }
     }
@@ -293,7 +264,13 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
       if (provenance.type === 'secondhand' && provenance.toldByName?.trim()) {
         const toldBy = provenance.toldByName.trim();
-        heardFrom = { name: toldBy, relationship: '', email: '', shouldInvite: false };
+        const toldByRelationship = provenance.toldByRelationship?.trim();
+        heardFrom = {
+          name: toldBy,
+          relationship: toldByRelationship || '',
+          email: '',
+          shouldInvite: false,
+        };
       }
 
       const timingRawText = buildTimingRawText({
@@ -333,9 +310,9 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
               role: mapToLegacyPersonRole(p.role),
             })),
           },
-          attachment_type: showAttachment && attachment.url.trim() ? attachment.type : 'none',
-          attachment_url: showAttachment ? attachment.url : '',
-          attachment_caption: showAttachment ? attachment.caption : '',
+          attachment_type: 'none',
+          attachment_url: '',
+          attachment_caption: '',
           // User profile from auth session
           contributor_id: userProfile.contributorId,
           submitter_name: userProfile.name,
@@ -362,8 +339,8 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setCreatedInvites(result.invites);
       }
 
-      if (result.pendingNames && result.pendingNames.length > 0) {
-        setPendingNames(result.pendingNames);
+      if (result.mentionCandidates && result.mentionCandidates.length > 0) {
+        setMentionCandidates(result.mentionCandidates);
       }
 
       if (Array.isArray(result?.lintWarnings)) {
@@ -376,15 +353,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
       console.error(err);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const openWhyMeaningful = () => {
-    setShowWhyMeaningful(true);
-    if (typeof window !== 'undefined') {
-      window.requestAnimationFrame(() => {
-        whyMeaningfulRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
     }
   };
 
@@ -414,7 +382,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
                     className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
                   >
                     <span className="text-sm text-white">{invite.name}</span>
-                    <span className="text-xs text-[#e07a5f] font-medium">Text them →</span>
+                    <span className="text-xs text-[#e07a5f] font-medium">Text them &rarr;</span>
                   </a>
                 );
               })}
@@ -426,14 +394,14 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         )}
 
         {/* Identity guardian notice for pending names */}
-        {pendingNames.length > 0 && (
+        {mentionCandidates.length > 0 && (
           <div className="mb-8 p-5 rounded-2xl border border-amber-500/10 bg-white/[0.03] text-left max-w-lg mx-auto">
             <p className="text-sm font-medium text-white mb-2">
-              Identity guardian: we hide names until people confirm how they want to appear
+              Identity guardian: names are saved for review before they become people
             </p>
             <p className="text-sm text-white/50">
-              {pendingNames.map((p) => p.name).join(', ')} shows for you, but others will see
-              "person" until they confirm how they want to be named and how visible they want to be.
+              {mentionCandidates.map((p) => p.name).join(', ')} stays private until you review it.
+              Others will see &ldquo;someone&rdquo; unless you promote the name to a person.
             </p>
           </div>
         )}
@@ -452,14 +420,15 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             <div className="space-y-3">
               {lintWarnings.map((warning, idx) => {
                 const tone = lintTone(warning.severity);
-                const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                const suggestion = getLintSuggestion(warning.code, warning.suggestion, warning.message);
                 return (
                   <div key={`${warning.code}-${idx}`} className="space-y-1">
                     <p className={tone.message}>
-                      {warning.match && (
-                        <span className="font-medium text-white/80">"{warning.match}"</span>
-                      )}
-                      {warning.match ? ' — ' : ''}{warning.message}
+                    {warning.match && (
+                      <span className="font-medium text-white/80">&ldquo;{warning.match}&rdquo;</span>
+                    )}
+                    {warning.match ? ' - ' : ''}
+                    {warning.message}
                     </p>
                     {suggestion && (
                       <p className={tone.suggestion}>{suggestion}</p>
@@ -475,7 +444,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           onClick={() => {
             setIsSubmitted(false);
             setCreatedInvites([]);
-            setPendingNames([]);
+            setMentionCandidates([]);
             setLintWarnings([]);
             setFormData({
               entry_type: 'memory',
@@ -494,13 +463,10 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             setProvenance(DEFAULT_PROVENANCE);
             setPersonRefs([]);
             setLinkRefs([]);
-            setShowLinks(false);
             setTimingMode(null);
             setShowTimingDetails(false);
             setShowLocation(false);
             setShowWhyMeaningful(false);
-            setShowAttachment(false);
-            setAttachment({ type: 'image', url: '', caption: '' });
             setThreadRelationship('perspective');
             setThreadNote('');
           }}
@@ -572,111 +538,32 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           <p className={formStyles.sectionLabel}>Your Note</p>
           <p className={`${formStyles.hint} mb-4`}>This appears on the timeline</p>
 
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="title" className={formStyles.label}>
-                Title <span className={formStyles.required}>*</span>
-              </label>
-              <input
-                type="text"
-                id="title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="e.g., Thanksgiving laughter"
-                className={formStyles.input}
-                required
-              />
-            </div>
+          <NoteContentSection
+            title={formData.title}
+            content={formData.content}
+            whyIncluded={formData.why_included}
+            entryType={formData.entry_type}
+            onTitleChange={(val) => setFormData({ ...formData, title: val })}
+            onContentChange={(val) => setFormData({ ...formData, content: val })}
+            onWhyIncludedChange={(val) => setFormData({ ...formData, why_included: val })}
+            lintWarnings={lintWarnings}
+            showGuidanceWhy={showGuidanceWhy}
+            onToggleGuidanceWhy={() => setShowGuidanceWhy(!showGuidanceWhy)}
+            showWhyMeaningful={showWhyMeaningful}
+            onToggleWhyMeaningful={setShowWhyMeaningful}
+          />
 
-            <div>
-              <label className={formStyles.label}>
-                {ENTRY_TYPE_CONTENT_LABELS[formData.entry_type as keyof typeof ENTRY_TYPE_CONTENT_LABELS] || 'The memory'} <span className={formStyles.required}>*</span>
-              </label>
-              <p className={formStyles.hint}>
-                Describe what happened. Save what it meant for the section below.
-              </p>
-              <RichTextEditor
-                value={formData.content}
-                onChange={(val) => setFormData({ ...formData, content: val })}
-                placeholder="Share a story, a moment, or a note..."
-                minHeight="120px"
-              />
-
-              {lintWarnings.length > 0 && (
-                <div className={formStyles.guidanceContainer}>
-                <div className={formStyles.guidanceHeader}>
-                  <span className={formStyles.guidanceDot} />
-                  <span className={formStyles.guidanceLabel}>Writing guidance</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowGuidanceWhy(!showGuidanceWhy)}
-                    className={formStyles.guidanceToggle}
-                  >
-                    {showGuidanceWhy ? 'hide' : 'why?'}
-                  </button>
-                </div>
-                <p className="text-xs text-white/40 mb-3">
-                  Quoted text is the phrase we noticed.
-                </p>
-                {showGuidanceWhy && (
-                  <p className={formStyles.guidanceExplainer}>
-                    Anchor notes in concrete scenes—who, where, what happened—so memories stay verifiable and personal.
-                  </p>
-                )}
-                  <div className="space-y-3">
-                    {lintWarnings.map((warning, idx) => {
-                      const tone = lintTone(warning.severity);
-                      const suggestion = getLintSuggestion(warning.code, warning.suggestion);
-                      return (
-                        <div key={`${warning.code}-${idx}`} className="space-y-0.5">
-                          <p className={tone.message}>
-                            {warning.match && (
-                              <span className={formStyles.guidanceMatch}>&ldquo;{warning.match}&rdquo;</span>
-                            )}
-                            {warning.match ? ' — ' : ''}{warning.message}
-                          </p>
-                          {suggestion && (
-                            <p className={tone.suggestion}>{suggestion}</p>
-                          )}
-                          {warning.code === 'MEANING_ASSERTION' && (
-                            <button
-                              type="button"
-                              onClick={openWhyMeaningful}
-                              className={formStyles.guidanceAction}
-                            >
-                              Move this to &ldquo;Why it matters to you&rdquo;
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            <div ref={whyMeaningfulRef}>
-              <DisclosureSection
-                label="Why it matters to you"
-                addLabel="Add why it matters to you (optional)"
-                isOpen={showWhyMeaningful}
-                onToggle={setShowWhyMeaningful}
-                hasContent={hasContent(formData.why_included)}
-                onClear={() => setFormData({ ...formData, why_included: '' })}
-                variant="inset"
-              >
-                <p className="text-xs text-white/40 mb-2 italic">
-                  Optional: your personal impact. Appears as an italic note beneath your memory.
-                </p>
-                <RichTextEditor
-                  value={formData.why_included}
-                  onChange={(val) => setFormData({ ...formData, why_included: val })}
-                  placeholder="How it landed for you, why it still matters..."
-                  minHeight="80px"
-                />
-              </DisclosureSection>
-            </div>
+          {/* References - sources that support this note */}
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <ReferencesSection
+              value={linkRefs}
+              onChange={setLinkRefs}
+              emptyMessage={
+                formData.entry_type === 'origin'
+                  ? 'Add links to articles, videos, or sources that document this synchronicity.'
+                  : 'Add links to articles, photos, or documents that support this memory.'
+              }
+            />
           </div>
         </div>
 
@@ -822,216 +709,29 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           </div>
         )}
 
-        {/* THE CHAIN - provenance and social connections */}
+        {/* THE CHAIN - provenance only */}
         <div className={formStyles.section}>
           <p className={formStyles.sectionLabel}>The Chain</p>
           <p className={`${formStyles.hint} mb-4`}>These fields help keep memories connected without turning them into a single official story.</p>
 
-          {formData.entry_type === 'origin' ? (
-            <div className="mb-6 p-4 rounded-xl bg-white/5 border border-white/10">
-              <p className={formStyles.hint}>
-                This synchronicity will be recorded as your personal observation.
-              </p>
-            </div>
-          ) : (
-            <div className="mb-6">
-              <ProvenanceSection
-                value={provenance}
-                onChange={setProvenance}
-                required
-              />
-            </div>
-          )}
-
-          {/* People section - only for memories, not milestones or synchronicities */}
-          {formData.entry_type === 'memory' && (
-            !showPeople && personRefs.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowPeople(true)}
-                className={formStyles.buttonGhost}
-              >
-                <span className={formStyles.disclosureArrow}>&#9654;</span>
-                Add who was there
-              </button>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className={formStyles.sectionLabel}>Who else was there?</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowPeople(false)}
-                    className="text-xs text-white/50 hover:text-white transition-colors"
-                  >
-                    Hide
-                  </button>
-                </div>
-                <PeopleSection
-                  value={personRefs}
-                  onChange={setPersonRefs}
-                  label="Who else was there?"
-                  mode="inline"
-                />
-              </div>
-            )
-          )}
+          <ProvenanceSection
+            value={provenance}
+            onChange={setProvenance}
+            required
+          />
         </div>
 
-        {/* External links: show for synchronicity, or when links exist; hide for memories/milestones when unused */}
-        {(() => {
-          const canAddLinks = formData.entry_type === 'origin';
-          const hasLinks = linkRefs.length > 0;
-          const shouldShowLinksSection = canAddLinks || hasLinks || showLinks;
-
-          if (!shouldShowLinksSection) return null;
-
-          return (
-            <div>
-              {canAddLinks && !showLinks && !hasLinks ? (
-                <button
-                  type="button"
-                  onClick={() => setShowLinks(true)}
-                  className={formStyles.buttonGhost}
-                >
-                  <span className={formStyles.disclosureArrow}>&#9654;</span>
-                  Add external link (article, photo, etc.)
-                </button>
-              ) : (
-                <div className="space-y-3">
-                  <label className={formStyles.label}>External links</label>
-
-                  {canAddLinks && (
-                    <div className="grid gap-2 sm:grid-cols-[1fr,1fr,auto]">
-                      <input
-                        type="text"
-                        value={newLinkName}
-                        onChange={(e) => setNewLinkName(e.target.value)}
-                        placeholder="Display name (e.g., Wikipedia)"
-                        className={formStyles.inputSmall}
-                      />
-                      <input
-                        type="url"
-                        value={newLinkUrl}
-                        onChange={(e) => setNewLinkUrl(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            addLinkRef();
-                          }
-                        }}
-                        placeholder="URL"
-                        className={formStyles.inputSmall}
-                      />
-                      <button
-                        type="button"
-                        onClick={addLinkRef}
-                        disabled={!newLinkName.trim() || !newLinkUrl.trim()}
-                        className={`${formStyles.buttonSecondary} text-sm py-2`}
-                      >
-                        Add
-                      </button>
-                    </div>
-                  )}
-
-                  {hasLinks && (
-                    <div className="flex flex-wrap gap-2">
-                      {linkRefs.map((ref, i) => (
-                        <span key={i} className={formStyles.tag}>
-                          <a
-                            href={ref.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline"
-                          >
-                            {ref.displayName}
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => removeLinkRef(i)}
-                            className={formStyles.tagRemove}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Attachment (collapsed) */}
-        <div>
-          {!showAttachment ? (
-            <button
-              type="button"
-              onClick={() => setShowAttachment(true)}
-              className={formStyles.buttonGhost}
-            >
-              + Add an attachment
-            </button>
-          ) : (
-            <div className={formStyles.section}>
-              <div className="flex items-center justify-between mb-4">
-                <p className={formStyles.sectionLabel}>Attachment</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAttachment(false);
-                    setAttachment({ type: 'image', url: '', caption: '' });
-                  }}
-                  className="text-xs text-white/50 hover:text-white transition-colors"
-                >
-                  Remove
-                </button>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="attachment_type" className={formStyles.label}>
-                    Type
-                  </label>
-                  <select
-                    id="attachment_type"
-                    value={attachment.type}
-                    onChange={(e) => setAttachment({ ...attachment, type: e.target.value as 'image' | 'audio' })}
-                    className={formStyles.select}
-                  >
-                    <option value="image">Image</option>
-                    <option value="audio">Audio</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="attachment_url" className={formStyles.label}>
-                    URL
-                  </label>
-                  <input
-                    type="url"
-                    id="attachment_url"
-                    value={attachment.url}
-                    onChange={(e) => setAttachment({ ...attachment, url: e.target.value })}
-                    placeholder="https://..."
-                    className={formStyles.input}
-                  />
-                </div>
-              </div>
-              <div className="mt-4">
-                <label htmlFor="attachment_caption" className={formStyles.label}>
-                  Caption <span className="text-white/50">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  id="attachment_caption"
-                  value={attachment.caption}
-                  onChange={(e) => setAttachment({ ...attachment, caption: e.target.value })}
-                  placeholder="A short description"
-                  className={formStyles.input}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        {/* PEOPLE - show for memories and milestones */}
+        {(formData.entry_type === 'memory' || formData.entry_type === 'milestone') && (
+          <div className={formStyles.section}>
+            <p className={formStyles.sectionLabel}>People</p>
+            <PeopleSection
+              value={personRefs}
+              onChange={setPersonRefs}
+              mode="inline"
+            />
+          </div>
+        )}
 
         {/* Review notice */}
         <div className="p-5 rounded-2xl border border-white/5 bg-white/[0.03] text-left">
@@ -1039,7 +739,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             Every note is reviewed before it goes live
           </p>
           <p className="text-sm text-white/50">
-            We look for private info that shouldn&rsquo;t be public and flag anything that needs a second look. Names are fine — people you mention can choose how they appear.
+            We look for private info that shouldn&rsquo;t be public and flag anything that needs a second look. We will let you know if a revision is needed.
           </p>
           {llmReviewMessage && (
             <p className="text-sm text-white/70 mt-3">

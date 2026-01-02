@@ -400,14 +400,15 @@ export default function RespondPage() {
               <div className="space-y-3">
                 {lintWarnings.map((warning, idx) => {
                   const tone = lintTone(warning.severity);
-                  const suggestion = getLintSuggestion(warning.code, warning.suggestion);
+                  const suggestion = getLintSuggestion(warning.code, warning.suggestion, warning.message);
                   return (
                     <div key={`${warning.code}-${idx}`} className="space-y-1">
                       <p className={tone.message}>
                         {warning.match && (
-                          <span className="font-medium text-white/80">"{warning.match}"</span>
+                          <span className="font-medium text-white/80">&ldquo;{warning.match}&rdquo;</span>
                         )}
-                        {warning.match ? ' — ' : ''}{warning.message}
+                        {warning.match ? ' — ' : ''}
+                        {warning.message}
                       </p>
                       {suggestion && (
                         <p className={tone.suggestion}>{suggestion}</p>

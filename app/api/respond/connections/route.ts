@@ -23,53 +23,87 @@ export async function GET(request: NextRequest) {
   const seenIds = new Set<string>();
 
   // 1. Get the event author
-  type EventWithContributor = {
+  type EventRow = {
     contributor_id: string | null;
-    contributor: { id: string; name: string } | null;
   };
 
-  const { data: event } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
-    .select('contributor_id, contributor:contributors(id, name)')
+  const { data: event } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+    .select('contributor_id')
     .eq('id', eventId)
     .single();
 
-  const typedEvent = event as EventWithContributor | null;
-  if (typedEvent?.contributor?.id && typedEvent?.contributor?.name) {
-    const authorId = typedEvent.contributor.id;
-    if (!seenIds.has(authorId)) {
-      seenIds.add(authorId);
+  const eventContributorId = (event as EventRow | null)?.contributor_id ?? null;
+
+  // 2. Get responses via memory_threads
+  type ThreadRow = {
+    response_event_id: string;
+  };
+
+  const { data: threads } = await (admin.from('memory_threads') as ReturnType<typeof admin.from>)
+    .select('response_event_id')
+    .eq('original_event_id', eventId);
+
+  const responseEventIds = Array.from(new Set(
+    (threads ?? [])
+      .map((thread) => (thread as ThreadRow).response_event_id)
+      .filter((id): id is string => Boolean(id))
+  ));
+
+  const { data: responseEvents } = responseEventIds.length > 0
+    ? await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+        .select('id, contributor_id')
+        .in('id', responseEventIds)
+    : { data: [] };
+
+  const responseEventById = new Map<string, { contributor_id: string | null }>();
+  const contributorIds = new Set<string>();
+
+  if (eventContributorId) {
+    contributorIds.add(eventContributorId);
+  }
+
+  for (const responseEvent of (responseEvents ?? []) as Array<{ id: string; contributor_id: string | null }>) {
+    responseEventById.set(responseEvent.id, { contributor_id: responseEvent.contributor_id });
+    if (responseEvent.contributor_id) {
+      contributorIds.add(responseEvent.contributor_id);
+    }
+  }
+
+  const contributorsById = new Map<string, { id: string; name: string; relation: string | null }>();
+  if (contributorIds.size > 0) {
+    const { data: contributors } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      .select('id, name, relation')
+      .in('id', [...contributorIds]);
+
+    for (const contributor of contributors ?? []) {
+      contributorsById.set(contributor.id, {
+        id: contributor.id,
+        name: contributor.name,
+        relation: contributor.relation ?? null,
+      });
+    }
+  }
+
+  if (eventContributorId) {
+    const contributor = contributorsById.get(eventContributorId);
+    if (contributor && !seenIds.has(contributor.id)) {
+      seenIds.add(contributor.id);
       // Check visibility via person_claims -> people
-      const visibility = await getContributorVisibility(admin, authorId);
+      const visibility = await getContributorVisibility(admin, contributor.id);
       people.push({
-        id: authorId,
-        name: visibility === 'approved' ? typedEvent.contributor.name : undefined,
+        id: contributor.id,
+        name: visibility === 'approved' ? contributor.name : undefined,
         role: 'wrote',
       });
     }
   }
 
-  // 2. Get responses via memory_threads
-  type ThreadWithEvent = {
-    response_event_id: string;
-    response_event: {
-      contributor_id: string | null;
-      contributor: { id: string; name: string; relation: string } | null;
-    } | null;
-  };
-
-  const { data: threads } = await (admin.from('memory_threads') as ReturnType<typeof admin.from>)
-    .select(`
-      response_event_id,
-      response_event:timeline_events!memory_threads_response_event_id_fkey(
-        contributor_id,
-        contributor:contributors(id, name, relation)
-      )
-    `)
-    .eq('original_event_id', eventId);
-
   if (threads) {
-    for (const thread of threads as ThreadWithEvent[]) {
-      const contributor = thread.response_event?.contributor;
+    for (const thread of threads as ThreadRow[]) {
+      const responseEvent = responseEventById.get(thread.response_event_id);
+      if (!responseEvent?.contributor_id) continue;
+
+      const contributor = contributorsById.get(responseEvent.contributor_id);
       if (contributor && !seenIds.has(contributor.id)) {
         seenIds.add(contributor.id);
         const visibility = await getContributorVisibility(admin, contributor.id);

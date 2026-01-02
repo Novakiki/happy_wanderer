@@ -54,6 +54,14 @@ async function getEventById(eventId: string, contributorName: string) {
         relationship_to_subject,
         person_id,
         person:people(id, canonical_name)
+      ),
+      mentions:note_mentions(
+        id,
+        mention_text,
+        status,
+        visibility,
+        display_label,
+        promoted_person_id
       )
     `)
     .eq('id', eventId)
@@ -136,6 +144,14 @@ async function getEventsForToken(token: string, contributorName?: string) {
         relationship_to_subject,
         person_id,
         person:people(id, canonical_name)
+      ),
+      mentions:note_mentions(
+        id,
+        mention_text,
+        status,
+        visibility,
+        display_label,
+        promoted_person_id
       )
     `)
     .eq('contributor_id', tokenRow.contributor_id)
@@ -184,6 +200,14 @@ async function getEventsForToken(token: string, contributorName?: string) {
             relationship_to_subject,
             person_id,
             person:people(id, canonical_name)
+          ),
+          mentions:note_mentions(
+            id,
+            mention_text,
+            status,
+            visibility,
+            display_label,
+            promoted_person_id
           )
         `)
         .in('contributor_id', contributorIds)
@@ -236,6 +260,14 @@ async function getEventForContributor(eventId: string, contributorId: string) {
         relationship_to_subject,
         person_id,
         person:people(id, canonical_name)
+      ),
+      mentions:note_mentions(
+        id,
+        mention_text,
+        status,
+        visibility,
+        display_label,
+        promoted_person_id
       )
     `)
     .eq('id', eventId)
@@ -287,6 +319,14 @@ async function getEventsForContributor(contributorId: string) {
         relationship_to_subject,
         person_id,
         person:people(id, canonical_name)
+      ),
+      mentions:note_mentions(
+        id,
+        mention_text,
+        status,
+        visibility,
+        display_label,
+        promoted_person_id
       )
     `)
     .eq('contributor_id', contributorId)

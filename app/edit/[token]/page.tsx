@@ -137,6 +137,14 @@ export default async function EditTokenPage({
             relationship_to_subject,
             person_id,
             person:people(id, canonical_name)
+          ),
+          mentions:note_mentions(
+            id,
+            mention_text,
+            status,
+            visibility,
+            display_label,
+            promoted_person_id
           )
         `
       )

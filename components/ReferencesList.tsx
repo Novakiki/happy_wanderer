@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
 import type { EventReferenceWithContributor } from '@/lib/database.types';
 import type { RedactedReference } from '@/lib/references';
 import { REFERENCE_ROLE_LABELS, RELATIONSHIP_OPTIONS } from '@/lib/terminology';
+import Link from 'next/link';
+import { useState } from 'react';
 
 const PRIVACY_EXPLAINER = `Identity guardian: we hide names until people confirm how they want to appear. You can still see who you mentioned; others will see "someone" until they choose their name and visibility.`;
 
@@ -19,7 +19,7 @@ type Props = {
 
 function decodeHtmlEntities(text: string): string {
   return text
-    .replace(/&nearr;/g, '↗')
+    .replace(/&nearr;/g, '\u2197')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
@@ -135,7 +135,7 @@ function PersonRefItem({
         </span>
       )}
       {ref.note && (
-        <span className="text-white/30 italic"> — {ref.note}</span>
+        <span className="text-white/30 italic"> &mdash; {ref.note}</span>
       )}
     </div>
   );
@@ -186,7 +186,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
                   rel="noopener noreferrer"
                   className="text-xs text-white/50 hover:text-white/70 transition-colors"
                 >
-                  {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">↗</span>
+                  {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">&nearr;</span>
                 </a>
               </div>
             ))}
@@ -217,7 +217,7 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
                 rel="noopener noreferrer"
                 className="text-xs text-white/50 hover:text-white/70 transition-colors"
               >
-                {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">↗</span>
+                {decodeHtmlEntities(ref.display_name || '')} <span className="text-white/30">&nearr;</span>
               </a>
             </div>
           ))}

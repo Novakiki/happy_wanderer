@@ -842,11 +842,11 @@ export default function ChaptersPage() {
                 </p>
               </div>
             )}
-            {hoveredEvent.triggerEventId && eventLookup.get(hoveredEvent.triggerEventId) && (
+            {hoveredEvent.promptedByEventId && eventLookup.get(hoveredEvent.promptedByEventId) && (
               <p className="text-white/40 text-[11px] mt-3">
                 In response to:{' '}
                 <span className="text-white/50">
-                  {eventLookup.get(hoveredEvent.triggerEventId)?.title}
+                  {eventLookup.get(hoveredEvent.promptedByEventId)?.title}
                 </span>
               </p>
             )}

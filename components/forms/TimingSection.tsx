@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import type { EntryType, LifeStage, TimingData, TimingMode } from '@/lib/form-types';
 import { formStyles } from '@/lib/styles';
 import {
-  LIFE_STAGES,
-  LIFE_STAGE_DESCRIPTIONS,
-  TIMING_CERTAINTY,
-  TIMING_CERTAINTY_DESCRIPTIONS,
+    LIFE_STAGES,
+    LIFE_STAGE_DESCRIPTIONS,
+    TIMING_CERTAINTY,
+    TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
-import type { TimingData, TimingMode, LifeStage, EntryType } from '@/lib/form-types';
+import { useState } from 'react';
 import { DisclosureSection } from './DisclosureSection';
 import { YearInput } from './YearInput';
 

@@ -3,6 +3,16 @@
 -- Run this in Supabase SQL Editor to create all tables
 -- =============================================================================
 
+-- IDENTITY MODEL (accounts vs identity nodes)
+--   contributors = accounts (people who log in and submit)
+--   people        = identity nodes (anyone mentioned in a memory)
+--   person_claims bridges them: contributor_id -> person_id
+--   event_references links to people (preferred) or contributors (legacy)
+-- Why separate?
+--   - Anonymous submission (contributor exists, no person claim yet)
+--   - Mentioning non-users (person exists, no contributor account)
+--   - Deferred identity claiming ("that's me!" flow)
+
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -28,7 +38,20 @@ CREATE TABLE people (
   visibility TEXT DEFAULT 'pending'
     CHECK (visibility IN ('pending', 'approved', 'anonymized', 'blurred', 'removed')),
   created_by UUID REFERENCES contributors(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT people_subject_name_check
+    CHECK (
+      lower(trim(canonical_name)) NOT IN (
+        'val',
+        'valerie',
+        'valeri',
+        'valera',
+        'valeria',
+        'valerius',
+        'valerie anderson',
+        'valerie park anderson'
+      )
+    )
 );
 
 -- Person aliases - name variants for search and matching
@@ -38,7 +61,20 @@ CREATE TABLE person_aliases (
   alias TEXT NOT NULL,
   kind TEXT,
   created_by UUID REFERENCES contributors(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT person_aliases_subject_name_check
+    CHECK (
+      lower(trim(alias)) NOT IN (
+        'val',
+        'valerie',
+        'valeri',
+        'valera',
+        'valeria',
+        'valerius',
+        'valerie anderson',
+        'valerie park anderson'
+      )
+    )
 );
 
 -- Person claims - link identities to accounts
@@ -53,6 +89,17 @@ CREATE TABLE person_claims (
   approved_by UUID REFERENCES contributors(id),
   UNIQUE (person_id, contributor_id),
   UNIQUE (contributor_id)
+);
+
+-- Visibility preferences - per-person defaults and per-contributor trust
+CREATE TABLE visibility_preferences (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  person_id UUID NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  contributor_id UUID REFERENCES contributors(id) ON DELETE CASCADE,
+  visibility TEXT NOT NULL CHECK (visibility IN ('approved', 'blurred', 'anonymized', 'removed')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (person_id, contributor_id)
 );
 
 -- Timeline events - the core content
@@ -86,7 +133,7 @@ CREATE TABLE timeline_events (
 
   -- Story chain: links to the event this is responding to
   prompted_by_event_id UUID REFERENCES timeline_events(id),
-  trigger_event_id UUID REFERENCES timeline_events(id), -- UI surface that prompted this submission
+  trigger_event_id UUID REFERENCES timeline_events(id), -- Legacy alias for prompted_by_event_id
   root_event_id UUID REFERENCES timeline_events(id),
   chain_depth INTEGER DEFAULT 0,
 
@@ -126,19 +173,19 @@ CREATE TABLE timeline_event_versions (
   year INTEGER,
   year_end INTEGER,
   date TEXT,
-  timing_certainty TEXT,
-  timing_input_type TEXT,
+  timing_certainty TEXT CHECK (timing_certainty IN ('exact', 'approximate', 'vague')),
+  timing_input_type TEXT CHECK (timing_input_type IN ('date', 'year', 'year_range', 'age_range', 'life_stage')),
   age_start INTEGER,
   age_end INTEGER,
-  life_stage TEXT,
+  life_stage TEXT CHECK (life_stage IN ('childhood', 'teens', 'college', 'young_family', 'beyond')),
   timing_note TEXT,
   timing_raw_text TEXT,
-  witness_type TEXT,
-  recurrence TEXT,
-  privacy_level TEXT,
+  witness_type TEXT CHECK (witness_type IN ('direct', 'secondhand', 'mixed', 'unsure')),
+  recurrence TEXT CHECK (recurrence IN ('one_time', 'repeated', 'ongoing')),
+  privacy_level TEXT CHECK (privacy_level IN ('public', 'family')),
   people_involved TEXT[],
-  type TEXT,
-  status TEXT,
+  type TEXT CHECK (type IN ('origin', 'milestone', 'memory')),
+  status TEXT CHECK (status IN ('published', 'pending', 'private')),
 
   UNIQUE (event_id, version)
 );
@@ -239,6 +286,38 @@ CREATE TABLE memory_threads (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Note mentions - detected name candidates (not people until promoted)
+CREATE TABLE note_mentions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_id UUID NOT NULL REFERENCES timeline_events(id) ON DELETE CASCADE,
+  mention_text TEXT NOT NULL,
+  normalized_text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'context', 'ignored', 'promoted')),
+  visibility TEXT NOT NULL DEFAULT 'pending'
+    CHECK (visibility IN ('pending', 'approved', 'anonymized', 'blurred', 'removed')),
+  display_label TEXT,
+  source TEXT NOT NULL DEFAULT 'llm'
+    CHECK (source IN ('llm', 'user')),
+  created_by UUID REFERENCES contributors(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  promoted_person_id UUID REFERENCES people(id) ON DELETE SET NULL,
+  promoted_reference_id UUID REFERENCES event_references(id) ON DELETE SET NULL,
+  CONSTRAINT note_mentions_subject_check
+    CHECK (
+      normalized_text NOT IN (
+        'val',
+        'valerie',
+        'valeri',
+        'valera',
+        'valeria',
+        'valerius',
+        'valerie anderson',
+        'valerie park anderson'
+      )
+    )
+);
+
 -- Event references - people and external sources that support a memory
 CREATE TABLE event_references (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -333,13 +412,176 @@ CREATE OR REPLACE VIEW note_references AS
 CREATE OR REPLACE VIEW note_threads AS
   SELECT * FROM memory_threads;
 
+CREATE OR REPLACE VIEW current_notes AS
+SELECT
+  te.id,
+  COALESCE(tev.year, te.year) AS year,
+  COALESCE(tev.date, te.date) AS date,
+  COALESCE(tev.type, te.type) AS type,
+  COALESCE(tev.title, te.title) AS title,
+  COALESCE(tev.preview, te.preview) AS preview,
+  COALESCE(tev.full_entry, te.full_entry) AS full_entry,
+  COALESCE(tev.why_included, te.why_included) AS why_included,
+  COALESCE(tev.source_url, te.source_url) AS source_url,
+  COALESCE(tev.source_name, te.source_name) AS source_name,
+  te.contributor_id,
+  COALESCE(tev.location, te.location) AS location,
+  te.latitude,
+  te.longitude,
+  COALESCE(tev.people_involved, te.people_involved) AS people_involved,
+  te.created_at,
+  COALESCE(tev.status, te.status) AS status,
+  COALESCE(tev.privacy_level, te.privacy_level) AS privacy_level,
+  te.prompted_by_event_id,
+  te.trigger_event_id,
+  te.root_event_id,
+  te.chain_depth,
+  COALESCE(tev.timing_certainty, te.timing_certainty) AS timing_certainty,
+  COALESCE(tev.timing_input_type, te.timing_input_type) AS timing_input_type,
+  COALESCE(tev.year_end, te.year_end) AS year_end,
+  COALESCE(tev.age_start, te.age_start) AS age_start,
+  COALESCE(tev.age_end, te.age_end) AS age_end,
+  COALESCE(tev.life_stage, te.life_stage) AS life_stage,
+  COALESCE(tev.timing_note, te.timing_note) AS timing_note,
+  COALESCE(tev.timing_raw_text, te.timing_raw_text) AS timing_raw_text,
+  COALESCE(tev.witness_type, te.witness_type) AS witness_type,
+  COALESCE(tev.recurrence, te.recurrence) AS recurrence,
+  te.subject_id,
+  tev.version AS version,
+  tev.created_at AS version_created_at,
+  tev.created_by AS version_created_by
+FROM timeline_events te
+LEFT JOIN LATERAL (
+  SELECT *
+  FROM timeline_event_versions
+  WHERE event_id = te.id
+  ORDER BY version DESC
+  LIMIT 1
+) tev ON true;
+
 COMMENT ON VIEW notes IS 'Alias for timeline_events (Note records).';
 COMMENT ON VIEW note_references IS 'Alias for event_references (provenance/chain).';
 COMMENT ON VIEW note_threads IS 'Alias for memory_threads (parallel notes).';
+COMMENT ON VIEW current_notes IS 'Latest version per note (timeline_event_versions + timeline_events).';
 
 -- =============================================================================
 -- FUNCTIONS
 -- =============================================================================
+
+CREATE OR REPLACE FUNCTION sync_trigger_event_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  NEW.trigger_event_id := NEW.prompted_by_event_id;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION record_timeline_event_version()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  next_version INTEGER;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF NEW.title IS NOT DISTINCT FROM OLD.title
+      AND NEW.preview IS NOT DISTINCT FROM OLD.preview
+      AND NEW.full_entry IS NOT DISTINCT FROM OLD.full_entry
+      AND NEW.why_included IS NOT DISTINCT FROM OLD.why_included
+      AND NEW.source_url IS NOT DISTINCT FROM OLD.source_url
+      AND NEW.source_name IS NOT DISTINCT FROM OLD.source_name
+      AND NEW.location IS NOT DISTINCT FROM OLD.location
+      AND NEW.year IS NOT DISTINCT FROM OLD.year
+      AND NEW.year_end IS NOT DISTINCT FROM OLD.year_end
+      AND NEW.date IS NOT DISTINCT FROM OLD.date
+      AND NEW.timing_certainty IS NOT DISTINCT FROM OLD.timing_certainty
+      AND NEW.timing_input_type IS NOT DISTINCT FROM OLD.timing_input_type
+      AND NEW.age_start IS NOT DISTINCT FROM OLD.age_start
+      AND NEW.age_end IS NOT DISTINCT FROM OLD.age_end
+      AND NEW.life_stage IS NOT DISTINCT FROM OLD.life_stage
+      AND NEW.timing_note IS NOT DISTINCT FROM OLD.timing_note
+      AND NEW.timing_raw_text IS NOT DISTINCT FROM OLD.timing_raw_text
+      AND NEW.witness_type IS NOT DISTINCT FROM OLD.witness_type
+      AND NEW.recurrence IS NOT DISTINCT FROM OLD.recurrence
+      AND NEW.privacy_level IS NOT DISTINCT FROM OLD.privacy_level
+      AND NEW.people_involved IS NOT DISTINCT FROM OLD.people_involved
+      AND NEW.type IS NOT DISTINCT FROM OLD.type
+      AND NEW.status IS NOT DISTINCT FROM OLD.status
+    THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  SELECT COALESCE(MAX(version), 0) + 1
+    INTO next_version
+  FROM timeline_event_versions
+  WHERE event_id = NEW.id;
+
+  INSERT INTO timeline_event_versions (
+    event_id,
+    version,
+    created_by,
+    title,
+    preview,
+    full_entry,
+    why_included,
+    source_url,
+    source_name,
+    location,
+    year,
+    year_end,
+    date,
+    timing_certainty,
+    timing_input_type,
+    age_start,
+    age_end,
+    life_stage,
+    timing_note,
+    timing_raw_text,
+    witness_type,
+    recurrence,
+    privacy_level,
+    people_involved,
+    type,
+    status
+  ) VALUES (
+    NEW.id,
+    next_version,
+    NEW.contributor_id,
+    NEW.title,
+    NEW.preview,
+    NEW.full_entry,
+    NEW.why_included,
+    NEW.source_url,
+    NEW.source_name,
+    NEW.location,
+    NEW.year,
+    NEW.year_end,
+    NEW.date,
+    NEW.timing_certainty,
+    NEW.timing_input_type,
+    NEW.age_start,
+    NEW.age_end,
+    NEW.life_stage,
+    NEW.timing_note,
+    NEW.timing_raw_text,
+    NEW.witness_type,
+    NEW.recurrence,
+    NEW.privacy_level,
+    NEW.people_involved,
+    NEW.type,
+    NEW.status
+  );
+
+  RETURN NEW;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION lint_note(note_body TEXT)
 RETURNS JSONB
@@ -440,6 +682,22 @@ END;
 $$;
 
 -- =============================================================================
+-- TRIGGERS
+-- =============================================================================
+
+DROP TRIGGER IF EXISTS trg_sync_trigger_event_id ON timeline_events;
+CREATE TRIGGER trg_sync_trigger_event_id
+BEFORE INSERT OR UPDATE ON timeline_events
+FOR EACH ROW
+EXECUTE FUNCTION sync_trigger_event_id();
+
+DROP TRIGGER IF EXISTS trg_record_timeline_event_version ON timeline_events;
+CREATE TRIGGER trg_record_timeline_event_version
+AFTER INSERT OR UPDATE ON timeline_events
+FOR EACH ROW
+EXECUTE FUNCTION record_timeline_event_version();
+
+-- =============================================================================
 -- INDEXES
 -- =============================================================================
 
@@ -462,6 +720,10 @@ CREATE INDEX idx_person_aliases_person ON person_aliases(person_id);
 CREATE INDEX idx_person_aliases_alias ON person_aliases(alias);
 CREATE INDEX idx_person_claims_person ON person_claims(person_id);
 CREATE INDEX idx_person_claims_contributor ON person_claims(contributor_id);
+CREATE INDEX idx_visibility_preferences_person ON visibility_preferences(person_id);
+CREATE INDEX idx_visibility_preferences_contributor ON visibility_preferences(contributor_id) WHERE contributor_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_visibility_preferences_person_default ON visibility_preferences(person_id)
+WHERE contributor_id IS NULL;
 CREATE INDEX idx_witnesses_event ON witnesses(event_id);
 CREATE INDEX idx_witnesses_status ON witnesses(status);
 CREATE INDEX idx_invites_status ON invites(status);
@@ -474,6 +736,9 @@ CREATE INDEX idx_references_contributor ON event_references(contributor_id);
 CREATE INDEX idx_references_type ON event_references(type);
 CREATE INDEX idx_references_visibility ON event_references(visibility);
 CREATE INDEX idx_references_person ON event_references(person_id);
+CREATE UNIQUE INDEX idx_note_mentions_event_norm_source ON note_mentions(event_id, normalized_text, source);
+CREATE INDEX idx_note_mentions_event ON note_mentions(event_id);
+CREATE INDEX idx_note_mentions_status ON note_mentions(status);
 CREATE INDEX idx_events_prompted_by ON timeline_events(prompted_by_event_id);
 CREATE INDEX idx_memory_threads_original ON memory_threads(original_event_id);
 CREATE INDEX idx_memory_threads_response ON memory_threads(response_event_id);
@@ -489,6 +754,7 @@ ALTER TABLE contributors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE people ENABLE ROW LEVEL SECURITY;
 ALTER TABLE person_aliases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE person_claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE visibility_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE timeline_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_media ENABLE ROW LEVEL SECURITY;
@@ -498,6 +764,7 @@ ALTER TABLE edit_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE constellation_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memory_threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE note_mentions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_references ENABLE ROW LEVEL SECURITY;
 ALTER TABLE timeline_event_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE motifs ENABLE ROW LEVEL SECURITY;
@@ -547,6 +814,7 @@ GRANT SELECT ON TABLE
   event_references,
   constellation_members,
   notes,
+  current_notes,
   note_references,
   note_threads
 TO anon, authenticated;
@@ -556,6 +824,7 @@ GRANT ALL ON TABLE
   people,
   person_aliases,
   person_claims,
+  visibility_preferences,
   timeline_events,
   timeline_event_versions,
   motifs,
@@ -569,8 +838,10 @@ GRANT ALL ON TABLE
   notifications,
   constellation_members,
   memory_threads,
+  note_mentions,
   event_references,
   notes,
+  current_notes,
   note_references,
   note_threads
 TO service_role;

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
-import { recordEventVersion } from '@/lib/event-versions';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -62,8 +61,6 @@ export async function POST(request: Request) {
     if (updateError) {
       throw updateError;
     }
-
-    await recordEventVersion(admin, event_id, tokenRow.contributor_id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

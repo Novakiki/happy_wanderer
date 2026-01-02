@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     // Check that the event is a memory (not milestone or synchronicity)
-    const { data: event, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: event, error: eventError } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
       .select('type, contributor_id')
       .eq('id', event_id)
       .single();

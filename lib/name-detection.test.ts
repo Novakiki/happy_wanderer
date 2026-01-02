@@ -356,4 +356,61 @@ describe('maskContentWithReferences', () => {
     const result = maskContentWithReferences(content, []);
     expect(result).toBe(content);
   });
+
+  it('masks mention candidates when references are absent', () => {
+    const content = 'Julie Smith told me a story.';
+    const mentions = [
+      {
+        mention_text: 'Julie Smith',
+        status: 'pending',
+        visibility: 'pending',
+      },
+    ];
+
+    const result = maskContentWithReferences(content, [], mentions);
+    expect(result).toBe('someone told me a story.');
+  });
+
+  it('uses initials for blurred mentions', () => {
+    const content = 'Julie Smith told me a story.';
+    const mentions = [
+      {
+        mention_text: 'Julie Smith',
+        status: 'pending',
+        visibility: 'blurred',
+      },
+    ];
+
+    const result = maskContentWithReferences(content, [], mentions);
+    expect(result).toBe('J.S. told me a story.');
+  });
+
+  it('keeps ignored mentions unmasked', () => {
+    const content = 'May I join?';
+    const mentions = [
+      {
+        mention_text: 'May',
+        status: 'ignored',
+        visibility: 'pending',
+      },
+    ];
+
+    const result = maskContentWithReferences(content, [], mentions);
+    expect(result).toBe(content);
+  });
+
+  it('uses display labels for context mentions', () => {
+    const content = 'Julie Smith helped us move.';
+    const mentions = [
+      {
+        mention_text: 'Julie Smith',
+        status: 'context',
+        visibility: 'anonymized',
+        display_label: 'a neighbor',
+      },
+    ];
+
+    const result = maskContentWithReferences(content, [], mentions);
+    expect(result).toBe('a neighbor helped us move.');
+  });
 });

@@ -9,7 +9,7 @@ const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
 export async function GET() {
   try {
-    const { data, error } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data, error } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
       .select('id, year, year_end, title, root_event_id, chain_depth, status, privacy_level')
       .eq('status', 'published')
       .in('privacy_level', ['public', 'family'])

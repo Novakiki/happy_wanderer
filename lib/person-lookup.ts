@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isSubjectName } from '@/lib/subject-names';
 
 /**
  * Escape SQL wildcards for safe use in ilike queries.
@@ -121,6 +122,7 @@ export function createPersonLookupHelpers(
   const resolvePersonIdByName = async (name: string): Promise<string | null> => {
     const trimmedName = name.trim();
     if (!trimmedName) return null;
+    if (isSubjectName(trimmedName)) return null;
 
     // Search by alias first (case-insensitive exact match)
     const escapedName = escapeIlikePattern(trimmedName);

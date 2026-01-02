@@ -9,16 +9,23 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import Nav from "@/components/Nav";
 import { ReferencesList } from "@/components/ReferencesList";
 import ShareInvitePanel from "@/components/ShareInvitePanel";
-import { TriggerEventLink } from "@/components/TriggerEventLink";
+import { PromptedEventLink } from "@/components/PromptedEventLink";
 import { immersiveBackground } from "@/lib/styles";
 import { LIFE_STAGES, THREAD_RELATIONSHIP_LABELS } from "@/lib/terminology";
 import { redactReferences, type ReferenceRow, type RedactedReference } from "@/lib/references";
 import { maskContentWithReferences } from "@/lib/name-detection";
 
-type TimelineEvent = Database["public"]["Tables"]["timeline_events"]["Row"] & {
+type TimelineEvent = Database["public"]["Views"]["current_notes"]["Row"] & {
   contributor: { name: string; relation: string | null } | null;
-  media?: { media: Database["public"]["Tables"]["media"]["Row"] }[];
+  media?: { media: Database["public"]["Tables"]["media"]["Row"] | null }[];
   references?: RedactedReference[];
+  mentions?: Array<{
+    mention_text: string;
+    status: string | null;
+    visibility: string | null;
+    display_label: string | null;
+  }>;
+  prompted_event?: { id: string; title: string; privacy_level?: string | null } | null;
 };
 
 type LinkedStory = {
@@ -67,97 +74,195 @@ export default async function MemoryPage({
   const linkedStories: LinkedStory[] = [];
 
   if (admin) {
-    const baseSelect = `
-      *,
-      contributor:contributors!timeline_events_contributor_id_fkey(name, relation),
-      media:event_media(media:media(*)),
-      references:event_references(id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name))
-    `;
-    const selectWithTrigger = `
-      ${baseSelect},
-      trigger_event:timeline_events!timeline_events_trigger_event_id_fkey(id, title, privacy_level)
-    `;
-
-    const withTrigger = await admin
-      .from("timeline_events")
-      .select(selectWithTrigger)
+    const { data: eventData, error: eventError } = await admin
+      .from("current_notes")
+      .select("*")
       .eq("id", id)
       .single();
 
-    let data = withTrigger.data;
-    let error = withTrigger.error;
-
-    if (error?.code === "PGRST200") {
-      const fallback = await admin
-        .from("timeline_events")
-        .select(baseSelect)
-        .eq("id", id)
-        .single();
-      data = fallback.data;
-      error = fallback.error;
-    }
-
-    if (error) {
+    if (eventError) {
       // Soft-fail: fall back to getEventById; avoid dev overlay noise
-      console.warn("Error fetching event via admin client:", error);
-    } else if (data) {
-      const triggerEventId = (data as { trigger_event_id?: string | null }).trigger_event_id;
-      const hasTrigger = Object.prototype.hasOwnProperty.call(data, "trigger_event");
-      if (triggerEventId && !hasTrigger) {
-        const { data: triggerEvent } = await admin
-          .from("timeline_events")
-          .select("id, title, privacy_level")
-          .eq("id", triggerEventId)
+      console.warn("Error fetching event via admin client:", eventError);
+    } else if (eventData) {
+      const baseEvent = eventData as Database["public"]["Views"]["current_notes"]["Row"];
+
+      let contributor: { name: string; relation: string | null } | null = null;
+      if (baseEvent.contributor_id) {
+        const { data: contributorRow, error: contributorError } = await admin
+          .from("contributors")
+          .select("id, name, relation")
+          .eq("id", baseEvent.contributor_id)
           .single();
-        if (triggerEvent) {
-          (data as { trigger_event?: typeof triggerEvent }).trigger_event = triggerEvent;
+        if (contributorError) {
+          console.warn("Error fetching contributor:", contributorError);
+        } else if (contributorRow) {
+          contributor = {
+            name: contributorRow.name,
+            relation: contributorRow.relation ?? null,
+          };
+        }
+      }
+
+      let media: Array<{ media: Database["public"]["Tables"]["media"]["Row"] | null }> = [];
+      const { data: mediaRows, error: mediaError } = await admin
+        .from("event_media")
+        .select("event_id, media:media(*)")
+        .eq("event_id", baseEvent.id);
+      if (mediaError) {
+        console.warn("Error fetching media:", mediaError);
+      } else {
+        media = (mediaRows ?? []).map((row) => ({
+          media: (row as { media: Database["public"]["Tables"]["media"]["Row"] | null }).media,
+        }));
+      }
+
+      let rawRefs: ReferenceRow[] = [];
+      const { data: referenceRows, error: referenceError } = await admin
+        .from("event_references")
+        .select(`
+          id,
+          type,
+          url,
+          display_name,
+          role,
+          note,
+          visibility,
+          relationship_to_subject,
+          person:people(id, canonical_name, visibility),
+          contributor:contributors!event_references_contributor_id_fkey(name)
+        `)
+        .eq("event_id", baseEvent.id);
+      if (referenceError) {
+        if (referenceError.code !== "PGRST200") {
+          console.warn("Error fetching references:", referenceError);
+        }
+      } else {
+        rawRefs = (referenceRows ?? []) as ReferenceRow[];
+      }
+
+      let mentionRows: Array<{
+        mention_text: string;
+        status: string | null;
+        visibility: string | null;
+        display_label: string | null;
+      }> = [];
+      const { data: mentionData, error: mentionError } = await admin
+        .from("note_mentions")
+        .select("mention_text, status, visibility, display_label")
+        .eq("event_id", baseEvent.id);
+      if (mentionError) {
+        if (mentionError.code !== "PGRST200") {
+          console.warn("Error fetching mentions:", mentionError);
+        }
+      } else {
+        mentionRows = (mentionData ?? []) as typeof mentionRows;
+      }
+
+      let promptedEvent: { id: string; title: string; privacy_level?: string | null } | null = null;
+      if (baseEvent.prompted_by_event_id) {
+        const { data: promptedRow, error: promptedError } = await admin
+          .from("current_notes")
+          .select("id, title, privacy_level")
+          .eq("id", baseEvent.prompted_by_event_id)
+          .single();
+        if (promptedError) {
+          console.warn("Error fetching prompted event:", promptedError);
+        } else if (promptedRow) {
+          promptedEvent = promptedRow as { id: string; title: string; privacy_level?: string | null };
         }
       }
 
       // Redact private names before rendering (include author payload so owner can see real names)
-      const rawRefs = (data.references || []) as unknown as ReferenceRow[];
       event = {
-        ...data,
+        ...baseEvent,
+        contributor,
+        media,
         references: redactReferences(rawRefs, { includeAuthorPayload: true }),
+        mentions: mentionRows,
+        prompted_event: promptedEvent,
       } as TimelineEvent;
     }
 
     // Fetch linked stories via memory_threads
     if (event) {
-      // Stories where this is the original
+      type ThreadRow = {
+        relationship: string | null;
+        note: string | null;
+        response_event_id?: string | null;
+        original_event_id?: string | null;
+      };
+
       const { data: responsesToThis } = await admin
         .from("memory_threads")
-        .select(`
-          relationship,
-          note,
-          response_event:timeline_events!response_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
-        `)
+        .select("relationship, note, response_event_id")
         .eq("original_event_id", id);
 
-      // Stories where this is a response
       const { data: originalsForThis } = await admin
         .from("memory_threads")
-        .select(`
-          relationship,
-          note,
-          original_event:timeline_events!original_event_id(id, title, year, year_end, timing_certainty, contributor:contributors!timeline_events_contributor_id_fkey(name, relation))
-        `)
+        .select("relationship, note, original_event_id")
         .eq("response_event_id", id);
 
-      if (responsesToThis) {
-        for (const thread of responsesToThis as Array<{
-          relationship: string | null;
-          note: string | null;
-          response_event: {
-            id: string;
-            title: string;
-            year: number;
-            year_end: number | null;
-            timing_certainty: 'exact' | 'approximate' | 'vague' | null;
-            contributor: { name: string; relation: string | null } | null;
-          } | null;
+      const linkedEventIds = new Set<string>();
+
+      for (const thread of (responsesToThis ?? []) as ThreadRow[]) {
+        if (thread.response_event_id) linkedEventIds.add(thread.response_event_id);
+      }
+
+      for (const thread of (originalsForThis ?? []) as ThreadRow[]) {
+        if (thread.original_event_id) linkedEventIds.add(thread.original_event_id);
+      }
+
+      const linkedEventsById = new Map<string, {
+        id: string;
+        title: string;
+        year: number;
+        year_end: number | null;
+        timing_certainty: 'exact' | 'approximate' | 'vague' | null;
+        contributor_id: string | null;
+      }>();
+
+      const contributorIds = new Set<string>();
+
+      if (linkedEventIds.size > 0) {
+        const { data: linkedEvents } = await admin
+          .from("current_notes")
+          .select("id, title, year, year_end, timing_certainty, contributor_id")
+          .in("id", [...linkedEventIds]);
+
+        for (const linkedEvent of (linkedEvents ?? []) as Array<{
+          id: string;
+          title: string;
+          year: number;
+          year_end: number | null;
+          timing_certainty: 'exact' | 'approximate' | 'vague' | null;
+          contributor_id: string | null;
         }>) {
-          const responseEvent = thread.response_event;
+          linkedEventsById.set(linkedEvent.id, linkedEvent);
+          if (linkedEvent.contributor_id) {
+            contributorIds.add(linkedEvent.contributor_id);
+          }
+        }
+      }
+
+      const contributorsById = new Map<string, { name: string; relation: string | null }>();
+      if (contributorIds.size > 0) {
+        const { data: contributors } = await admin
+          .from("contributors")
+          .select("id, name, relation")
+          .in("id", [...contributorIds]);
+
+        for (const contributor of contributors ?? []) {
+          contributorsById.set(contributor.id, {
+            name: contributor.name,
+            relation: contributor.relation ?? null,
+          });
+        }
+      }
+
+      if (responsesToThis) {
+        for (const thread of responsesToThis as ThreadRow[]) {
+          if (!thread.response_event_id) continue;
+          const responseEvent = linkedEventsById.get(thread.response_event_id);
           if (responseEvent) {
             linkedStories.push({
               id: responseEvent.id,
@@ -165,7 +270,9 @@ export default async function MemoryPage({
               year: responseEvent.year,
               year_end: responseEvent.year_end ?? null,
               timing_certainty: responseEvent.timing_certainty ?? null,
-              contributor: responseEvent.contributor,
+              contributor: responseEvent.contributor_id
+                ? contributorsById.get(responseEvent.contributor_id) ?? null
+                : null,
               relationship: thread.relationship || "perspective",
               threadNote: thread.note,
               isOriginal: false, // this event is the original, linked one is response
@@ -175,19 +282,9 @@ export default async function MemoryPage({
       }
 
       if (originalsForThis) {
-        for (const thread of originalsForThis as Array<{
-          relationship: string | null;
-          note: string | null;
-          original_event: {
-            id: string;
-            title: string;
-            year: number;
-            year_end: number | null;
-            timing_certainty: 'exact' | 'approximate' | 'vague' | null;
-            contributor: { name: string; relation: string | null } | null;
-          } | null;
-        }>) {
-          const originalEvent = thread.original_event;
+        for (const thread of originalsForThis as ThreadRow[]) {
+          if (!thread.original_event_id) continue;
+          const originalEvent = linkedEventsById.get(thread.original_event_id);
           if (originalEvent) {
             linkedStories.push({
               id: originalEvent.id,
@@ -195,7 +292,9 @@ export default async function MemoryPage({
               year: originalEvent.year,
               year_end: originalEvent.year_end ?? null,
               timing_certainty: originalEvent.timing_certainty ?? null,
-              contributor: originalEvent.contributor,
+              contributor: originalEvent.contributor_id
+                ? contributorsById.get(originalEvent.contributor_id) ?? null
+                : null,
               relationship: thread.relationship || "perspective",
               threadNote: thread.note,
               isOriginal: true, // linked one is the original, this is response
@@ -260,11 +359,11 @@ export default async function MemoryPage({
     event.type === "memory" ? `/share?responding_to=${event.id}` : "/share";
   const respondLabel = event.type === "memory" ? "Add your perspective" : "Add a note";
 
-  const triggerEvent = (event as unknown as { trigger_event?: { id: string; title: string; privacy_level?: string | null } | null }).trigger_event;
-  const canShowTrigger =
-    triggerEvent &&
-    triggerEvent.id !== event.id &&
-    (triggerEvent.privacy_level === "public" || triggerEvent.privacy_level === event.privacy_level);
+  const promptedEvent = (event as unknown as { prompted_event?: { id: string; title: string; privacy_level?: string | null } | null }).prompted_event;
+  const canShowPrompted =
+    promptedEvent &&
+    promptedEvent.id !== event.id &&
+    (promptedEvent.privacy_level === "public" || promptedEvent.privacy_level === event.privacy_level);
 
   // Check if current viewer is the note owner (via edit session OR auth profile)
   const ownerViaEditSession = isNoteOwner(editSession, event.contributor_id);
@@ -274,7 +373,7 @@ export default async function MemoryPage({
   // Mask names in content for non-owners based on visibility preferences
   const displayText = viewerIsOwner
     ? primaryText
-    : maskContentWithReferences(primaryText, event.references || []);
+    : maskContentWithReferences(primaryText, event.references || [], event.mentions || []);
 
   // Build edit link - prefer edit session token, fall back to auth-based edit page
   const editLink = viewerIsOwner
@@ -290,9 +389,9 @@ export default async function MemoryPage({
 
         {/* Header: Title + simplified metadata */}
         <div className="mt-8">
-          {canShowTrigger && triggerEvent && (
-            <TriggerEventLink
-              triggerEvent={triggerEvent}
+          {canShowPrompted && promptedEvent && (
+            <PromptedEventLink
+              promptedEvent={promptedEvent}
               currentEventId={event.id}
             />
           )}
@@ -309,13 +408,10 @@ export default async function MemoryPage({
 
         {/* Hero: The memory content */}
         {displayText ? (
-          <div className="mt-8 relative">
-            <div className="absolute -left-4 top-0 bottom-0 w-0.5 bg-gradient-to-b from-[#e07a5f]/40 via-[#e07a5f]/20 to-transparent" />
-            <div
-              className="pl-4 text-lg sm:text-xl text-white/80 leading-relaxed prose prose-lg prose-invert max-w-none [&>p:first-child]:mt-0"
-              dangerouslySetInnerHTML={{ __html: displayText }}
-            />
-          </div>
+          <div
+            className="mt-8 text-lg sm:text-xl text-white/80 leading-relaxed prose prose-lg prose-invert max-w-none [&>p:first-child]:mt-0"
+            dangerouslySetInnerHTML={{ __html: displayText }}
+          />
         ) : (
           <p className="mt-8 text-white/50 italic">
             This note is in the score, but the full text has not been added yet.
@@ -324,10 +420,34 @@ export default async function MemoryPage({
 
         {event.why_included && (
           <div
-            className="mt-8 border-l-2 border-white/10 pl-4 text-white/50 italic prose prose-sm prose-invert max-w-none"
+            className="mt-8 border-l-2 border-[#7080c9] pl-4 text-[#a0b0f0] italic prose prose-sm prose-invert max-w-none [&_p]:text-[#a0b0f0]"
             dangerouslySetInnerHTML={{ __html: event.why_included }}
           />
         )}
+
+        {/* External sources - shown after "why it matters" */}
+        {(() => {
+          const linkRefs = event.references?.filter((r) => r.type === 'link') || [];
+          if (linkRefs.length === 0) return null;
+          return (
+            <div className="mt-6 flex flex-wrap gap-3">
+              {linkRefs.map((ref) => (
+                <a
+                  key={ref.id}
+                  href={ref.url || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/5 text-sm text-white/70 hover:text-white hover:border-white/25 hover:bg-white/10 transition-all"
+                >
+                  {ref.display_name}
+                  <svg className="w-3.5 h-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              ))}
+            </div>
+          );
+        })()}
 
         {mediaItems && mediaItems.length > 0 && (
           <div className="mt-8 space-y-4">
@@ -404,13 +524,18 @@ export default async function MemoryPage({
               </Link>
             )}
           </div>
-          {event.references && event.references.length > 0 && (
-            <ReferencesList
-              references={event.references}
-              viewerIsOwner={viewerIsOwner}
-              showBothViews={process.env.NODE_ENV === 'development'}
-            />
-          )}
+          {/* Person references only - link refs shown above content */}
+          {(() => {
+            const personRefs = event.references?.filter((r) => r.type === 'person') || [];
+            if (personRefs.length === 0) return null;
+            return (
+              <ReferencesList
+                references={personRefs}
+                viewerIsOwner={viewerIsOwner}
+                showBothViews={process.env.NODE_ENV === 'development'}
+              />
+            );
+          })()}
 
           {/* Invite storyteller button */}
           {heardFromRef && !hasLinkedResponse && heardFromName && (

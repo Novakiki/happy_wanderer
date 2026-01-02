@@ -5,7 +5,6 @@ import { readEditSession } from '@/lib/edit-session';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { normalizeRecurrence, normalizeWitnessType } from '@/lib/memories';
 import { lintNote } from '@/lib/note-lint';
-import { recordEventVersion } from '@/lib/event-versions';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -128,8 +127,6 @@ export async function PATCH(
       console.error('Update error:', updateError);
       return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
     }
-
-    await recordEventVersion(admin, eventId, tokenRow.contributor_id);
 
     // Fetch updated event
     const { data: updatedEvent } = await admin

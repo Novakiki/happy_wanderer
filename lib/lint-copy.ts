@@ -6,5 +6,11 @@ export const LINT_SUGGESTIONS: Record<string, string> = {
   CONTRADICTION_POLICING: 'Share your memory without correcting others; add context instead.',
 };
 
-export const getLintSuggestion = (code: string, fallback?: string) =>
-  LINT_SUGGESTIONS[code] ?? fallback;
+export const getLintSuggestion = (code: string, fallback?: string, message?: string) => {
+  if (LINT_SUGGESTIONS[code]) return LINT_SUGGESTIONS[code];
+  const msg = (message || '').toLowerCase();
+  if (msg.includes('consent') || msg.includes('named person')) {
+    return 'Use a relationship instead of a full name (e.g., “my husband,” “a cousin,” or initials) until they confirm how they want to appear.';
+  }
+  return fallback;
+};

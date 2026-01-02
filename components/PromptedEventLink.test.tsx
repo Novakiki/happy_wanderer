@@ -3,14 +3,14 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { TriggerEventLink } from './TriggerEventLink';
+import { PromptedEventLink } from './PromptedEventLink';
 
-describe('TriggerEventLink', () => {
-  describe('when trigger event exists', () => {
+describe('PromptedEventLink', () => {
+  describe('when prompted event exists', () => {
     it('renders the link with parent title', () => {
       render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'parent-1', title: 'The Summer of 1986' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'parent-1', title: 'The Summer of 1986' }}
           currentEventId="child-1"
         />
       );
@@ -21,8 +21,8 @@ describe('TriggerEventLink', () => {
 
     it('links to the parent memory page', () => {
       render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'parent-1', title: 'The Summer of 1986' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'parent-1', title: 'The Summer of 1986' }}
           currentEventId="child-1"
         />
       );
@@ -33,8 +33,8 @@ describe('TriggerEventLink', () => {
 
     it('has correct test id for e2e targeting', () => {
       render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'parent-1', title: 'Test Parent' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'parent-1', title: 'Test Parent' }}
           currentEventId="child-1"
         />
       );
@@ -43,18 +43,18 @@ describe('TriggerEventLink', () => {
     });
   });
 
-  describe('when trigger event is absent', () => {
-    it('renders nothing when triggerEvent is null', () => {
+  describe('when prompted event is absent', () => {
+    it('renders nothing when promptedEvent is null', () => {
       const { container } = render(
-        <TriggerEventLink triggerEvent={null} currentEventId="note-1" />
+        <PromptedEventLink promptedEvent={null} currentEventId="note-1" />
       );
 
       expect(container).toBeEmptyDOMElement();
     });
 
-    it('renders nothing when triggerEvent is undefined', () => {
+    it('renders nothing when promptedEvent is undefined', () => {
       const { container } = render(
-        <TriggerEventLink triggerEvent={undefined} currentEventId="note-1" />
+        <PromptedEventLink promptedEvent={undefined} currentEventId="note-1" />
       );
 
       expect(container).toBeEmptyDOMElement();
@@ -62,10 +62,10 @@ describe('TriggerEventLink', () => {
   });
 
   describe('self-reference guard', () => {
-    it('renders nothing when trigger event points to itself', () => {
+    it('renders nothing when prompted event points to itself', () => {
       const { container } = render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'same-id', title: 'Should not show' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'same-id', title: 'Should not show' }}
           currentEventId="same-id"
         />
       );
@@ -77,8 +77,8 @@ describe('TriggerEventLink', () => {
   describe('edge cases', () => {
     it('handles empty title', () => {
       render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'parent-1', title: '' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'parent-1', title: '' }}
           currentEventId="child-1"
         />
       );
@@ -89,8 +89,8 @@ describe('TriggerEventLink', () => {
 
     it('handles special characters in title', () => {
       render(
-        <TriggerEventLink
-          triggerEvent={{ id: 'parent-1', title: 'Tom & Jerry\'s "Adventure"' }}
+        <PromptedEventLink
+          promptedEvent={{ id: 'parent-1', title: 'Tom & Jerry\'s "Adventure"' }}
           currentEventId="child-1"
         />
       );

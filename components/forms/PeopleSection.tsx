@@ -84,8 +84,8 @@ export default function PeopleSection({
   mode = 'inline',
   showTypeahead = true,
   showPhone = true,
-  label = 'Who else was part of this?',
-  emptyMessage = 'Add others who were there, told you this, or might remember more.',
+  label = 'Was anyone else there?',
+  emptyMessage = 'Adding people lets them contribute their own take on this story. Different angles, forgotten details, new memories sparked. More perspectives means a fuller picture for her kids.',
 }: Props) {
   // New person form state
   const [newName, setNewName] = useState('');
@@ -255,13 +255,14 @@ export default function PeopleSection({
   return (
     <div>
       <label className={formStyles.label}>{label}</label>
+      <p className={`${formStyles.hint} mb-3`}>{emptyMessage}</p>
       <p className={formStyles.hint}>
         Names are masked per note.{' '}
         <Link href="/identity" className="text-[#e07a5f] hover:text-white transition-colors">
           How identity works
         </Link>
       </p>
-      <div className="space-y-3">
+      <div className="space-y-3 mt-3">
         <div className="grid gap-2 sm:grid-cols-[1fr,auto,auto]">
           <div className="relative">
             <input
@@ -343,19 +344,19 @@ export default function PeopleSection({
           </select>
         </div>
 
-        {/* Phone input - shown when name is entered */}
-        {showPhone && newName.trim() && (
-          <div className="flex items-center gap-2">
+        {/* Phone input - always visible to encourage invites */}
+        {showPhone && (
+          <div>
             <input
               type="tel"
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
-              placeholder="Phone (optional - to invite them)"
-              className={`flex-1 ${formStyles.inputSmall}`}
+              placeholder="Phone number to invite them"
+              className={formStyles.inputSmall}
             />
-            <span className="text-xs text-white/50 whitespace-nowrap">
-              They can add their side
-            </span>
+            <p className="text-xs text-white/40 mt-1">
+              They&apos;ll get a text to add their own memories
+            </p>
           </div>
         )}
 

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
+import { RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 import { formStyles, subtleBackground } from '@/lib/styles';
 import { createClient } from '@/lib/supabase/client';
 
@@ -53,10 +54,13 @@ type IdentityData = {
 const VISIBILITY_OPTIONS = [
   {
     value: 'approved' as Visibility,
-    label: 'Full name',
-    preview: (name: string) => name || 'Sarah Mitchell',
+    label: 'Name',
+    preview: (name: string, relation?: string) => {
+      const namePart = name || 'Sarah Mitchell';
+      return relation ? `${namePart} · ${relation}` : namePart;
+    },
     icon: '○○○○',
-    description: 'Your name appears as written',
+    description: 'Shows your name (and relationship if provided)',
   },
   {
     value: 'blurred' as Visibility,
@@ -70,10 +74,10 @@ const VISIBILITY_OPTIONS = [
   },
   {
     value: 'anonymized' as Visibility,
-    label: 'Relationship only',
+    label: 'Relationship',
     preview: (_name: string, relation?: string) => relation ? `a ${relation}` : 'a cousin',
     icon: '○○',
-    description: 'Shows how you knew Val',
+    description: 'Hides your name; shows your relationship only',
   },
   {
     value: 'removed' as Visibility,
@@ -86,12 +90,29 @@ const VISIBILITY_OPTIONS = [
 ] as const;
 
 const VISIBILITY_LABELS: Record<Visibility, string> = {
-  approved: 'Full name',
+  approved: 'Name',
   blurred: 'Initials only',
-  anonymized: 'Relationship only',
+  anonymized: 'Relationship',
   removed: 'Hidden',
   pending: 'Not set',
 };
+
+const RELATIONSHIP_GROUPS = {
+  family: [
+    'parent',
+    'child',
+    'sibling',
+    'cousin',
+    'aunt_uncle',
+    'niece_nephew',
+    'grandparent',
+    'grandchild',
+    'in_law',
+    'spouse',
+  ],
+  social: ['friend', 'neighbor', 'coworker', 'classmate'],
+  other: ['acquaintance', 'other', 'unknown'],
+} as const;
 
 function formatYearLabel(
   year: number,
@@ -128,8 +149,14 @@ export default function SettingsPage() {
   const [displayNameSaving, setDisplayNameSaving] = useState(false);
   const [displayNameEditing, setDisplayNameEditing] = useState(false);
 
+  // Notes visibility UI state
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const [expandedAuthors, setExpandedAuthors] = useState<Set<string>>(new Set());
+  const [bulkSavingAuthorId, setBulkSavingAuthorId] = useState<string | null>(null);
+
   // Relationship form state
   const [relation, setRelation] = useState('');
+  const [customRelation, setCustomRelation] = useState('');
   const [relationSaving, setRelationSaving] = useState(false);
   const [relationError, setRelationError] = useState('');
   const [relationSuccess, setRelationSuccess] = useState('');
@@ -169,7 +196,11 @@ export default function SettingsPage() {
         setProfileError('Please complete your profile before updating settings.');
       } else {
         setProfile(data);
-        setRelation(data.relation ?? '');
+        const incomingRelation = data.relation ?? '';
+        setRelation(incomingRelation);
+        if (incomingRelation && !(incomingRelation in RELATIONSHIP_OPTIONS)) {
+          setCustomRelation(incomingRelation);
+        }
       }
 
       setProfileLoading(false);
@@ -388,6 +419,53 @@ export default function SettingsPage() {
     }
   };
 
+  const handleBulkAuthorVisibility = async (contributorId: string, value: Visibility) => {
+    if (bulkSavingAuthorId) return;
+    setBulkSavingAuthorId(contributorId);
+    setIdentityError('');
+    setIdentitySaved('');
+
+    try {
+      // Get all notes from this author
+      const authorNotes = identity?.notes.filter(
+        (n) => (n.event?.contributor_id || 'unknown') === contributorId
+      ) || [];
+
+      // Update each note sequentially
+      for (const note of authorNotes) {
+        const res = await fetch('/api/settings/identity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: 'note', reference_id: note.reference_id, visibility: value }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.error || 'Failed to update note visibility.');
+        }
+      }
+
+      setIdentitySaved(`Updated ${authorNotes.length} notes.`);
+      await loadIdentity({ silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update notes.';
+      setIdentityError(message);
+    } finally {
+      setBulkSavingAuthorId(null);
+    }
+  };
+
+  const toggleAuthorExpanded = (contributorId: string) => {
+    setExpandedAuthors((prev) => {
+      const next = new Set(prev);
+      if (next.has(contributorId)) {
+        next.delete(contributorId);
+      } else {
+        next.add(contributorId);
+      }
+      return next;
+    });
+  };
+
   const handleClaimIdentity = async () => {
     if (claimingIdentity) return;
     setClaimingIdentity(true);
@@ -487,8 +565,8 @@ export default function SettingsPage() {
           <div className="p-5 rounded-xl border border-white/10 bg-white/[0.02]">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-medium text-white/80 mb-1">Relationship</h2>
-                <p className="text-xs text-white/50">How you knew Val</p>
+                <h2 className="text-sm font-medium text-white/80 mb-1">Your relationship to Val</h2>
+                <p className="text-xs text-white/50">One line, so we label mentions correctly.</p>
               </div>
               {relationSuccess && <span className="text-xs text-green-400">{relationSuccess}</span>}
             </div>
@@ -496,18 +574,70 @@ export default function SettingsPage() {
             <form onSubmit={handleRelationSubmit} className="space-y-3 mt-4">
               <div className="space-y-2">
                 <label htmlFor="relation" className="text-xs text-white/60">
-                  Relationship to Val
+                  Relationship
                 </label>
-                <input
+                <select
                   id="relation"
-                  type="text"
-                  className={formStyles.inputSmall}
-                  placeholder="e.g., daughter, cousin, friend, bandmate"
-                  value={relation}
-                  onChange={(e) => setRelation(e.target.value)}
+                  className={formStyles.select}
+                  value={relation && relation in RELATIONSHIP_OPTIONS ? relation : '__custom'}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '__custom') {
+                      setRelation(customRelation || '');
+                      return;
+                    }
+                    setRelation(value);
+                  }}
                   disabled={profileLoading}
                   required
-                />
+                >
+                  <option value="" disabled>
+                    Select relationship
+                  </option>
+                  {customRelation ? (
+                    <optgroup label="Custom">
+                      <option value="__custom">{customRelation}</option>
+                    </optgroup>
+                  ) : (
+                    <option value="__custom">Other (type your own)</option>
+                  )}
+                  <optgroup label="Family">
+                    {RELATIONSHIP_GROUPS.family.map((key) => (
+                      <option key={key} value={key}>
+                        {RELATIONSHIP_OPTIONS[key]}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Social">
+                    {RELATIONSHIP_GROUPS.social.map((key) => (
+                      <option key={key} value={key}>
+                        {RELATIONSHIP_OPTIONS[key]}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Other">
+                    {RELATIONSHIP_GROUPS.other.map((key) => (
+                      <option key={key} value={key}>
+                        {RELATIONSHIP_OPTIONS[key]}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                {(customRelation || (!relation || !(relation in RELATIONSHIP_OPTIONS))) && (
+                  <input
+                    type="text"
+                    className={formStyles.inputSmall}
+                    placeholder="Type your relationship (optional)"
+                    value={customRelation}
+                    onChange={(e) => {
+                      setCustomRelation(e.target.value);
+                      setRelation(e.target.value);
+                    }}
+                    disabled={profileLoading}
+                  />
+                )}
+
                 {profileLoading && <p className="text-xs text-white/50">Loading your profile...</p>}
                 {profileError && <p className={formStyles.error}>{profileError}</p>}
               </div>
@@ -526,10 +656,8 @@ export default function SettingsPage() {
           <div className="p-5 rounded-xl border border-white/10 bg-white/[0.02]">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-medium text-white/80 mb-1">Identity visibility</h2>
-                <p className="text-xs text-white/50">
-                  How your name appears when other people mention you in notes.
-                </p>
+                <h2 className="text-sm font-medium text-white/80 mb-1">How your name shows</h2>
+                <p className="text-xs text-white/50">Choose a default; override specific notes.</p>
                 <Link
                   href="/identity"
                   className="text-xs text-[#e07a5f] hover:text-white transition-colors"
@@ -618,19 +746,12 @@ export default function SettingsPage() {
                     </button>
                   )}
                   <p className="text-xs text-white/50">
-                    This is how your name appears when you choose &ldquo;Full name&rdquo; visibility.
+                    Used when you pick &ldquo;Name.&rdquo;
                   </p>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/50">
-                      Default for all notes
-                    </p>
-                    <p className="text-xs text-white/40">
-                      Others&apos; notes only
-                    </p>
-                  </div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/50">Default in notes</p>
                   <div className="grid grid-cols-2 gap-2">
                     {VISIBILITY_OPTIONS.map((option) => {
                       const isSelected = identity?.default_visibility === option.value;
@@ -679,7 +800,7 @@ export default function SettingsPage() {
                     })}
                   </div>
                   <p className="text-xs text-white/50">
-                    You can override specific notes below.
+                    Pick your default above; change it for specific notes below.
                   </p>
                 </div>
 
@@ -711,9 +832,9 @@ export default function SettingsPage() {
                                 className={`${formStyles.select} text-sm`}
                               >
                                 <option value="pending">Use default</option>
-                                <option value="approved">Full name</option>
+                                <option value="approved">Name</option>
                                 <option value="blurred">Initials only</option>
-                                <option value="anonymized">Relationship only</option>
+                                <option value="anonymized">Relationship</option>
                                 <option value="removed">Hidden</option>
                               </select>
                             )}
@@ -724,76 +845,241 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <p className="text-xs uppercase tracking-[0.2em] text-white/50">
-                    Notes that mention you
+                    How your name shows in notes
                   </p>
                   {identity.notes.length === 0 ? (
                     <p className="text-xs text-white/50">
                       No notes mention you yet.
                     </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {identity.notes.map((note) => {
-                        if (!note.event) return null;
-                        const yearLabel = formatYearLabel(
-                          note.event.year,
-                          note.event.year_end,
-                          note.event.timing_certainty
-                        );
-                        const authorName = note.event.contributor?.name || 'Someone';
-                        const authorRelation = note.event.contributor?.relation || null;
-                        const overrideValue = note.visibility_override || 'pending';
-                        const currentLabel = VISIBILITY_LABELS[note.effective_visibility] || 'Default';
-                        return (
-                          <div
-                            key={note.reference_id}
-                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-3"
-                          >
-                            <div className="flex flex-col gap-3">
-                              <div>
-                                <p className="text-xs text-white/50">
-                                  {yearLabel} - {authorName}
-                                  {authorRelation ? ` (${authorRelation})` : ''}
-                                </p>
-                                <Link
-                                  href={`/memory/${note.event.id}`}
-                                  className="text-sm text-white/80 hover:text-white transition-colors"
-                                >
-                                  {note.event.title}
-                                </Link>
-                                <p className="text-xs text-white/50 mt-1">
-                                  Current: {currentLabel}
-                                </p>
-                              </div>
-                              <div className="space-y-2">
-                                <label className="text-xs text-white/50">
-                                  Override for this note
-                                </label>
-                                <select
-                                  value={overrideValue}
-                                  onChange={(e) => handleNoteVisibility(note.reference_id, e.target.value as Visibility)}
-                                  disabled={noteSavingId === note.reference_id}
-                                  className={`${formStyles.select} text-sm`}
-                                >
-                                  <option value="pending">
-                                    Use default ({VISIBILITY_LABELS[identity.default_visibility]})
-                                  </option>
-                                  <option value="approved">Full name</option>
-                                  <option value="blurred">Initials only</option>
-                                  <option value="anonymized">Relationship only</option>
-                                  <option value="removed">Hidden</option>
-                                </select>
-                                {noteSavingId === note.reference_id && (
-                                  <p className="text-xs text-white/50">Saving...</p>
-                                )}
-                              </div>
-                            </div>
+                  ) : (() => {
+                    // Calculate stats
+                    const totalNotes = identity.notes.filter((n) => n.event).length;
+                    const exceptions = identity.notes.filter(
+                      (n) => n.event && n.visibility_override && n.visibility_override !== 'pending'
+                    );
+                    const defaultCount = totalNotes - exceptions.length;
+
+                    // Group exceptions by visibility
+                    const exceptionsByVisibility = exceptions.reduce((acc, note) => {
+                      const vis = note.visibility_override as Visibility;
+                      if (!acc[vis]) acc[vis] = [];
+                      acc[vis].push(note);
+                      return acc;
+                    }, {} as Record<Visibility, typeof exceptions>);
+
+                    // Group all notes by author
+                    const notesByAuthor = identity.notes
+                      .filter((n) => n.event)
+                      .reduce((acc, note) => {
+                        const authorId = note.event?.contributor_id || 'unknown';
+                        if (!acc[authorId]) {
+                          acc[authorId] = {
+                            name: note.event?.contributor?.name || 'Someone',
+                            relation: note.event?.contributor?.relation || null,
+                            notes: [],
+                          };
+                        }
+                        acc[authorId].notes.push(note);
+                        return acc;
+                      }, {} as Record<string, { name: string; relation: string | null; notes: typeof identity.notes }>);
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Summary */}
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                          <p className="text-sm text-white/80">
+                            You appear in <span className="text-white font-medium">{totalNotes}</span> note{totalNotes !== 1 ? 's' : ''}.{' '}
+                            {defaultCount > 0 && (
+                              <span className="text-white/60">
+                                {defaultCount} use{defaultCount === 1 ? 's' : ''} your default ({VISIBILITY_LABELS[identity.default_visibility]})
+                              </span>
+                            )}
+                          </p>
+                        </div>
+
+                        {/* Exceptions grouped by visibility */}
+                        {exceptions.length > 0 && (
+                          <div className="space-y-3">
+                            <p className="text-xs text-white/50 uppercase tracking-wide">
+                              {exceptions.length} exception{exceptions.length !== 1 ? 's' : ''}
+                            </p>
+                            {(['approved', 'blurred', 'anonymized', 'removed'] as Visibility[]).map((vis) => {
+                              const notes = exceptionsByVisibility[vis];
+                              if (!notes || notes.length === 0) return null;
+                              return (
+                                <div key={vis} className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+                                  <div className="px-4 py-2 border-b border-white/10 bg-white/5">
+                                    <p className="text-xs text-white/60">
+                                      Showing as <span className="text-white/80">{VISIBILITY_LABELS[vis]}</span> ({notes.length})
+                                    </p>
+                                  </div>
+                                  <div className="divide-y divide-white/5">
+                                    {notes.map((note) => {
+                                      if (!note.event) return null;
+                                      const yearLabel = formatYearLabel(
+                                        note.event.year,
+                                        note.event.year_end,
+                                        note.event.timing_certainty
+                                      );
+                                      const authorName = note.event.contributor?.name || 'Someone';
+                                      return (
+                                        <div key={note.reference_id} className="px-4 py-2 flex items-center justify-between gap-3">
+                                          <div className="min-w-0 flex-1">
+                                            <Link
+                                              href={`/memory/${note.event.id}`}
+                                              className="text-sm text-white/80 hover:text-white transition-colors truncate block"
+                                            >
+                                              {yearLabel} &middot; {note.event.title}
+                                            </Link>
+                                            <p className="text-xs text-white/40">{authorName}</p>
+                                          </div>
+                                          <select
+                                            data-reference-id={note.reference_id}
+                                            value={note.visibility_override || 'pending'}
+                                            onChange={(e) => handleNoteVisibility(note.reference_id, e.target.value as Visibility)}
+                                            disabled={noteSavingId === note.reference_id}
+                                            className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white/70"
+                                          >
+                                            <option value="pending">Default</option>
+                                            <option value="approved">Name</option>
+                                            <option value="blurred">Initials only</option>
+                                            <option value="anonymized">Relationship</option>
+                                            <option value="removed">Hidden</option>
+                                          </select>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
+
+                        {/* Toggle to show all notes */}
+                        <button
+                          type="button"
+                          onClick={() => setShowAllNotes(!showAllNotes)}
+                          className="w-full text-left px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-between"
+                        >
+                          <span className="text-sm text-white/70">
+                            {showAllNotes ? 'Hide all notes' : 'Show all notes by author'}
+                          </span>
+                          <svg
+                            className={`w-4 h-4 text-white/50 transition-transform ${showAllNotes ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+
+                        {/* All notes grouped by author */}
+                        {showAllNotes && (
+                          <div className="space-y-3">
+                            {Object.entries(notesByAuthor).map(([authorId, author]) => {
+                              const isExpanded = expandedAuthors.has(authorId);
+                              const isSaving = bulkSavingAuthorId === authorId;
+                              return (
+                                <div key={authorId} className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+                                  {/* Author header */}
+                                  <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-white/10 bg-white/5">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleAuthorExpanded(authorId)}
+                                      data-author-id={authorId}
+                                      className="flex items-center gap-2 text-left flex-1 min-w-0"
+                                    >
+                                      <svg
+                                        className={`w-3.5 h-3.5 text-white/50 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                      </svg>
+                                      <div className="min-w-0">
+                                        <p className="text-sm text-white/80 truncate">
+                                          {author.name}
+                                          {author.relation && <span className="text-white/50"> ({author.relation})</span>}
+                                        </p>
+                                        <p className="text-xs text-white/40">{author.notes.length} note{author.notes.length !== 1 ? 's' : ''}</p>
+                                      </div>
+                                    </button>
+                                    <select
+                                      onChange={(e) => {
+                                        if (e.target.value) {
+                                          handleBulkAuthorVisibility(authorId, e.target.value as Visibility);
+                                          e.target.value = '';
+                                        }
+                                      }}
+                                      disabled={isSaving}
+                                      className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white/70"
+                                      value=""
+                                    >
+                                      <option value="">Set all...</option>
+                                      <option value="pending">Default</option>
+                                      <option value="approved">Name</option>
+                                      <option value="blurred">Initials</option>
+                                      <option value="anonymized">Relationship</option>
+                                      <option value="removed">Hidden</option>
+                                    </select>
+                                  </div>
+
+                                  {/* Author's notes (when expanded) */}
+                                  {isExpanded && (
+                                    <div className="divide-y divide-white/5">
+                                      {author.notes.map((note) => {
+                                        if (!note.event) return null;
+                                        const yearLabel = formatYearLabel(
+                                          note.event.year,
+                                          note.event.year_end,
+                                          note.event.timing_certainty
+                                        );
+                                        const overrideValue = note.visibility_override || 'pending';
+                                        return (
+                                          <div key={note.reference_id} className="px-4 py-2 flex items-center justify-between gap-3">
+                                            <Link
+                                              href={`/memory/${note.event.id}`}
+                                              className="text-sm text-white/70 hover:text-white transition-colors truncate flex-1 min-w-0"
+                                            >
+                                              {yearLabel} &middot; {note.event.title}
+                                            </Link>
+                                            <select
+                                              data-reference-id={note.reference_id}
+                                              value={overrideValue}
+                                              onChange={(e) => handleNoteVisibility(note.reference_id, e.target.value as Visibility)}
+                                              disabled={noteSavingId === note.reference_id || isSaving}
+                                              className="text-xs px-2 py-1 rounded-lg bg-white/10 border border-white/10 text-white/70"
+                                            >
+                                              <option value="pending">Default</option>
+                                              <option value="approved">Name</option>
+                                              <option value="blurred">Initials</option>
+                                              <option value="anonymized">Relationship</option>
+                                              <option value="removed">Hidden</option>
+                                            </select>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {isSaving && (
+                                    <div className="px-4 py-2 bg-white/5 border-t border-white/10">
+                                      <p className="text-xs text-white/50">Updating all notes...</p>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

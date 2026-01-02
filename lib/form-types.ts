@@ -12,6 +12,7 @@ export type ProvenanceType = 'firsthand' | 'secondhand' | 'from_references' | 'p
 export type ProvenanceData = {
   type: ProvenanceType;
   toldByName?: string;        // For 'secondhand' - who told you
+  toldByRelationship?: string | null; // For 'secondhand' - their relationship to Val
   referenceName?: string;     // For 'from_references' - what record/document
   referenceUrl?: string;      // For 'from_references' - link to record
 };

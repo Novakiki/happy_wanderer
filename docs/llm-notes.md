@@ -35,6 +35,10 @@
 - Client anon: uses `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - Project (prod): `https://qftgvihotgedvovzwczo.supabase.co`
 
+## Maintenance
+- After E2E runs, use `lib/cleanup.sql` to prune test artifacts and expired edit tokens.
+- See `docs/maintenance.md` for the full checklist.
+
 ## Content rules (short)
 - Memory: firsthand moment/scene about Val.
 - Milestone: dated life event/transition.
@@ -54,4 +58,5 @@
 
 ## See also
 - `docs/routes.md` (auth/public, labels)
+- `docs/maintenance.md` (cleanup + migrations checklist)
 - `AGENTS.md` (purpose, tone, metaphor, guardrails)

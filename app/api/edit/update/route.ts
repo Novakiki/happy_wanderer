@@ -11,8 +11,7 @@ import { buildTimingRawText } from '@/lib/form-validation';
 import { buildInviteData } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
 import { lintNote } from '@/lib/note-lint';
-import { detectAndCreatePendingReferences } from '@/lib/pending-names';
-import { recordEventVersion } from '@/lib/event-versions';
+import { detectAndStoreMentions } from '@/lib/pending-names';
 import {
   normalizeLinkReferenceInput,
   normalizeReferenceRole,
@@ -285,8 +284,6 @@ export async function POST(request: Request) {
       throw updateError;
     }
 
-    await recordEventVersion(admin, event_id, tokenRow.contributor_id);
-
     if (hasLinkPayload || hasPersonPayload) {
       const { data: existingRefs, error: existingError } = await admin
         .from('event_references')
@@ -546,8 +543,8 @@ export async function POST(request: Request) {
       .update(tokenUpdate)
       .eq('id', tokenRow.id);
 
-    // Detect names in content and create pending references for those without consent
-    const nameResult = await detectAndCreatePendingReferences(
+    // Detect names in content and store mention candidates (no people created)
+    const nameResult = await detectAndStoreMentions(
       rawContent,
       event_id,
       admin,
@@ -556,7 +553,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      pendingNames: nameResult.pendingNames,
+      mentionCandidates: nameResult.mentions,
       lintWarnings,
     });
   } catch (error) {

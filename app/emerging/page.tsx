@@ -27,12 +27,12 @@ export default function EmergingPage() {
           </p>
 
           <p>
-            Restoring that context can allow reconnection to emerge—not only around one
+            Restoring that context can allow reconnection to emerge&mdash;not only around one
             person, but across siblings, cousins, and extended family who shared a life together.
           </p>
 
           <p className="text-white/50 italic pt-4">
-            In this sense, connection is the inheritance.
+            In this sense, connection is her legacy.
           </p>
         </div>
       </div>
