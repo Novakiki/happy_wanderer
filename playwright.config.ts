@@ -30,7 +30,7 @@ const loadEnvFile = (filename: string) => {
 loadEnvFile('.env.e2e');
 loadEnvFile('.env.local');
 
-const shouldStartServer = process.env.E2E_START_SERVER === 'true';
+const shouldStartServer = process.env.E2E_START_SERVER !== 'false';
 
 export default defineConfig({
   testDir: './tests/e2e',

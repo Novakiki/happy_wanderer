@@ -767,6 +767,7 @@ export default function SettingsPage() {
                           type="button"
                           disabled={identitySaving}
                           onClick={() => handleDefaultVisibility(option.value)}
+                          data-testid={`identity-default-${option.value}`}
                           className={`relative text-left rounded-xl border px-3 py-3 text-sm transition-all ${
                             isSelected
                               ? 'border-[#e07a5f]/50 bg-[#e07a5f]/10'
@@ -937,6 +938,7 @@ export default function SettingsPage() {
                                           </div>
                                           <select
                                             data-reference-id={note.reference_id}
+                                            data-testid={`note-visibility-${note.reference_id}`}
                                             value={note.visibility_override || 'pending'}
                                             onChange={(e) => handleNoteVisibility(note.reference_id, e.target.value as Visibility)}
                                             disabled={noteSavingId === note.reference_id}
@@ -962,6 +964,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={() => setShowAllNotes(!showAllNotes)}
+                          data-testid="identity-notes-toggle"
                           className="w-full text-left px-4 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-between"
                         >
                           <span className="text-sm text-white/70">
@@ -991,6 +994,7 @@ export default function SettingsPage() {
                                       type="button"
                                       onClick={() => toggleAuthorExpanded(authorId)}
                                       data-author-id={authorId}
+                                      data-testid={`identity-author-${authorId}`}
                                       className="flex items-center gap-2 text-left flex-1 min-w-0"
                                     >
                                       <svg
@@ -1050,6 +1054,7 @@ export default function SettingsPage() {
                                             </Link>
                                             <select
                                               data-reference-id={note.reference_id}
+                                              data-testid={`note-visibility-${note.reference_id}`}
                                               value={overrideValue}
                                               onChange={(e) => handleNoteVisibility(note.reference_id, e.target.value as Visibility)}
                                               disabled={noteSavingId === note.reference_id || isSaving}

@@ -6,7 +6,6 @@ import { getLintSuggestion } from '@/lib/lint-copy';
 import type { LintWarning } from '@/lib/note-lint';
 import RichTextEditor from '@/components/RichTextEditor';
 import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
-import { DisclosureSection } from './DisclosureSection';
 import {
   getContentLabel,
   CONTENT_SECTION,
@@ -38,11 +37,13 @@ type Props = {
   showWhyMeaningful: boolean;
   onToggleWhyMeaningful: (open: boolean) => void;
 
+
   // Options
   showTitle?: boolean;
   showPreview?: boolean;
   titleRequired?: boolean;
   contentRequired?: boolean;
+  testIdPrefix?: string;
 };
 
 /**
@@ -67,21 +68,28 @@ export default function NoteContentSection({
   showPreview = false,
   titleRequired = true,
   contentRequired = true,
+  testIdPrefix,
 }: Props) {
   const whyMeaningfulRef = useRef<HTMLDivElement | null>(null);
 
   const contentLabel = getContentLabel(entryType);
+  const isSynchronicity = entryType === 'origin';
+
+  // Entry-type specific copy
+  const contentHint = isSynchronicity ? CONTENT_SECTION.hintOrigin : CONTENT_SECTION.hint;
+  const contentPlaceholder = isSynchronicity ? CONTENT_SECTION.placeholderOrigin : CONTENT_SECTION.placeholder;
+  const whyLabel = isSynchronicity ? WHY_IT_MATTERS.labelOrigin : WHY_IT_MATTERS.label;
+  const whyAddLabel = isSynchronicity ? WHY_IT_MATTERS.addLabelOrigin : WHY_IT_MATTERS.addLabel;
+  const whyHint = isSynchronicity ? WHY_IT_MATTERS.hintOrigin : WHY_IT_MATTERS.hint;
+  const whyPlaceholder = isSynchronicity ? WHY_IT_MATTERS.placeholderOrigin : WHY_IT_MATTERS.placeholder;
 
   const lintTone = (severity?: LintWarning['severity']) => ({
     message: severity === 'soft' ? formStyles.guidanceWarningMessageSoft : formStyles.guidanceWarningMessage,
     suggestion: severity === 'soft' ? formStyles.guidanceSuggestionSoft : formStyles.guidanceSuggestion,
   });
 
-  const openWhyMeaningful = () => {
-    onToggleWhyMeaningful(true);
-    setTimeout(() => {
-      whyMeaningfulRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
+  const scrollToWhyMeaningful = () => {
+    whyMeaningfulRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   return (
@@ -99,6 +107,7 @@ export default function NoteContentSection({
             onChange={(e) => onTitleChange(e.target.value)}
             placeholder={TITLE_FIELD.placeholder}
             className={formStyles.input}
+            data-testid={testIdPrefix ? `${testIdPrefix}-note-title` : undefined}
             required={titleRequired}
           />
         </div>
@@ -110,12 +119,13 @@ export default function NoteContentSection({
           {contentLabel}
           {contentRequired && <span className={formStyles.required}> *</span>}
         </label>
-        <p className={`${formStyles.hint} mb-2`}>{CONTENT_SECTION.hint}</p>
+        <p className={`${formStyles.hint} mb-2`}>{contentHint}</p>
         <RichTextEditor
           value={content}
           onChange={onContentChange}
-          placeholder={CONTENT_SECTION.placeholder}
+          placeholder={contentPlaceholder}
           minHeight="120px"
+          dataTestId={testIdPrefix ? `${testIdPrefix}-note-content` : undefined}
         />
 
         {/* Lint warnings / Writing guidance */}
@@ -159,7 +169,7 @@ export default function NoteContentSection({
                     {warning.code === 'MEANING_ASSERTION' && (
                       <button
                         type="button"
-                        onClick={openWhyMeaningful}
+                        onClick={scrollToWhyMeaningful}
                         className={formStyles.guidanceAction}
                       >
                         {WRITING_GUIDANCE.meaningAssertionAction}
@@ -189,27 +199,22 @@ export default function NoteContentSection({
         </div>
       )}
 
-      {/* Why it matters to you */}
+      {/* Why it matters / The story behind it */}
       <div ref={whyMeaningfulRef}>
-        <DisclosureSection
-          label={WHY_IT_MATTERS.label}
-          addLabel={WHY_IT_MATTERS.addLabel}
-          isOpen={showWhyMeaningful}
-          onToggle={onToggleWhyMeaningful}
-          hasContent={Boolean(whyIncluded)}
-          onClear={() => onWhyIncludedChange('')}
-          variant="inset"
-        >
-          <p className="text-xs text-white/40 mb-2 italic">
-            {WHY_IT_MATTERS.hint}
-          </p>
+        <div>
+          <label className={formStyles.label}>
+            {whyLabel}
+            {isSynchronicity && <span className={formStyles.required}> *</span>}
+          </label>
+          <p className={`${formStyles.hint} mb-2`}>{whyHint}</p>
           <RichTextEditor
             value={whyIncluded}
             onChange={onWhyIncludedChange}
-            placeholder={WHY_IT_MATTERS.placeholder}
+            placeholder={whyPlaceholder}
             minHeight="80px"
+            dataTestId={testIdPrefix ? `${testIdPrefix}-note-why` : undefined}
           />
-        </DisclosureSection>
+        </div>
       </div>
     </div>
   );

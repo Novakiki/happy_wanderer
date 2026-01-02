@@ -23,11 +23,12 @@ import {
   ENTRY_TYPE_DESCRIPTIONS,
   ENTRY_TYPE_LABELS,
   LIFE_STAGE_YEAR_RANGES,
+  PERSON_ROLE_LABELS,
   THREAD_RELATIONSHIP_DESCRIPTIONS,
   THREAD_RELATIONSHIP_LABELS,
 } from '@/lib/terminology';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TimingMode } from './forms';
 import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection, TimingModeSelector } from './forms';
 
@@ -111,18 +112,26 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
   // Show optional timing details (location, timing note)
   const [showTimingDetails, setShowTimingDetails] = useState(false);
   const [showLocation, setShowLocation] = useState(false);
-  const [showWhyMeaningful, setShowWhyMeaningful] = useState(false);
   const [showGuidanceWhy, setShowGuidanceWhy] = useState(false);
+  const [showWhyMeaningful, setShowWhyMeaningful] = useState(true);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState('');
 
-  const [llmReviewMessage, setLlmReviewMessage] = useState<string | null>(null);
+  const [, setLlmReviewMessage] = useState<string | null>(null);
   const [llmReviewReasons, setLlmReviewReasons] = useState<string[]>([]);
   const [lintWarnings, setLintWarnings] = useState<LintWarning[]>([]);
   const lintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lintAbortRef = useRef<AbortController | null>(null);
+  const peopleSectionRef = useRef<HTMLDivElement>(null);
+  const [peoplePulse, setPeoplePulse] = useState(false);
+
+  const scrollToPeopleSection = useCallback(() => {
+    peopleSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPeoplePulse(true);
+    setTimeout(() => setPeoplePulse(false), 2000);
+  }, []);
 
   useEffect(() => {
     if (isSubmitted) return;
@@ -251,6 +260,11 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setError('Please add at least one reference (external link) for a synchronicity.');
         return;
       }
+      // Require "the story behind it" for synchronicities
+      if (!formData.why_included?.trim()) {
+        setError('Please add the story behind this synchronicity—how you connected the dots.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -265,11 +279,11 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
       if (provenance.type === 'secondhand' && provenance.toldByName?.trim()) {
         const toldBy = provenance.toldByName.trim();
         const toldByRelationship = provenance.toldByRelationship?.trim();
+        const toldByPhone = provenance.toldByPhone?.trim();
         heardFrom = {
           name: toldBy,
           relationship: toldByRelationship || '',
-          email: '',
-          shouldInvite: false,
+          phone: toldByPhone || '',
         };
       }
 
@@ -466,7 +480,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             setTimingMode(null);
             setShowTimingDetails(false);
             setShowLocation(false);
-            setShowWhyMeaningful(false);
             setThreadRelationship('perspective');
             setThreadNote('');
           }}
@@ -525,7 +538,6 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             className={formStyles.select}
           >
             <option value="memory">{ENTRY_TYPE_LABELS.memory}</option>
-            <option value="milestone">{ENTRY_TYPE_LABELS.milestone}</option>
             <option value="origin">{ENTRY_TYPE_LABELS.origin}</option>
           </select>
           <p className={formStyles.hint}>
@@ -551,7 +563,17 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
             onToggleGuidanceWhy={() => setShowGuidanceWhy(!showGuidanceWhy)}
             showWhyMeaningful={showWhyMeaningful}
             onToggleWhyMeaningful={setShowWhyMeaningful}
+            testIdPrefix="share"
           />
+
+          {/* Provenance - right after content for both memories and synchronicities */}
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <ProvenanceSection
+              value={provenance}
+              onChange={setProvenance}
+              entryType={formData.entry_type as EntryType}
+            />
+          </div>
 
           {/* References - sources that support this note */}
           <div className="mt-6 pt-6 border-t border-white/10">
@@ -709,22 +731,23 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           </div>
         )}
 
-        {/* THE CHAIN - provenance only */}
-        <div className={formStyles.section}>
-          <p className={formStyles.sectionLabel}>The Chain</p>
-          <p className={`${formStyles.hint} mb-4`}>These fields help keep memories connected without turning them into a single official story.</p>
-
-          <ProvenanceSection
-            value={provenance}
-            onChange={setProvenance}
-            required
-          />
-        </div>
 
         {/* PEOPLE - show for memories and milestones */}
         {(formData.entry_type === 'memory' || formData.entry_type === 'milestone') && (
-          <div className={formStyles.section}>
-            <p className={formStyles.sectionLabel}>People</p>
+          <div
+            ref={peopleSectionRef}
+            className={`${formStyles.section} border bg-white/[0.05] transition-all duration-300 ${
+              peoplePulse
+                ? 'border-[#e07a5f] shadow-[0_0_20px_-5px_rgba(224,122,95,0.5)] animate-pulse-subtle'
+                : llmReviewReasons.length > 0
+                  ? 'border-[#e07a5f]/60'
+                  : 'border-[#e07a5f]/40'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className={`${formStyles.sectionLabel} text-[#e07a5f]`}>People</p>
+              <span className="text-xs text-white/60">Add & invite others here</span>
+            </div>
             <PeopleSection
               value={personRefs}
               onChange={setPersonRefs}
@@ -738,22 +761,88 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           <p className="text-sm font-medium text-white mb-2">
             Every note is reviewed before it goes live
           </p>
-          <p className="text-sm text-white/50">
-            We look for private info that shouldn&rsquo;t be public and flag anything that needs a second look. We will let you know if a revision is needed.
-          </p>
-          {llmReviewMessage && (
-            <p className="text-sm text-white/70 mt-3">
-              {llmReviewMessage}
+          <div className="mt-3 pt-3 border-t border-white/10 text-white/60 space-y-3">
+            <p className="text-sm">
+              We look for private info that shouldn&rsquo;t be public and flag anything that needs a second look. We will let you know if a revision is needed.
             </p>
-          )}
-          {llmReviewReasons.length > 0 && (
-            <ul className="list-disc list-inside text-sm text-white/70 mt-2">
-              {llmReviewReasons.map((r, idx) => (
-                <li key={idx}>{r}</li>
-              ))}
-            </ul>
-          )}
+            {llmReviewReasons.length > 0 && (
+              <div className="text-sm space-y-3 p-4 rounded-xl border border-[#e07a5f]/40 bg-[#e07a5f]/10 text-white/80">
+                <p className="font-medium text-white">Our review blocked submission. Please address the items below.</p>
+                {llmReviewReasons.map((r, idx) => {
+                  const needsConsent = r.toLowerCase().includes('consent') || r.toLowerCase().includes('named person');
+                  const suggestion = needsConsent
+                    ? 'Remove the name for now—use "someone" or no name. Best next step: add them in People and invite them so they can choose how to appear.'
+                    : null;
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="font-medium">{r}</div>
+                      {suggestion && <div className="text-xs text-white/70">{suggestion}</div>}
+                      {needsConsent && (
+                        <button
+                          type="button"
+                          onClick={scrollToPeopleSection}
+                          className="mt-2 text-[#e07a5f] text-sm underline underline-offset-4 hover:text-[#e07a5f]/80 transition-colors"
+                        >
+                          Go to People section &uarr;
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Invitation summary - consolidated view of all invites */}
+        {(() => {
+          const pendingInvites: { name: string; role: string; source: 'provenance' | 'people' }[] = [];
+
+          // From provenance (someone told me)
+          if (provenance.type === 'secondhand' && provenance.toldByPhone?.trim() && provenance.toldByName?.trim()) {
+            pendingInvites.push({
+              name: provenance.toldByName.trim(),
+              role: 'told you this story',
+              source: 'provenance',
+            });
+          }
+
+          // From People section
+          personRefs.forEach((person) => {
+            if (person.phone?.trim() && person.name?.trim()) {
+              const roleLabel = PERSON_ROLE_LABELS[person.role as keyof typeof PERSON_ROLE_LABELS] || 'witness';
+              pendingInvites.push({
+                name: person.name.trim(),
+                role: roleLabel.toLowerCase(),
+                source: 'people',
+              });
+            }
+          });
+
+          if (pendingInvites.length === 0) return null;
+
+          return (
+            <div className="p-4 rounded-xl border border-[#e07a5f]/30 bg-[#e07a5f]/5">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">📨</span>
+                <span className="text-sm font-medium text-white">
+                  Inviting {pendingInvites.length} {pendingInvites.length === 1 ? 'person' : 'people'}
+                </span>
+              </div>
+              <ul className="space-y-1">
+                {pendingInvites.map((invite, idx) => (
+                  <li key={`${invite.source}-${idx}`} className="text-sm text-white/70">
+                    <span className="text-white">{invite.name}</span>
+                    <span className="text-white/50"> ({invite.role})</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-white/40 mt-3">
+                They&apos;ll get a text to add their own memories after you submit.
+              </p>
+            </div>
+          );
+        })()}
 
         {error && (
           <p className={formStyles.error}>{error}</p>
@@ -763,6 +852,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
           type="submit"
           disabled={isSubmitting || !hasContent(formData.content)}
           className={formStyles.buttonPrimaryFull}
+          data-testid="share-submit"
         >
           {isSubmitting ? 'Adding...' : 'Add This Memory'}
         </button>

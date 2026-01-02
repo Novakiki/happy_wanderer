@@ -159,6 +159,7 @@ export default function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
           className={formStyles.input}
+          data-testid="login-email"
           autoComplete="email"
           suppressHydrationWarning
           required
@@ -188,6 +189,7 @@ export default function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Your password"
             className={formStyles.input}
+            data-testid="login-password"
             autoComplete="current-password"
             suppressHydrationWarning
             required
@@ -201,6 +203,7 @@ export default function LoginForm() {
         type="submit"
         disabled={isSubmitting || !email || (method === 'password' && !password)}
         className={formStyles.buttonPrimaryFull}
+        data-testid="login-submit"
       >
         {isSubmitting ? 'Signing in...' : method === 'password' ? 'Sign in' : 'Send magic link'}
       </button>

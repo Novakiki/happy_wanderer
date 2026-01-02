@@ -411,6 +411,7 @@ export default async function MemoryPage({
           <div
             className="mt-8 text-lg sm:text-xl text-white/80 leading-relaxed prose prose-lg prose-invert max-w-none [&>p:first-child]:mt-0"
             dangerouslySetInnerHTML={{ __html: displayText }}
+            data-testid="memory-content"
           />
         ) : (
           <p className="mt-8 text-white/50 italic">

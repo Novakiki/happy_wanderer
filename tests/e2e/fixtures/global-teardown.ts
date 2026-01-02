@@ -1,31 +1,26 @@
-import { createClient } from '@supabase/supabase-js';
 import { clearFixtures, readFixtures } from './fixture-store';
 
-type AdminClient = ReturnType<typeof createClient>;
+const fixtureEnabled = process.env.E2E_FIXTURE_ENABLED === 'true';
+const fixtureKey = process.env.E2E_FIXTURE_KEY;
+const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:3000';
 
-async function cleanupNotes(admin: AdminClient, noteIds: string[]) {
-  if (noteIds.length === 0) return;
-  await admin.from('timeline_events').delete().in('id', noteIds);
+async function cleanupViaApi(noteIds: string[]) {
+  if (!fixtureEnabled || !fixtureKey || noteIds.length === 0) return;
+
+  await fetch(`${baseUrl}/api/test/fixtures/cleanup`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-e2e-fixture-key': fixtureKey,
+    },
+    body: JSON.stringify({ noteIds }),
+  });
 }
 
 export default async function globalTeardown() {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    clearFixtures();
-    return;
-  }
-
   const fixtures = readFixtures();
-  const admin = createClient(supabaseUrl, supabaseServiceKey);
+  const noteIds = fixtures.identityNotes?.map((note) => note.id) ?? [];
 
-  if (fixtures.identityNotes && fixtures.identityNotes.length > 0) {
-    await cleanupNotes(
-      admin,
-      fixtures.identityNotes.map((note) => note.id)
-    );
-  }
-
+  await cleanupViaApi(noteIds);
   clearFixtures();
 }

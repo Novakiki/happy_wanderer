@@ -12,9 +12,17 @@ type Props = {
   placeholder?: string;
   className?: string;
   minHeight?: string;
+  dataTestId?: string;
 };
 
-export default function RichTextEditor({ value, onChange, placeholder, className, minHeight = '100px' }: Props) {
+export default function RichTextEditor({
+  value,
+  onChange,
+  placeholder,
+  className,
+  minHeight = '100px',
+  dataTestId,
+}: Props) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -42,6 +50,7 @@ export default function RichTextEditor({ value, onChange, placeholder, className
       attributes: {
         class: `prose prose-invert prose-sm max-w-none focus:outline-none`,
         style: `min-height: ${minHeight}`,
+        ...(dataTestId ? { 'data-testid': dataTestId } : {}),
       },
     },
     onUpdate: ({ editor }) => {

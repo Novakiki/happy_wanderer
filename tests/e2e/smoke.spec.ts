@@ -1,6 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { readFixtures } from './fixtures/fixture-store';
+import { login } from './pages/auth';
+import { openMemory, expectMemoryContentHas } from './pages/memory';
+import { fillNoteContent, fillNoteTitle, submitNote } from './pages/share';
+import { openSettings, setDefaultVisibility, noteVisibilitySelect, toggleAllNotes, authorToggle } from './pages/settings';
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
@@ -11,36 +15,11 @@ const supabaseAdmin = supabaseUrl && supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey)
   : null;
 
-const VIS_LABELS: Record<string, string> = {
-  approved: 'Name',
-  blurred: 'Initials only',
-  anonymized: 'Relationship',
-  removed: 'Hidden',
-  pending: 'Default',
-};
-
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const loadFixtures = () => readFixtures();
 
 test.describe('Smoke checks', () => {
   test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
-
-  const memoryEditorPlaceholder = 'Share a story, a moment, or a note...';
-
-  const login = async (page: Page) => {
-    await page.goto('/auth/login');
-    await page.getByLabel('Email').fill(email as string);
-    await page.getByLabel('Password').fill(password as string);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await page.waitForURL('**/score');
-  };
-
-  const fillRichText = async (page: Page, placeholder: string, text: string) => {
-    const editor = page.locator(`[data-placeholder="${placeholder}"]`);
-    await expect(editor).toBeVisible();
-    await editor.click();
-    await editor.fill(text);
-  };
 
   const requestEditToken = async (page: Page) => {
     const response = await page.request.post('/api/edit/request', {
@@ -166,13 +145,13 @@ test.describe('Smoke checks', () => {
   });
 
   test('score loads', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
     await page.goto('/score');
     await expect(page.getByText('Valerie Park Anderson', { exact: true })).toBeVisible();
   });
 
   test('memory loads', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
 
     let noteId: string | null = noteIdOverride || null;
 
@@ -201,24 +180,21 @@ test.describe('Smoke checks', () => {
   });
 
   test('chat loads', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
     await page.goto('/chat');
     await expect(page.getByRole('heading', { name: 'Chat with her patterns' })).toBeVisible();
   });
 
   test('add note flow', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
     await page.goto('/share');
 
     const title = `E2E Memory ${Date.now()}`;
-    await page.getByPlaceholder('A short title for this note...').fill(title);
-    await fillRichText(page, memoryEditorPlaceholder, 'In 1998 there was music and laughter in the kitchen.');
+    await fillNoteTitle(page, title);
+    await fillNoteContent(page, 'In 1998 there was music and laughter in the kitchen.');
 
     await page.getByRole('button', { name: /Around a year/i }).click();
     await page.getByPlaceholder('Year, e.g. 1996').fill('1998');
-
-    const submitButton = page.getByRole('button', { name: 'Add This Memory' });
-    await expect(submitButton).toBeEnabled();
 
     let noteId: string | null = null;
 
@@ -227,7 +203,7 @@ test.describe('Smoke checks', () => {
         page.waitForResponse((resp) =>
           resp.url().includes('/api/memories') && resp.request().method() === 'POST'
         ),
-        submitButton.click(),
+        submitNote(page),
       ]);
 
       const payload = await response.json().catch(() => ({}));
@@ -251,7 +227,7 @@ test.describe('Smoke checks', () => {
   });
 
   test('identity default persists', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
 
     const identity = await loadIdentity(page);
     if (!identity?.person) {
@@ -261,20 +237,19 @@ test.describe('Smoke checks', () => {
     const current = identity.default_visibility as string;
     const next = current === 'blurred' ? 'approved' : 'blurred';
 
-    await page.goto('/settings');
-    await page.getByRole('button', { name: VIS_LABELS[next] }).first().click();
-    await expect(page.getByText('Default visibility updated.')).toBeVisible();
+    await openSettings(page);
+    await setDefaultVisibility(page, next as 'approved' | 'blurred' | 'anonymized' | 'removed');
 
     const updated = await loadIdentity(page);
     expect(updated?.default_visibility).toBe(next);
 
     // revert to original to avoid polluting data
-    await page.getByRole('button', { name: VIS_LABELS[current] }).first().click();
-    await expect(page.getByText('Default visibility updated.')).toBeVisible();
+    await openSettings(page);
+    await setDefaultVisibility(page, current as 'approved' | 'blurred' | 'anonymized' | 'removed');
   });
 
   test('identity default applies across notes and sessions', async ({ page, browser }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
 
     const fixtures = loadFixtures();
     const identity = await loadIdentity(page);
@@ -302,52 +277,36 @@ test.describe('Smoke checks', () => {
     let didUpdate = false;
 
     try {
-      await page.goto('/settings');
-      await page.getByRole('button', { name: VIS_LABELS[next] }).first().click();
-      await expect(page.getByText('Default visibility updated.')).toBeVisible();
+      await openSettings(page);
+      await setDefaultVisibility(page, next as 'approved' | 'blurred' | 'anonymized' | 'removed');
       didUpdate = true;
 
       for (const note of seededNotes) {
-        await page.goto(`/memory/${note.id}`);
-        await expect(page.getByRole('heading', { name: note.title })).toBeVisible();
-        const content = page.locator('.prose').first();
-        await expect(content).toBeVisible();
-        if (expectVisible) {
-          await expect(content).toContainText(nameRegex);
-        } else {
-          await expect(content).not.toContainText(nameRegex);
-        }
+        await openMemory(page, note.id, note.title);
+        await expectMemoryContentHas(page, nameRegex, expectVisible);
       }
 
       const freshContext = await browser.newContext();
       const freshPage = await freshContext.newPage();
       try {
-        await login(freshPage);
+        await login(freshPage, { email: email as string, password: password as string });
         for (const note of seededNotes) {
-          await freshPage.goto(`/memory/${note.id}`);
-          await expect(freshPage.getByRole('heading', { name: note.title })).toBeVisible();
-          const content = freshPage.locator('.prose').first();
-          await expect(content).toBeVisible();
-          if (expectVisible) {
-            await expect(content).toContainText(nameRegex);
-          } else {
-            await expect(content).not.toContainText(nameRegex);
-          }
+          await openMemory(freshPage, note.id, note.title);
+          await expectMemoryContentHas(freshPage, nameRegex, expectVisible);
         }
       } finally {
         await freshContext.close();
       }
     } finally {
       if (didUpdate) {
-        await page.request.post('/api/settings/identity', {
-          data: { scope: 'default', visibility: current },
-        });
+        await openSettings(page);
+        await setDefaultVisibility(page, current as 'approved' | 'blurred' | 'anonymized' | 'removed');
       }
     }
   });
 
   test('per-note override persists', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
 
     let seededNoteId: string | null = null;
     try {
@@ -375,38 +334,31 @@ test.describe('Smoke checks', () => {
       const effective = (targetNote.effective_visibility || 'approved') as string;
       const current = originalOverride === 'pending' ? effective : originalOverride;
       const next = current === 'blurred' ? 'approved' : 'blurred';
-      await page.goto('/settings');
+      await openSettings(page);
 
-      let noteSelect = page.locator(`select[data-reference-id="${refId}"]`);
+      let noteSelect = noteVisibilitySelect(page, refId);
       if (!(await noteSelect.isVisible())) {
-        let authorButtons = page.locator('button[data-author-id]');
-        if ((await authorButtons.count()) === 0) {
-          const toggle = page.getByRole('button', { name: /Show all notes by author|Hide all notes/ });
-          if (await toggle.isVisible()) {
-            await toggle.click();
-            // wait for author list to render after expanding
-            await authorButtons.first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
-          }
+        const toggle = page.getByTestId('identity-notes-toggle');
+        if (await toggle.isVisible()) {
+          await toggleAllNotes(page);
         }
 
-        authorButtons = page.locator('button[data-author-id]');
-        const authorButtonsCount = await authorButtons.count();
+        const authorId = (targetNote.event?.contributor_id as string | null) ?? 'unknown';
+        const authorButton = authorToggle(page, authorId);
 
-        if (authorButtonsCount > 0) {
-          const authorId = (targetNote.event?.contributor_id as string | null) ?? 'unknown';
-          const authorToggle = page.locator(`button[data-author-id="${authorId}"]`).first();
-          if (await authorToggle.isVisible()) {
-            await authorToggle.click();
-          } else {
-            await authorButtons.first().click();
-          }
+        if (await authorButton.isVisible()) {
+          await authorButton.click();
         } else {
-          // no author buttons; try waiting for the select to appear anyway
-          await noteSelect.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+          const fallbackAuthor = page.locator('[data-testid^="identity-author-"]').first();
+          if (await fallbackAuthor.isVisible()) {
+            await fallbackAuthor.click();
+          } else {
+            await noteSelect.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+          }
         }
       }
 
-      noteSelect = page.locator(`select[data-reference-id="${refId}"]`);
+      noteSelect = noteVisibilitySelect(page, refId);
       const noteSelectVisible = await noteSelect
         .waitFor({ state: 'visible', timeout: 3000 })
         .then(() => true)
@@ -434,7 +386,7 @@ test.describe('Smoke checks', () => {
   });
 
   test('invite request succeeds', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
 
     if (!supabaseAdmin) {
       test.skip(true, 'SUPABASE_URL and SUPABASE_SECRET_KEY are required for invite cleanup.');
@@ -472,7 +424,7 @@ test.describe('Smoke checks', () => {
   });
 
   test('edit link loads', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
     await page.goto('/edit');
 
     const requestHeading = page.getByRole('heading', { name: 'Request a magic link' });
@@ -507,7 +459,7 @@ test.describe('Smoke checks', () => {
   });
 
   test('missing memory shows 404', async ({ page }) => {
-    await login(page);
+    await login(page, { email: email as string, password: password as string });
     await page.goto('/memory/00000000-0000-0000-0000-000000000000');
     await expect(page.getByText('This page could not be found.')).toBeVisible();
   });
