@@ -39,8 +39,8 @@ export default async function ChaptersLayout({
           </Link>
           {/* Nav items */}
           <div className="flex items-center gap-5 text-xs text-white/50">
-            <Link href="/share" className="hover:text-white/70 transition-colors tracking-wide">
-              Add a note
+            <Link href="/contribute" className="hover:text-white/70 transition-colors tracking-wide">
+              Contribute
             </Link>
             <InteractButton />
             <UserMenuClient editToken={editSession?.token} />

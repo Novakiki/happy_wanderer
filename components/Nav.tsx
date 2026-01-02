@@ -10,6 +10,8 @@ import UserMenu from '@/components/UserMenu';
 type UserProfile = {
   name: string;
   relation: string;
+  email?: string;
+  contributorId?: string;
 };
 
 type Props = {
@@ -22,7 +24,13 @@ type Props = {
 export default function Nav({ variant = 'header', userProfile }: Props) {
   const pathname = usePathname();
   const isScore = pathname === '/score';
+  const isContributeFlow =
+    pathname === '/contribute' ||
+    pathname === '/share' ||
+    pathname === '/fragment' ||
+    pathname === '/submit';
   const [clientProfile, setClientProfile] = useState<UserProfile | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (userProfile) return; // server already provided
@@ -46,6 +54,34 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
   }, [userProfile]);
 
   const profileToUse = userProfile ?? clientProfile;
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!profileToUse) {
+      setIsAdmin(false);
+      return;
+    }
+
+    fetch('/api/admin/status')
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => ({}));
+        return data;
+      })
+      .then((data) => {
+        if (!isActive) return;
+        setIsAdmin(Boolean(data?.is_admin));
+      })
+      .catch(() => {
+        if (!isActive) return;
+        setIsAdmin(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [profileToUse?.name, profileToUse?.relation]);
 
   if (variant === 'back') {
     return (
@@ -83,16 +119,20 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
         </Link>
         <div className="flex items-center gap-4 text-sm text-white/50">
           <Link
-            href="/share"
+            href="/contribute"
             className={`transition-colors ${
-              pathname === '/share' ? 'text-white/50' : 'hover:text-white'
+              isContributeFlow ? 'text-white/50' : 'hover:text-white'
             }`}
           >
-            Add a note
+            Contribute
           </Link>
           <InteractButton />
           {profileToUse && (
-            <UserMenu name={profileToUse.name} relation={profileToUse.relation} />
+            <UserMenu
+              name={profileToUse.name}
+              relation={profileToUse.relation}
+              isAdmin={isAdmin}
+            />
           )}
         </div>
       </div>

@@ -9,16 +9,20 @@
 ## Auth vs public
 - Public: `/respond/*`, `/identity`, `/auth/*`, `/api/auth/*`
 - Gated: everything else (middleware/proxy enforces)
+- Invite sessions (`vals-memory-invite`) allow browsing `/score`, `/memory/*`, `/api/score`, `/api/score-peek` without full auth.
 - Proxy middleware lives in `proxy.ts` only (no `middleware.ts`)
 
 ## Key routes
 - `/score` – timeline (The Score)
-- `/share` – add a note (requires auth)
+- `/contribute` – contribute (choose a path; requires auth)
+- `/share` – write a note (requires auth)
+- `/fragment` – share a fragment (signal-first; requires auth)
 - `/submit` – contributor submission flow
 - `/respond/[id]` – invited responses (no auth required)
 - `/identity` – how identity works (public explainer)
 - `/edit` and `/edit/[token]` – magic link editing
 - `/settings` – account settings (profile, identity visibility)
+- `/admin` – admin review (pending notes, trusted contributors)
 - `/auth/*` – login/signup/reset/complete-profile
 - `/why` – why this exists
 - `/emerging` – “What’s Emerging”
@@ -27,6 +31,7 @@
 - `/score`: hover previews are desktop-only; click/tap opens `/memory/:id` directly (no detail modal).
 - Editing happens on the full note page, not from the score preview.
 - Full note page (`/memory/:id`) links to `/edit?event_id=...` for contributor edits.
+- `/respond/*` contributions default to `pending` until approved or trusted.
 - Invite responders can set per-note identity visibility on `/respond/[id]` and manage it later via `/respond/[id]?manage=1`.
 - Logged-in contributors can claim their identity and manage visibility defaults in `/settings`.
 

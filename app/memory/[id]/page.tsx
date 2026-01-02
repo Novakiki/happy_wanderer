@@ -313,6 +313,15 @@ export default async function MemoryPage({
     notFound();
   }
 
+  // Check if current viewer is the note owner (via edit session OR auth profile)
+  const ownerViaEditSession = isNoteOwner(editSession, event.contributor_id);
+  const ownerViaAuth = authContributorId !== null && authContributorId === event.contributor_id;
+  const viewerIsOwner = ownerViaEditSession || ownerViaAuth;
+
+  if (event.status !== "published" && !viewerIsOwner) {
+    notFound();
+  }
+
   const formatYearLabel = (target: TimelineEvent) => {
     const isApproximate = target.timing_certainty && target.timing_certainty !== "exact";
     const hasRange =
@@ -357,18 +366,13 @@ export default async function MemoryPage({
 
   const respondLink =
     event.type === "memory" ? `/share?responding_to=${event.id}` : "/share";
-  const respondLabel = event.type === "memory" ? "Add your perspective" : "Add a note";
+  const respondLabel = event.type === "memory" ? "Add your perspective" : "Contribute";
 
   const promptedEvent = (event as unknown as { prompted_event?: { id: string; title: string; privacy_level?: string | null } | null }).prompted_event;
   const canShowPrompted =
     promptedEvent &&
     promptedEvent.id !== event.id &&
     (promptedEvent.privacy_level === "public" || promptedEvent.privacy_level === event.privacy_level);
-
-  // Check if current viewer is the note owner (via edit session OR auth profile)
-  const ownerViaEditSession = isNoteOwner(editSession, event.contributor_id);
-  const ownerViaAuth = authContributorId !== null && authContributorId === event.contributor_id;
-  const viewerIsOwner = ownerViaEditSession || ownerViaAuth;
 
   // Mask names in content for non-owners based on visibility preferences
   const displayText = viewerIsOwner

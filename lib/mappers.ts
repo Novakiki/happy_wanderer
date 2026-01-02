@@ -37,11 +37,17 @@ export type StoryBundle = {
   totalCount: number;
 };
 
-type RawTimelineEvent = Database["public"]["Tables"]["timeline_events"]["Row"] & {
+type CurrentNoteRow = Omit<
+  Database["public"]["Views"]["current_notes"]["Row"],
+  "version" | "version_created_at" | "version_created_by"
+>;
+
+type RawTimelineEvent = CurrentNoteRow & {
   contributor?: { name: string; relation: string | null } | null;
   media?: { media: Database["public"]["Tables"]["media"]["Row"] | null }[] | null;
   references?: EventReferenceWithContributor[];
 };
+
 
 export function mapTimelineEvent(event: RawTimelineEvent): TimelineEvent {
   const media = Array.isArray(event.media)

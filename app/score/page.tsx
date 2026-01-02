@@ -268,10 +268,10 @@ export default function ChaptersPage() {
             style={{ animationDelay: '360ms', animationFillMode: 'both' }}
           >
             <a
-              href="/share"
+              href="/contribute"
               className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2.5 text-xs uppercase tracking-[0.15em] font-medium hover:bg-[#d06a4f] transition-colors shadow-lg shadow-[#e07a5f]/20"
             >
-              Add a note
+              Contribute
             </a>
             <div className="relative">
               <span

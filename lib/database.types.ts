@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       constellation_members: {
@@ -86,6 +61,7 @@ export type Database = {
           name: string
           phone: string | null
           relation: string
+          trusted: boolean | null
         }
         Insert: {
           created_at?: string | null
@@ -95,6 +71,7 @@ export type Database = {
           name: string
           phone?: string | null
           relation: string
+          trusted?: boolean | null
         }
         Update: {
           created_at?: string | null
@@ -104,6 +81,7 @@ export type Database = {
           name?: string
           phone?: string | null
           relation?: string
+          trusted?: boolean | null
         }
         Relationships: []
       }
@@ -156,6 +134,13 @@ export type Database = {
           media_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "event_media_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "event_media_event_id_fkey"
             columns: ["event_id"]
@@ -237,6 +222,13 @@ export type Database = {
             foreignKeyName: "event_references_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_references_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
             referencedColumns: ["id"]
           },
@@ -291,51 +283,80 @@ export type Database = {
         Row: {
           contributed_at: string | null
           created_at: string | null
+          depth: number | null
           event_id: string | null
+          expires_at: string | null
           id: string
+          max_uses: number | null
           message: string | null
           method: string
           opened_at: string | null
+          parent_invite_id: string | null
           recipient_contact: string
           recipient_name: string
           sender_id: string | null
           sent_at: string | null
           status: string | null
+          uses_count: number | null
         }
         Insert: {
           contributed_at?: string | null
           created_at?: string | null
+          depth?: number | null
           event_id?: string | null
+          expires_at?: string | null
           id?: string
+          max_uses?: number | null
           message?: string | null
           method: string
           opened_at?: string | null
+          parent_invite_id?: string | null
           recipient_contact: string
           recipient_name: string
           sender_id?: string | null
           sent_at?: string | null
           status?: string | null
+          uses_count?: number | null
         }
         Update: {
           contributed_at?: string | null
           created_at?: string | null
+          depth?: number | null
           event_id?: string | null
+          expires_at?: string | null
           id?: string
+          max_uses?: number | null
           message?: string | null
           method?: string
           opened_at?: string | null
+          parent_invite_id?: string | null
           recipient_contact?: string
           recipient_name?: string
           sender_id?: string | null
           sent_at?: string | null
           status?: string | null
+          uses_count?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "invites_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invites_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invites_parent_invite_id_fkey"
+            columns: ["parent_invite_id"]
+            isOneToOne: false
+            referencedRelation: "invites"
             referencedColumns: ["id"]
           },
           {
@@ -415,6 +436,13 @@ export type Database = {
             foreignKeyName: "memory_threads_original_event_id_fkey"
             columns: ["original_event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_threads_original_event_id_fkey"
+            columns: ["original_event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
             referencedColumns: ["id"]
           },
@@ -422,7 +450,130 @@ export type Database = {
             foreignKeyName: "memory_threads_response_event_id_fkey"
             columns: ["response_event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_threads_response_event_id_fkey"
+            columns: ["response_event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      motif_links: {
+        Row: {
+          asserted_by: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          legibility_effect: string | null
+          link_confidence: number
+          link_type: string
+          motif_id: string
+          note_id: string
+          rationale: string | null
+          status: string
+        }
+        Insert: {
+          asserted_by?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          legibility_effect?: string | null
+          link_confidence?: number
+          link_type?: string
+          motif_id: string
+          note_id: string
+          rationale?: string | null
+          status?: string
+        }
+        Update: {
+          asserted_by?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          legibility_effect?: string | null
+          link_confidence?: number
+          link_type?: string
+          motif_id?: string
+          note_id?: string
+          rationale?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "motif_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "motif_links_motif_id_fkey"
+            columns: ["motif_id"]
+            isOneToOne: false
+            referencedRelation: "motifs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "motif_links_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "motif_links_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      motifs: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          definition: string | null
+          id: string
+          label: string
+          merged_into_motif_id: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          definition?: string | null
+          id?: string
+          label: string
+          merged_into_motif_id?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          definition?: string | null
+          id?: string
+          label?: string
+          merged_into_motif_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "motifs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "motifs_merged_into_motif_id_fkey"
+            columns: ["merged_into_motif_id"]
+            isOneToOne: false
+            referencedRelation: "motifs"
             referencedColumns: ["id"]
           },
         ]
@@ -482,6 +633,13 @@ export type Database = {
             foreignKeyName: "note_mentions_event_id_fkey"
             columns: ["event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_mentions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
             referencedColumns: ["id"]
           },
@@ -533,6 +691,13 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "notifications_related_event_id_fkey"
+            columns: ["related_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notifications_related_event_id_fkey"
             columns: ["related_event_id"]
@@ -713,6 +878,183 @@ export type Database = {
           },
         ]
       }
+      signal_suggestions: {
+        Row: {
+          created_at: string | null
+          event_id: string
+          id: string
+          matched_motif_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string | null
+          text: string
+        }
+        Insert: {
+          created_at?: string | null
+          event_id: string
+          id?: string
+          matched_motif_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          text: string
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string
+          id?: string
+          matched_motif_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string | null
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signal_suggestions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signal_suggestions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signal_suggestions_matched_motif_id_fkey"
+            columns: ["matched_motif_id"]
+            isOneToOne: false
+            referencedRelation: "motifs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signal_suggestions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      timeline_event_versions: {
+        Row: {
+          age_end: number | null
+          age_start: number | null
+          created_at: string | null
+          created_by: string | null
+          date: string | null
+          event_id: string
+          full_entry: string | null
+          id: string
+          life_stage: string | null
+          location: string | null
+          people_involved: string[] | null
+          preview: string | null
+          privacy_level: string | null
+          recurrence: string | null
+          source_name: string | null
+          source_url: string | null
+          status: string | null
+          timing_certainty: string | null
+          timing_input_type: string | null
+          timing_note: string | null
+          timing_raw_text: string | null
+          title: string | null
+          type: string | null
+          version: number
+          why_included: string | null
+          witness_type: string | null
+          year: number | null
+          year_end: number | null
+        }
+        Insert: {
+          age_end?: number | null
+          age_start?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          date?: string | null
+          event_id: string
+          full_entry?: string | null
+          id?: string
+          life_stage?: string | null
+          location?: string | null
+          people_involved?: string[] | null
+          preview?: string | null
+          privacy_level?: string | null
+          recurrence?: string | null
+          source_name?: string | null
+          source_url?: string | null
+          status?: string | null
+          timing_certainty?: string | null
+          timing_input_type?: string | null
+          timing_note?: string | null
+          timing_raw_text?: string | null
+          title?: string | null
+          type?: string | null
+          version: number
+          why_included?: string | null
+          witness_type?: string | null
+          year?: number | null
+          year_end?: number | null
+        }
+        Update: {
+          age_end?: number | null
+          age_start?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          date?: string | null
+          event_id?: string
+          full_entry?: string | null
+          id?: string
+          life_stage?: string | null
+          location?: string | null
+          people_involved?: string[] | null
+          preview?: string | null
+          privacy_level?: string | null
+          recurrence?: string | null
+          source_name?: string | null
+          source_url?: string | null
+          status?: string | null
+          timing_certainty?: string | null
+          timing_input_type?: string | null
+          timing_note?: string | null
+          timing_raw_text?: string | null
+          title?: string | null
+          type?: string | null
+          version?: number
+          why_included?: string | null
+          witness_type?: string | null
+          year?: number | null
+          year_end?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "timeline_event_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_event_versions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_event_versions_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       timeline_events: {
         Row: {
           age_end: number | null
@@ -721,31 +1063,35 @@ export type Database = {
           contributor_id: string | null
           created_at: string | null
           date: string | null
+          entry_mode: string | null
+          fragment_kind: string | null
           full_entry: string | null
           id: string
+          latitude: number | null
           life_stage: string | null
           location: string | null
-          latitude: number | null
           longitude: number | null
+          needs_signal_assignment: boolean | null
           people_involved: string[] | null
           preview: string | null
           privacy_level: string | null
           prompted_by_event_id: string | null
           recurrence: string | null
-          trigger_event_id: string | null
           root_event_id: string | null
           source_name: string | null
           source_url: string | null
           status: string | null
+          subject_focus: string | null
           subject_id: string | null
           timing_certainty: string | null
           timing_input_type: string | null
           timing_note: string | null
           timing_raw_text: string | null
           title: string
+          trigger_event_id: string | null
           type: string
-          witness_type: string | null
           why_included: string | null
+          witness_type: string | null
           year: number
           year_end: number | null
         }
@@ -756,31 +1102,35 @@ export type Database = {
           contributor_id?: string | null
           created_at?: string | null
           date?: string | null
+          entry_mode?: string | null
+          fragment_kind?: string | null
           full_entry?: string | null
           id?: string
+          latitude?: number | null
           life_stage?: string | null
           location?: string | null
-          latitude?: number | null
           longitude?: number | null
+          needs_signal_assignment?: boolean | null
           people_involved?: string[] | null
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
           recurrence?: string | null
-          trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
           source_url?: string | null
           status?: string | null
+          subject_focus?: string | null
           subject_id?: string | null
           timing_certainty?: string | null
           timing_input_type?: string | null
           timing_note?: string | null
           timing_raw_text?: string | null
           title: string
+          trigger_event_id?: string | null
           type: string
-          witness_type?: string | null
           why_included?: string | null
+          witness_type?: string | null
           year: number
           year_end?: number | null
         }
@@ -791,31 +1141,35 @@ export type Database = {
           contributor_id?: string | null
           created_at?: string | null
           date?: string | null
+          entry_mode?: string | null
+          fragment_kind?: string | null
           full_entry?: string | null
           id?: string
+          latitude?: number | null
           life_stage?: string | null
           location?: string | null
-          latitude?: number | null
           longitude?: number | null
+          needs_signal_assignment?: boolean | null
           people_involved?: string[] | null
           preview?: string | null
           privacy_level?: string | null
           prompted_by_event_id?: string | null
           recurrence?: string | null
-          trigger_event_id?: string | null
           root_event_id?: string | null
           source_name?: string | null
           source_url?: string | null
           status?: string | null
+          subject_focus?: string | null
           subject_id?: string | null
           timing_certainty?: string | null
           timing_input_type?: string | null
           timing_note?: string | null
           timing_raw_text?: string | null
           title?: string
+          trigger_event_id?: string | null
           type?: string
-          witness_type?: string | null
           why_included?: string | null
+          witness_type?: string | null
           year?: number
           year_end?: number | null
         }
@@ -831,14 +1185,21 @@ export type Database = {
             foreignKeyName: "timeline_events_prompted_by_event_id_fkey"
             columns: ["prompted_by_event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_prompted_by_event_id_fkey"
+            columns: ["prompted_by_event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "timeline_events_trigger_event_id_fkey"
-            columns: ["trigger_event_id"]
+            foreignKeyName: "timeline_events_root_event_id_fkey"
+            columns: ["root_event_id"]
             isOneToOne: false
-            referencedRelation: "timeline_events"
+            referencedRelation: "current_notes"
             referencedColumns: ["id"]
           },
           {
@@ -853,6 +1214,89 @@ export type Database = {
             columns: ["subject_id"]
             isOneToOne: false
             referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_trigger_event_id_fkey"
+            columns: ["trigger_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_trigger_event_id_fkey"
+            columns: ["trigger_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      view_specs: {
+        Row: {
+          created_at: string | null
+          enabled: boolean
+          id: string
+          name: string
+          projection_version: string
+          version: number
+        }
+        Insert: {
+          created_at?: string | null
+          enabled?: boolean
+          id?: string
+          name: string
+          projection_version?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string | null
+          enabled?: boolean
+          id?: string
+          name?: string
+          projection_version?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      visibility_preferences: {
+        Row: {
+          contributor_id: string | null
+          created_at: string | null
+          id: string
+          person_id: string
+          updated_at: string | null
+          visibility: string
+        }
+        Insert: {
+          contributor_id?: string | null
+          created_at?: string | null
+          id?: string
+          person_id: string
+          updated_at?: string | null
+          visibility: string
+        }
+        Update: {
+          contributor_id?: string | null
+          created_at?: string | null
+          id?: string
+          person_id?: string
+          updated_at?: string | null
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visibility_preferences_contributor_id_fkey"
+            columns: ["contributor_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visibility_preferences_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
@@ -896,7 +1340,21 @@ export type Database = {
             foreignKeyName: "witnesses_contributed_event_id_fkey"
             columns: ["contributed_event_id"]
             isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "witnesses_contributed_event_id_fkey"
+            columns: ["contributed_event_id"]
+            isOneToOne: false
             referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "witnesses_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
             referencedColumns: ["id"]
           },
           {
@@ -919,17 +1377,16 @@ export type Database = {
           created_at: string | null
           date: string | null
           full_entry: string | null
-          id: string
+          id: string | null
+          latitude: number | null
           life_stage: string | null
           location: string | null
-          latitude: number | null
           longitude: number | null
           people_involved: string[] | null
           preview: string | null
           privacy_level: string | null
           prompted_by_event_id: string | null
           recurrence: string | null
-          trigger_event_id: string | null
           root_event_id: string | null
           source_name: string | null
           source_url: string | null
@@ -939,88 +1396,123 @@ export type Database = {
           timing_input_type: string | null
           timing_note: string | null
           timing_raw_text: string | null
-          title: string
-          type: string
+          title: string | null
+          trigger_event_id: string | null
+          type: string | null
           version: number | null
           version_created_at: string | null
           version_created_by: string | null
-          witness_type: string | null
           why_included: string | null
-          year: number
+          witness_type: string | null
+          year: number | null
           year_end: number | null
         }
-        Relationships: []
-      }
-      note_references: {
-        Row: {
-          added_by: string | null
-          contributor_id: string | null
-          created_at: string | null
-          display_name: string | null
-          event_id: string
-          id: string
-          note: string | null
-          person_id: string | null
-          relationship_to_subject: string | null
-          role: string | null
-          type: string
-          url: string | null
-          visibility: string | null
-        }
-        Relationships: []
-      }
-      note_threads: {
-        Row: {
-          created_at: string | null
-          id: string
-          note: string | null
-          original_event_id: string | null
-          relationship: string | null
-          response_event_id: string | null
-        }
-        Relationships: []
-      }
-      notes: {
-        Row: {
-          age_end: number | null
-          age_start: number | null
-          chain_depth: number | null
-          contributor_id: string | null
-          created_at: string | null
-          date: string | null
-          full_entry: string | null
-          id: string
-          life_stage: string | null
-          location: string | null
-          latitude: number | null
-          longitude: number | null
-          people_involved: string[] | null
-          preview: string | null
-          privacy_level: string | null
-          prompted_by_event_id: string | null
-          recurrence: string | null
-          trigger_event_id: string | null
-          root_event_id: string | null
-          source_name: string | null
-          source_url: string | null
-          status: string | null
-          subject_id: string | null
-          timing_certainty: string | null
-          timing_input_type: string | null
-          timing_note: string | null
-          timing_raw_text: string | null
-          title: string
-          type: string
-          witness_type: string | null
-          why_included: string | null
-          year: number
-          year_end: number | null
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "timeline_event_versions_created_by_fkey"
+            columns: ["version_created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_contributor_id_fkey"
+            columns: ["contributor_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_prompted_by_event_id_fkey"
+            columns: ["prompted_by_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_prompted_by_event_id_fkey"
+            columns: ["prompted_by_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_root_event_id_fkey"
+            columns: ["root_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_root_event_id_fkey"
+            columns: ["root_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_trigger_event_id_fkey"
+            columns: ["trigger_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "timeline_events_trigger_event_id_fkey"
+            columns: ["trigger_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
-      [_ in never]: never
+      best_motif_match: {
+        Args: { q: string; threshold?: number }
+        Returns: {
+          definition: string
+          id: string
+          label: string
+          score: number
+        }[]
+      }
+      get_emerging_signals: {
+        Args: { motif_limit?: number; per_motif?: number; since_days?: number }
+        Returns: {
+          definition: string
+          expresses_count: number
+          label: string
+          last_linked_at: string
+          motif_id: string
+          recent_fragments: Json
+        }[]
+      }
+      lint_note: { Args: { note_body: string }; Returns: Json }
+      search_motifs: {
+        Args: {
+          confirm_threshold?: number
+          lim?: number
+          min_show_score?: number
+          q: string
+        }
+        Returns: {
+          definition: string
+          id: string
+          label: string
+          score: number
+          should_confirm: boolean
+        }[]
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never
@@ -1149,18 +1641,7 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },
 } as const
-
-// Custom composite types for joined queries
-export type EventReferenceWithContributor = Database['public']['Tables']['event_references']['Row'] & {
-  contributor?: {
-    name: string;
-    relation: string | null;
-  } | null;
-};

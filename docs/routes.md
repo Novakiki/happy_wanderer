@@ -10,19 +10,27 @@
 ## Auth-required
 - `/score` – The Score (timeline)
 - `/why` – Why this exists
-- `/share` – Add a note
+- `/contribute` – Contribute (choose a path)
+- `/share` – Write a note
+- `/fragment` – Share a fragment (signal-first)
 - `/submit` – Contributor submission flow
 - `/edit` – Request magic link to edit submissions
 - `/edit/[token]` – Edit via magic link
 - `/settings` – Account settings (profile, identity visibility)
+- `/admin` – Admin review (pending notes, trusted contributors)
 - Other app routes unless listed above
 
+## Invite-session access
+- Invite sessions (`vals-memory-invite`) allow browse-only access to `/score`, `/memory/*`, `/api/score`, `/api/score-peek`.
+- Invite sessions are minted by `/respond/[id]` after validating the invite.
+
 ## Route groups
-- `(main)` contains contributor flows only: `/share` and `/submit`.
+- `(main)` contains contributor flows only: `/contribute`, `/share`, `/fragment`, and `/submit`.
 
 ## Middleware/proxy
 - Only `proxy.ts` is used (no `middleware.ts`).
 - Matcher excludes static assets and allows `/respond` without auth.
+- Middleware allows invite-session access to The Score and note views.
 
 ## Redirects
 - `/letter` → `/why` (legacy)
@@ -46,6 +54,7 @@
 
 ## See also
 - `docs/llm-notes.md` (branding, auth vs public, Supabase, roles)
+- `docs/architecture/auth-invite-access.md` (invite access + moderation rules)
 - `AGENTS.md` (purpose, tone, metaphor, guardrails)
 
 ## TODO (LLM consistency)

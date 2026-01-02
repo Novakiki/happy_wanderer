@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -9,9 +9,10 @@ type Props = {
   name: string;
   relation?: string;
   editToken?: string;
+  isAdmin?: boolean;
 };
 
-export default function UserMenu({ name, relation, editToken }: Props) {
+export default function UserMenu({ name, relation, editToken, isAdmin }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const router = useRouter();
@@ -69,7 +70,7 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                 </span>
               </Link>
               <Link
-                href="/people"
+                href="/connections"
                 className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
                 onClick={() => setIsOpen(false)}
               >
@@ -78,6 +79,18 @@ export default function UserMenu({ name, relation, editToken }: Props) {
                   Who you remember, who remembers you
                 </span>
               </Link>
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                  onClick={() => setIsOpen(false)}
+                >
+                  <span>Admin</span>
+                  <span className="block text-xs text-white/50 group-hover:text-white/60 transition-colors">
+                    Review pending notes
+                  </span>
+                </Link>
+              )}
               <Link
                 href="/settings"
                 className="group block px-4 py-2 text-left text-sm text-white/80 hover:text-white hover:bg-white/5 transition-colors"
