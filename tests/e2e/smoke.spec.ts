@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { readFixtures } from './fixtures/fixture-store';
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
@@ -19,119 +20,7 @@ const VIS_LABELS: Record<string, string> = {
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const TEST_IDENTITY_FALLBACK = 'E2E Test Person';
-
-const ensureTestIdentityClaim = async () => {
-  if (!supabaseAdmin || !email) return null;
-
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('contributor_id')
-    .eq('email', email)
-    .maybeSingle();
-
-  const contributorId = (profile as { contributor_id?: string | null } | null)?.contributor_id ?? null;
-  if (!contributorId) return null;
-
-  const { data: existingClaim } = await supabaseAdmin
-    .from('person_claims')
-    .select('person_id, status')
-    .eq('contributor_id', contributorId)
-    .maybeSingle();
-
-  if (existingClaim?.person_id) {
-    if (existingClaim.status !== 'approved') {
-      await supabaseAdmin
-        .from('person_claims')
-        .update({
-          status: 'approved',
-          approved_at: new Date().toISOString(),
-          approved_by: contributorId,
-        })
-        .eq('contributor_id', contributorId);
-    }
-
-    await supabaseAdmin
-      .from('people')
-      .update({ visibility: 'approved' })
-      .eq('id', existingClaim.person_id);
-
-    return existingClaim.person_id as string;
-  }
-
-  const { data: contributorRow } = await supabaseAdmin
-    .from('contributors')
-    .select('name')
-    .eq('id', contributorId)
-    .maybeSingle();
-
-  const candidateName = (contributorRow as { name?: string | null } | null)?.name?.trim()
-    || TEST_IDENTITY_FALLBACK;
-
-  let personId: string | null = null;
-
-  const { data: matchingPeople } = await supabaseAdmin
-    .from('people')
-    .select('id')
-    .ilike('canonical_name', candidateName)
-    .limit(1);
-
-  if (matchingPeople && matchingPeople.length > 0) {
-    personId = matchingPeople[0]?.id ?? null;
-    if (personId) {
-      await supabaseAdmin
-        .from('people')
-        .update({ visibility: 'approved' })
-        .eq('id', personId);
-    }
-  } else {
-    const { data: newPerson } = await supabaseAdmin
-      .from('people')
-      .insert({
-        canonical_name: candidateName,
-        visibility: 'approved',
-        created_by: contributorId,
-      })
-      .select('id')
-      .single();
-    personId = (newPerson as { id?: string } | null)?.id ?? null;
-  }
-
-  if (!personId) return null;
-
-  const now = new Date().toISOString();
-  await supabaseAdmin
-    .from('person_claims')
-    .upsert({
-      person_id: personId,
-      contributor_id: contributorId,
-      status: 'approved',
-      created_at: now,
-      approved_at: now,
-      approved_by: contributorId,
-    }, {
-      onConflict: 'contributor_id',
-    });
-
-  const { data: existingAlias } = await supabaseAdmin
-    .from('person_aliases')
-    .select('id')
-    .eq('person_id', personId)
-    .ilike('alias', candidateName)
-    .limit(1);
-
-  if (!existingAlias || existingAlias.length === 0) {
-    await supabaseAdmin
-      .from('person_aliases')
-      .insert({
-        person_id: personId,
-        alias: candidateName,
-        created_by: contributorId,
-      });
-  }
-
-  return personId;
-};
+const loadFixtures = () => readFixtures();
 
 test.describe('Smoke checks', () => {
   test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
@@ -267,63 +156,6 @@ test.describe('Smoke checks', () => {
     return eventId;
   };
 
-  const seedIdentityNotes = async (personId: string, personName: string) => {
-    if (!supabaseAdmin) return null;
-
-    const stamp = Date.now();
-    const payload = [
-      {
-        year: 1991,
-        type: 'memory',
-        title: `E2E Identity Note ${stamp} A`,
-        preview: 'Identity visibility test note A.',
-        full_entry: `I remember talking with ${personName} by the kitchen window.`,
-        why_included: 'Identity visibility test.',
-        status: 'published',
-        privacy_level: 'family',
-        contributor_id: null,
-      },
-      {
-        year: 1994,
-        type: 'memory',
-        title: `E2E Identity Note ${stamp} B`,
-        preview: 'Identity visibility test note B.',
-        full_entry: `${personName} told us a story that night.`,
-        why_included: 'Identity visibility test.',
-        status: 'published',
-        privacy_level: 'family',
-        contributor_id: null,
-      },
-    ];
-
-    const { data: events, error } = await supabaseAdmin
-      .from('timeline_events')
-      .insert(payload)
-      .select('id, title');
-
-    if (error || !events || events.length < 2) return null;
-
-    const refs = events.map((event) => ({
-      event_id: (event as { id: string }).id,
-      type: 'person',
-      person_id: personId,
-      role: 'witness',
-      visibility: 'pending',
-      relationship_to_subject: null,
-      added_by: null,
-    }));
-
-    const { error: refError } = await supabaseAdmin.from('event_references').insert(refs);
-    if (refError) {
-      await supabaseAdmin.from('timeline_events').delete().in('id', events.map((event) => event.id));
-      return null;
-    }
-
-    return events.map((event) => ({
-      id: (event as { id: string }).id,
-      title: (event as { title: string }).title,
-    }));
-  };
 
   let createdNote: { id: string; title: string } | null = null;
 
@@ -421,7 +253,6 @@ test.describe('Smoke checks', () => {
   test('identity default persists', async ({ page }) => {
     await login(page);
 
-    await ensureTestIdentityClaim();
     const identity = await loadIdentity(page);
     if (!identity?.person) {
       test.skip(true, 'No identity claim available for this user.');
@@ -445,16 +276,12 @@ test.describe('Smoke checks', () => {
   test('identity default applies across notes and sessions', async ({ page, browser }) => {
     await login(page);
 
-    if (!supabaseAdmin) {
-      test.skip(true, 'SUPABASE_URL and SUPABASE_SECRET_KEY are required for identity visibility test.');
-    }
-
-    await ensureTestIdentityClaim();
+    const fixtures = loadFixtures();
     const identity = await loadIdentity(page);
-    const personId = identity?.person?.id as string | undefined;
-    const personName = (identity?.person?.name || '').trim();
+    const fixturePersonName = fixtures.identity?.personName?.trim() || '';
+    const personName = (identity?.person?.name || fixturePersonName).trim();
 
-    if (!personId || !personName) {
+    if (!identity?.person || !personName) {
       test.skip(true, 'No identity claim available for visibility test.');
     }
 
@@ -464,10 +291,10 @@ test.describe('Smoke checks', () => {
     }
 
     const next = current === 'approved' ? 'blurred' : 'approved';
-    const seededNotes = await seedIdentityNotes(personId, personName);
+    const seededNotes = fixtures.identityNotes ?? [];
 
     if (!seededNotes || seededNotes.length < 2) {
-      test.skip(true, 'Unable to seed identity notes for visibility test.');
+      test.skip(true, 'Fixture notes missing for identity visibility test.');
     }
 
     const nameRegex = new RegExp(`\\b${escapeRegExp(personName)}\\b`, 'i');
@@ -516,13 +343,6 @@ test.describe('Smoke checks', () => {
           data: { scope: 'default', visibility: current },
         });
       }
-
-      if (seededNotes && supabaseAdmin) {
-        await supabaseAdmin
-          .from('timeline_events')
-          .delete()
-          .in('id', seededNotes.map((note) => note.id));
-      }
     }
   });
 
@@ -531,7 +351,6 @@ test.describe('Smoke checks', () => {
 
     let seededNoteId: string | null = null;
     try {
-      await ensureTestIdentityClaim();
       let identity = await loadIdentity(page);
       let targetNote = identity?.notes?.find((n: any) => n?.event?.id);
 

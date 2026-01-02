@@ -34,6 +34,8 @@ const shouldStartServer = process.env.E2E_START_SERVER === 'true';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  globalSetup: './tests/e2e/fixtures/global-setup.ts',
+  globalTeardown: './tests/e2e/fixtures/global-teardown.ts',
   timeout: 60_000,
   expect: {
     timeout: 10_000,
