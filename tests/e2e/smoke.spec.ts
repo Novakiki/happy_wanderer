@@ -19,6 +19,119 @@ const VIS_LABELS: Record<string, string> = {
 };
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const TEST_IDENTITY_FALLBACK = 'E2E Test Person';
+
+const ensureTestIdentityClaim = async () => {
+  if (!supabaseAdmin || !email) return null;
+
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('contributor_id')
+    .eq('email', email)
+    .maybeSingle();
+
+  const contributorId = (profile as { contributor_id?: string | null } | null)?.contributor_id ?? null;
+  if (!contributorId) return null;
+
+  const { data: existingClaim } = await supabaseAdmin
+    .from('person_claims')
+    .select('person_id, status')
+    .eq('contributor_id', contributorId)
+    .maybeSingle();
+
+  if (existingClaim?.person_id) {
+    if (existingClaim.status !== 'approved') {
+      await supabaseAdmin
+        .from('person_claims')
+        .update({
+          status: 'approved',
+          approved_at: new Date().toISOString(),
+          approved_by: contributorId,
+        })
+        .eq('contributor_id', contributorId);
+    }
+
+    await supabaseAdmin
+      .from('people')
+      .update({ visibility: 'approved' })
+      .eq('id', existingClaim.person_id);
+
+    return existingClaim.person_id as string;
+  }
+
+  const { data: contributorRow } = await supabaseAdmin
+    .from('contributors')
+    .select('name')
+    .eq('id', contributorId)
+    .maybeSingle();
+
+  const candidateName = (contributorRow as { name?: string | null } | null)?.name?.trim()
+    || TEST_IDENTITY_FALLBACK;
+
+  let personId: string | null = null;
+
+  const { data: matchingPeople } = await supabaseAdmin
+    .from('people')
+    .select('id')
+    .ilike('canonical_name', candidateName)
+    .limit(1);
+
+  if (matchingPeople && matchingPeople.length > 0) {
+    personId = matchingPeople[0]?.id ?? null;
+    if (personId) {
+      await supabaseAdmin
+        .from('people')
+        .update({ visibility: 'approved' })
+        .eq('id', personId);
+    }
+  } else {
+    const { data: newPerson } = await supabaseAdmin
+      .from('people')
+      .insert({
+        canonical_name: candidateName,
+        visibility: 'approved',
+        created_by: contributorId,
+      })
+      .select('id')
+      .single();
+    personId = (newPerson as { id?: string } | null)?.id ?? null;
+  }
+
+  if (!personId) return null;
+
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from('person_claims')
+    .upsert({
+      person_id: personId,
+      contributor_id: contributorId,
+      status: 'approved',
+      created_at: now,
+      approved_at: now,
+      approved_by: contributorId,
+    }, {
+      onConflict: 'contributor_id',
+    });
+
+  const { data: existingAlias } = await supabaseAdmin
+    .from('person_aliases')
+    .select('id')
+    .eq('person_id', personId)
+    .ilike('alias', candidateName)
+    .limit(1);
+
+  if (!existingAlias || existingAlias.length === 0) {
+    await supabaseAdmin
+      .from('person_aliases')
+      .insert({
+        person_id: personId,
+        alias: candidateName,
+        created_by: contributorId,
+      });
+  }
+
+  return personId;
+};
 
 test.describe('Smoke checks', () => {
   test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
@@ -308,6 +421,7 @@ test.describe('Smoke checks', () => {
   test('identity default persists', async ({ page }) => {
     await login(page);
 
+    await ensureTestIdentityClaim();
     const identity = await loadIdentity(page);
     if (!identity?.person) {
       test.skip(true, 'No identity claim available for this user.');
@@ -335,6 +449,7 @@ test.describe('Smoke checks', () => {
       test.skip(true, 'SUPABASE_URL and SUPABASE_SECRET_KEY are required for identity visibility test.');
     }
 
+    await ensureTestIdentityClaim();
     const identity = await loadIdentity(page);
     const personId = identity?.person?.id as string | undefined;
     const personName = (identity?.person?.name || '').trim();
@@ -416,6 +531,7 @@ test.describe('Smoke checks', () => {
 
     let seededNoteId: string | null = null;
     try {
+      await ensureTestIdentityClaim();
       let identity = await loadIdentity(page);
       let targetNote = identity?.notes?.find((n: any) => n?.event?.id);
 
