@@ -274,28 +274,21 @@ test.describe('Smoke checks', () => {
     let seededNoteId: string | null = null;
     try {
       let identity = await loadIdentity(page);
-      // debug: visibility of identity and note count
-      console.log('[per-note] identity.person', identity?.person?.id);
-      console.log('[per-note] identity.notes count', identity?.notes?.length ?? 0);
       let targetNote = identity?.notes?.find((n: any) => n?.event?.id);
 
       if (!identity?.person) {
-        console.log('[per-note] skipping: no identity.person');
         test.skip(true, 'No identity claim available for per-note overrides.');
       }
 
       if (!targetNote) {
         seededNoteId = await ensureNoteReferenceForIdentity(identity);
-        console.log('[per-note] seeded note id', seededNoteId);
         if (seededNoteId) {
           identity = await loadIdentity(page);
-          console.log('[per-note] reloaded identity notes count', identity?.notes?.length ?? 0);
           targetNote = identity?.notes?.find((n: any) => n?.event?.id);
         }
       }
 
       if (!targetNote) {
-        console.log('[per-note] skipping: still no targetNote after seed');
         test.skip(true, 'No note mentions available to override.');
       }
 
@@ -320,7 +313,6 @@ test.describe('Smoke checks', () => {
 
         authorButtons = page.locator('button[data-author-id]');
         const authorButtonsCount = await authorButtons.count();
-        console.log('[per-note] author buttons count after toggle', authorButtonsCount);
 
         if (authorButtonsCount > 0) {
           const authorId = (targetNote.event?.contributor_id as string | null) ?? 'unknown';
@@ -343,7 +335,6 @@ test.describe('Smoke checks', () => {
         .catch(() => false);
 
       if (!noteSelectVisible) {
-        console.log('[per-note] skipping: note select not visible for ref', refId);
         test.skip(true, 'No per-note visibility control available for this note.');
         return;
       }
