@@ -93,7 +93,10 @@ export async function getEventById(id: string) {
     .single();
 
   if (error) {
-    console.error('Error fetching event:', error);
+    const errorCode = (error as { code?: string }).code;
+    if (errorCode !== 'PGRST116') {
+      console.error('Error fetching event:', error);
+    }
     return null;
   }
 

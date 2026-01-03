@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
 
     // Look up the invite code (case-insensitive)
-    const { data: inviteCode, error } = await (admin.from('invite_codes') as ReturnType<typeof admin.from>)
+    const { data: inviteCode, error } = await admin.from('invite_codes')
       .select('id, code, uses_remaining, expires_at')
       .ilike('code', code.trim())
       .single() as { data: { id: string; code: string; uses_remaining: number | null; expires_at: string | null } | null; error: unknown };

@@ -13,7 +13,7 @@ import {
 } from '@/lib/memories';
 import { mapLegacyPersonRole } from '@/lib/form-types';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { shouldCreateInvite, buildInviteData } from '@/lib/invites';
+import { shouldCreateInvite, buildInviteData, getInviteExpiryDate } from '@/lib/invites';
 import { lintNote } from '@/lib/note-lint';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
 
     if (prompted_by_event_id) {
       // Look up the parent event's chain info
-      const { data: parentEvent } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+      const { data: parentEvent } = await admin.from('timeline_events')
       .select('id, root_event_id, chain_depth, privacy_level')
         .eq('id', prompted_by_event_id)
         .single();
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
 
     // Fallback: look up or create contributor if not provided
     if (!contributorId && trimmedEmail) {
-      const { data: existingContributorByEmail } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: existingContributorByEmail } = await admin.from('contributors')
         .select('id')
         .ilike('email', trimmedEmail)
         .single();
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!contributorId && trimmedName) {
-      const { data: existingContributorByName } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: existingContributorByName } = await admin.from('contributors')
         .select('id')
         .ilike('name', trimmedName)
         .single();
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!contributorId && trimmedName) {
-      const { data: createdContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: createdContributor } = await admin.from('contributors')
         .insert({
           name: trimmedName,
           relation: trimmedRelation || 'family/friend',
@@ -195,7 +195,13 @@ export async function POST(request: NextRequest) {
       contributorId = (createdContributor as { id?: string } | null)?.id ?? null;
     }
 
-    const { data: eventData, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: contributorRecord } = contributorId
+      ? await admin.from('contributors').select('trusted').eq('id', contributorId).single()
+      : { data: null };
+    const isTrusted = (contributorRecord as { trusted?: boolean | null } | null)?.trusted === true;
+    const status = isTrusted ? 'published' : 'pending';
+
+    const { data: eventData, error: eventError } = await admin.from('timeline_events')
       .insert({
         year: timing.year,
         year_end: timing.yearEnd,
@@ -217,7 +223,7 @@ export async function POST(request: NextRequest) {
         timing_raw_text: timingRawText,
         witness_type: normalizedWitnessType,
         recurrence: normalizedRecurrence,
-        status: 'published',
+        status,
         privacy_level: effectivePrivacy,
         prompted_by_event_id: prompted_by_event_id || null,
         root_event_id: chainInfo.rootEventId,
@@ -240,7 +246,7 @@ export async function POST(request: NextRequest) {
 
     // If this is a standalone event (no parent), set root_event_id to self
     if (eventId && !chainInfo.rootEventId) {
-      await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+      await admin.from('timeline_events')
         .update({ root_event_id: eventId })
         .eq('id', eventId);
     }
@@ -258,7 +264,7 @@ export async function POST(request: NextRequest) {
       // Insert link references
       for (const linkRef of linkRefs) {
         if (linkRef.url && linkRef.display_name) {
-          await (admin.from('event_references') as ReturnType<typeof admin.from>).insert({
+          await admin.from('event_references').insert({
             event_id: eventId,
             type: 'link',
             url: linkRef.url,
@@ -298,7 +304,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        await (admin.from('event_references') as ReturnType<typeof admin.from>).insert({
+        await admin.from('event_references').insert({
           event_id: eventId,
           type: 'person',
           person_id: personId,
@@ -312,7 +318,7 @@ export async function POST(request: NextRequest) {
         if (shouldCreateInvite({ name: trimmedName, relationship: personRef.relationship || '', phone: personRef.phone })) {
           let inviteName = trimmedName || 'Someone';
           if (!trimmedName) {
-            const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
+            const { data: personRows } = await admin.from('people')
               .select('canonical_name')
               .eq('id', personId)
               .limit(1);
@@ -325,7 +331,7 @@ export async function POST(request: NextRequest) {
           );
 
           if (inviteData) {
-            const { data: invite } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+            const { data: invite } = await admin.from('invites')
               .insert({
                 event_id: eventId,
                 recipient_name: inviteData.recipient_name,
@@ -334,6 +340,7 @@ export async function POST(request: NextRequest) {
                 message: inviteData.message,
                 sender_id: contributorId,
                 status: 'pending',
+                expires_at: getInviteExpiryDate(),
               })
               .select('id')
               .single();
@@ -354,13 +361,13 @@ export async function POST(request: NextRequest) {
     if (heard_from?.name && eventId) {
       const storytellerName = heard_from.name.trim();
       const storytellerRelation = heard_from.relationship?.trim() || null;
-      const storytellerEmail = heard_from.email?.trim() || null;
+      const storytellerPhone = heard_from.phone?.trim() || null;
 
       const storytellerPersonId = await resolvePersonIdByName(storytellerName);
 
       // Create "heard from" reference
       if (storytellerPersonId) {
-        await (admin.from('event_references') as ReturnType<typeof admin.from>).insert({
+        await admin.from('event_references').insert({
           event_id: eventId,
           type: 'person',
           person_id: storytellerPersonId,
@@ -370,17 +377,29 @@ export async function POST(request: NextRequest) {
           added_by: contributorId,
         });
 
-        // Create invite if requested
-        if (heard_from.shouldInvite && storytellerEmail && contributorId) {
-          await (admin.from('invites') as ReturnType<typeof admin.from>).insert({
-            event_id: eventId,
-            recipient_name: storytellerName,
-            recipient_contact: storytellerEmail,
-            method: 'email',
-            message: `${submitter_name} has been carrying a story you told them. Now you can add your own link to the chain.`,
-            sender_id: contributorId,
-            status: 'pending',
-          });
+        // Create SMS invite if phone provided
+        if (storytellerPhone && contributorId) {
+          const { data: invite } = await admin.from('invites')
+            .insert({
+              event_id: eventId,
+              recipient_name: storytellerName,
+              recipient_contact: storytellerPhone,
+              method: 'sms',
+              message: `${submitter_name} has been carrying a story you told them. Now you can add your own link to the chain.`,
+              sender_id: contributorId,
+              status: 'pending',
+              expires_at: getInviteExpiryDate(),
+            })
+            .select('id')
+            .single();
+
+          if (invite) {
+            createdInvites.push({
+              id: (invite as { id: string }).id,
+              name: storytellerName,
+              phone: storytellerPhone,
+            });
+          }
         }
       }
     }
@@ -391,7 +410,7 @@ export async function POST(request: NextRequest) {
       const normalizedRelationship = allowedRelationships.has(relationship) ? relationship : 'perspective';
       const trimmedRelationshipNote = typeof relationship_note === 'string' ? relationship_note.trim() : '';
 
-      await (admin.from('memory_threads') as ReturnType<typeof admin.from>).insert({
+      await admin.from('memory_threads').insert({
         original_event_id: prompted_by_event_id,
         response_event_id: eventId,
         relationship: normalizedRelationship,
@@ -406,7 +425,7 @@ export async function POST(request: NextRequest) {
         : attachment_type === 'audio'
           ? 'audio'
           : 'document';
-      const { data: mediaData, error: mediaError } = await (admin.from('media') as ReturnType<typeof admin.from>)
+      const { data: mediaData, error: mediaError } = await admin.from('media')
         .insert({
           type: mediaType,
           url: trimmedAttachmentUrl,
@@ -426,8 +445,8 @@ export async function POST(request: NextRequest) {
       }
 
       const mediaId = (mediaData as { id?: string } | null)?.id;
-      if (mediaId) {
-        const { error: linkError } = await (admin.from('event_media') as ReturnType<typeof admin.from>)
+      if (eventId && mediaId) {
+        const { error: linkError } = await admin.from('event_media')
           .insert({
             event_id: eventId,
             media_id: mediaId,

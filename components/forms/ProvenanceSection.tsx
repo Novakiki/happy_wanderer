@@ -6,13 +6,14 @@ import {
   MEMORY_PROVENANCE_DESCRIPTIONS,
   RELATIONSHIP_OPTIONS,
 } from '@/lib/terminology';
-import type { ProvenanceData, ProvenanceType } from '@/lib/form-types';
+import type { EntryType, ProvenanceData, ProvenanceType } from '@/lib/form-types';
 
 type Props = {
   value: ProvenanceData;
   onChange: (data: ProvenanceData) => void;
   required?: boolean;
   compact?: boolean; // For edit mode - simpler UI
+  entryType?: EntryType; // Controls which primary option shows (firsthand vs pattern_observed)
 };
 
 export default function ProvenanceSection({
@@ -20,7 +21,16 @@ export default function ProvenanceSection({
   onChange,
   required = false,
   compact = false,
+  entryType = 'memory',
 }: Props) {
+  const isSynchronicity = entryType === 'origin';
+
+  // Contextual labels for synchronicities
+  const firsthandLabel = isSynchronicity ? 'I noticed it myself' : MEMORY_PROVENANCE.firsthand;
+  const firsthandDesc = isSynchronicity ? 'You made the connection yourself' : MEMORY_PROVENANCE_DESCRIPTIONS.firsthand;
+  const secondhandLabel = isSynchronicity ? 'Someone helped me see it' : MEMORY_PROVENANCE.secondhand;
+  const secondhandDesc = isSynchronicity ? 'Someone else pointed out the connection' : MEMORY_PROVENANCE_DESCRIPTIONS.secondhand;
+  const labelText = isSynchronicity ? 'Who helped you see this connection?' : 'How do you know this?';
   const updateType = (type: ProvenanceType) => {
     onChange({ ...value, type });
   };
@@ -83,7 +93,7 @@ export default function ProvenanceSection({
     return (
       <div>
         <label className={formStyles.label}>
-          How do you know this?
+          {labelText}
           {required && <span className={formStyles.required}> *</span>}
         </label>
         <select
@@ -131,33 +141,16 @@ export default function ProvenanceSection({
                 )}
               </select>
             </div>
-          </div>
-        )}
-
-        {value.type === 'from_references' && (
-          <div className="mt-3 space-y-3">
-            <div>
+            <div className="mt-3">
               <label className={formStyles.labelMuted}>
-                What record? <span className="text-white/50">(optional)</span>
+                Phone number to invite them <span className="text-white/50">(optional)</span>
               </label>
               <input
-                type="text"
-                value={value.referenceName || ''}
-                onChange={(e) => updateField('referenceName', e.target.value)}
-                placeholder="e.g., Her journal, family photo album"
+                type="tel"
+                value={value.toldByPhone || ''}
+                onChange={(e) => updateField('toldByPhone', e.target.value)}
+                placeholder="They'll get a text to add their own memories"
                 className={formStyles.input}
-              />
-            </div>
-            <div>
-              <label className={formStyles.labelMuted}>
-                Link <span className="text-white/50">(optional)</span>
-              </label>
-              <input
-                type="url"
-                value={value.referenceUrl || ''}
-                onChange={(e) => updateField('referenceUrl', e.target.value)}
-                placeholder="https://..."
-                className={formStyles.inputSmall}
               />
             </div>
           </div>
@@ -170,12 +163,10 @@ export default function ProvenanceSection({
   // Full mode: card-based selection (for add form)
   return (
     <div>
-      <label className={formStyles.label}>
-        How do you know this?
-        {required && <span className={formStyles.required}> *</span>}
-      </label>
+      <p className={formStyles.sectionLabel}>The Chain</p>
+      <p className={`${formStyles.hint} mb-4`}>{labelText}</p>
       <div className="space-y-3 mt-3">
-        {/* I was there (firsthand) */}
+        {/* "I was there" / "I noticed it myself" (firsthand) */}
         <button
           type="button"
           onClick={() => updateType('firsthand')}
@@ -197,10 +188,10 @@ export default function ProvenanceSection({
             </div>
             <div>
               <p className="text-sm font-medium text-white">
-                {MEMORY_PROVENANCE.firsthand}
+                {firsthandLabel}
               </p>
               <p className="text-xs text-white/50">
-                {MEMORY_PROVENANCE_DESCRIPTIONS.firsthand}
+                {firsthandDesc}
               </p>
             </div>
           </div>
@@ -228,10 +219,10 @@ export default function ProvenanceSection({
             </div>
             <div>
               <p className="text-sm font-medium text-white">
-                {MEMORY_PROVENANCE.secondhand}
+                {secondhandLabel}
               </p>
               <p className="text-xs text-white/50">
-                {MEMORY_PROVENANCE_DESCRIPTIONS.secondhand}
+                {secondhandDesc}
               </p>
             </div>
           </div>
@@ -265,64 +256,16 @@ export default function ProvenanceSection({
                   )}
                 </select>
               </div>
-            </div>
-          )}
-        </button>
-
-        {/* From a record (from_references) */}
-        <button
-          type="button"
-          onClick={() => updateType('from_references')}
-          className={`w-full text-left rounded-xl border p-4 transition-all duration-200 ${
-            value.type === 'from_references'
-              ? 'border-[#e07a5f] bg-[#e07a5f]/10'
-              : 'border-white/10 bg-white/5 hover:border-white/20 opacity-70 hover:opacity-100'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                value.type === 'from_references' ? 'border-[#e07a5f]' : 'border-white/30'
-              }`}
-            >
-              {value.type === 'from_references' && (
-                <div className="w-2 h-2 rounded-full bg-[#e07a5f]" />
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-white">
-                {MEMORY_PROVENANCE.from_references}
-              </p>
-              <p className="text-xs text-white/50">
-                {MEMORY_PROVENANCE_DESCRIPTIONS.from_references}
-              </p>
-            </div>
-          </div>
-          {value.type === 'from_references' && (
-            <div
-              className="mt-4 pt-4 border-t border-white/10 space-y-3"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div>
-                <label className={formStyles.label}>What is it?</label>
-                <input
-                  type="text"
-                  value={value.referenceName || ''}
-                  onChange={(e) => updateField('referenceName', e.target.value)}
-                  placeholder="e.g., Her journal, family photo album"
-                  className={formStyles.input}
-                />
-              </div>
-              <div>
+              <div className="mt-3">
                 <label className={formStyles.labelMuted}>
-                  Link <span className="text-white/50">(optional)</span>
+                  Phone number to invite them <span className="text-white/50">(optional)</span>
                 </label>
                 <input
-                  type="url"
-                  value={value.referenceUrl || ''}
-                  onChange={(e) => updateField('referenceUrl', e.target.value)}
-                  placeholder="https://..."
-                  className={formStyles.inputSmall}
+                  type="tel"
+                  value={value.toldByPhone || ''}
+                  onChange={(e) => updateField('toldByPhone', e.target.value)}
+                  placeholder="They'll get a text to add their own memories"
+                  className={formStyles.input}
                 />
               </div>
             </div>

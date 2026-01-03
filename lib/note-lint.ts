@@ -19,15 +19,12 @@ export async function lintNote(
     return [];
   }
 
-  const { data, error } = await ((admin as any).rpc('lint_note', { note_body: noteBody }) as Promise<{
-    data: unknown;
-    error: { message?: string } | null;
-  }>);
+  const { data, error } = await admin.rpc('lint_note', { note_body: noteBody });
 
   if (error) {
     console.warn('lint_note RPC failed', error);
     return [];
   }
 
-  return Array.isArray(data) ? (data as LintWarning[]) : [];
+  return Array.isArray(data) ? (data as unknown as LintWarning[]) : [];
 }

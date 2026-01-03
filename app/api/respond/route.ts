@@ -50,6 +50,13 @@ import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
+import {
+  createInviteSessionCookie,
+  inviteSessionMatchesInvite,
+  INVITE_COOKIE_NAME,
+  INVITE_COOKIE_TTL_SECONDS,
+  readInviteSession,
+} from '@/lib/invite-session';
 import { NextRequest, NextResponse } from 'next/server';
 
 type Visibility = 'approved' | 'blurred' | 'anonymized' | 'removed' | 'pending';
@@ -68,7 +75,7 @@ function normalizeVisibility(value: string | null | undefined): Visibility {
 }
 
 async function getContributorId(admin: ReturnType<typeof createAdminClient>, userId: string) {
-  const { data } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+  const { data } = await admin.from('profiles')
     .select('contributor_id')
     .eq('id', userId)
     .single();
@@ -76,7 +83,7 @@ async function getContributorId(admin: ReturnType<typeof createAdminClient>, use
 }
 
 async function getPersonIdForContributor(admin: ReturnType<typeof createAdminClient>, contributorId: string) {
-  const { data } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+  const { data } = await admin.from('person_claims')
     .select('person_id, status')
     .eq('contributor_id', contributorId);
 
@@ -100,6 +107,9 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
+  const inviteSession = await readInviteSession(
+    request.cookies.get(INVITE_COOKIE_NAME)?.value
+  );
   const viewerIdentity = {
     is_authenticated: false,
     has_identity: false,
@@ -116,13 +126,13 @@ export async function GET(request: NextRequest) {
       const personId = await getPersonIdForContributor(admin, contributorId);
       if (personId) {
         viewerIdentity.has_identity = true;
-        const { data: person } = await (admin.from('people') as ReturnType<typeof admin.from>)
+        const { data: person } = await admin.from('people')
           .select('visibility')
           .eq('id', personId)
           .single();
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: prefs } = await (admin.from('visibility_preferences' as any) as any)
+        const { data: prefs } = await admin.from('visibility_preferences' as any)
           .select('visibility')
           .eq('person_id', personId)
           .is('contributor_id', null);
@@ -139,6 +149,9 @@ export async function GET(request: NextRequest) {
     id: string;
     recipient_name: string;
     status: string;
+    max_uses: number | null;
+    uses_count: number | null;
+    expires_at: string | null;
     event: {
       id: string;
       title: string;
@@ -153,11 +166,14 @@ export async function GET(request: NextRequest) {
   };
 
   // Fetch the invite with related event and sender info
-  const { data: invite, error } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+  const { data: invite, error } = await admin.from('invites')
     .select(`
       id,
       recipient_name,
       status,
+      max_uses,
+      uses_count,
+      expires_at,
       event:timeline_events(id, title, type, full_entry, year, year_end, contributor_id, contributor:contributors!timeline_events_contributor_id_fkey(name)),
       sender:contributors!invites_sender_id_fkey(name)
     `)
@@ -169,6 +185,17 @@ export async function GET(request: NextRequest) {
   }
 
   const typedInvite = invite as InviteResult;
+  const hasInviteSession = await inviteSessionMatchesInvite(inviteSession, inviteId);
+  const maxUses = typedInvite.max_uses ?? null;
+  const usesCount = typedInvite.uses_count ?? 0;
+
+  if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date()) {
+    return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+  }
+
+  if (maxUses !== null && usesCount >= maxUses && !hasInviteSession) {
+    return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+  }
 
   // Look up relationship + identity visibility from event_references
   // This tells us *the recipient's* relationship to Val
@@ -195,7 +222,7 @@ export async function GET(request: NextRequest) {
       } | null;
     };
 
-    const { data: refs } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data: refs } = await admin.from('event_references')
       .select('id, type, url, display_name, role, note, visibility, relationship_to_subject, person:people(id, canonical_name, visibility), contributor:contributors!event_references_contributor_id_fkey(name)')
       .eq('event_id', eventId)
       .eq('type', 'person');
@@ -270,11 +297,11 @@ export async function GET(request: NextRequest) {
       .map((ref) => ref.person?.id)
       .filter((id): id is string => Boolean(id));
 
-    let preferencesMap: Map<string, { contributor_preference?: string | null; global_preference?: string | null }> = new Map();
+    const preferencesMap: Map<string, { contributor_preference?: string | null; global_preference?: string | null }> = new Map();
 
     if (personIds.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let prefQuery = (admin.from('visibility_preferences' as any) as any)
+      let prefQuery = admin.from('visibility_preferences' as any)
         .select('person_id, contributor_id, visibility')
         .in('person_id', personIds);
 
@@ -287,7 +314,7 @@ export async function GET(request: NextRequest) {
       const { data: prefs } = await prefQuery;
 
       if (prefs) {
-        for (const pref of prefs as { person_id: string; contributor_id: string | null; visibility: string }[]) {
+        for (const pref of prefs as unknown as { person_id: string; contributor_id: string | null; visibility: string }[]) {
           const existing = preferencesMap.get(pref.person_id) || {};
           if (pref.contributor_id === senderId) {
             existing.contributor_preference = pref.visibility;
@@ -308,14 +335,22 @@ export async function GET(request: NextRequest) {
     maskedContent = maskContentWithReferences(maskedContent, redactedRefs, mentionRows);
   }
 
-  // Mark as opened if first time
+  const inviteUpdates: Record<string, unknown> = {};
   if (typedInvite.status === 'pending' || typedInvite.status === 'sent') {
-    await (admin.from('invites') as ReturnType<typeof admin.from>)
-      .update({ status: 'opened', opened_at: new Date().toISOString() })
+    inviteUpdates.status = 'opened';
+    inviteUpdates.opened_at = new Date().toISOString();
+  }
+  if (!hasInviteSession) {
+    inviteUpdates.uses_count = usesCount + 1;
+  }
+
+  if (Object.keys(inviteUpdates).length > 0) {
+    await admin.from('invites')
+      .update(inviteUpdates)
       .eq('id', inviteId);
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     invite: {
       id: typedInvite.id,
       recipient_name: typedInvite.recipient_name,
@@ -332,6 +367,21 @@ export async function GET(request: NextRequest) {
     },
     viewer_identity: viewerIdentity,
   });
+
+  if (!hasInviteSession) {
+    const cookieValue = await createInviteSessionCookie(inviteId);
+    if (cookieValue) {
+      response.cookies.set(INVITE_COOKIE_NAME, cookieValue, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: INVITE_COOKIE_TTL_SECONDS,
+      });
+    }
+  }
+
+  return response;
 }
 
 /**
@@ -376,13 +426,21 @@ export async function POST(request: NextRequest) {
 
     const lintWarnings = await lintNote(admin, content);
 
-    type InviteRow = { id: string; event_id: string; recipient_name: string; recipient_contact: string | null };
+    type InviteRow = {
+      id: string;
+      event_id: string;
+      recipient_name: string;
+      recipient_contact: string | null;
+      max_uses: number | null;
+      uses_count: number | null;
+      expires_at: string | null;
+    };
     type EventRow = { year: number; year_end: number | null; life_stage: string | null; location: string | null; subject_id: string | null; privacy_level: string | null };
     type ContributorRow = { id: string };
 
     // Fetch the invite to get event details
-    const { data: invite, error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>)
-      .select('id, event_id, recipient_name, recipient_contact')
+    const { data: invite, error: inviteError } = await admin.from('invites')
+      .select('id, event_id, recipient_name, recipient_contact, max_uses, uses_count, expires_at')
       .eq('id', invite_id)
       .single();
 
@@ -391,9 +449,23 @@ export async function POST(request: NextRequest) {
     }
 
     const typedInvite = invite as InviteRow;
+    const inviteSession = await readInviteSession(
+      request.cookies.get(INVITE_COOKIE_NAME)?.value
+    );
+    const hasInviteSession = await inviteSessionMatchesInvite(inviteSession, invite_id);
+
+    if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date() && !hasInviteSession) {
+      return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+    }
+
+    const maxUses = typedInvite.max_uses ?? null;
+    const usesCount = typedInvite.uses_count ?? 0;
+    if (maxUses !== null && usesCount >= maxUses && !hasInviteSession) {
+      return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+    }
 
     // Fetch the original event to get context
-    const { data: originalEvent } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: originalEvent } = await admin.from('timeline_events')
       .select('year, year_end, life_stage, location, subject_id, privacy_level')
       .eq('id', typedInvite.event_id)
       .single();
@@ -403,7 +475,7 @@ export async function POST(request: NextRequest) {
     // Create or find contributor for the responder
     let contributorId: string | null = null;
 
-    const { data: existingContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+    const { data: existingContributor } = await admin.from('contributors')
       .select('id')
       .ilike('name', trimmedName)
       .single();
@@ -411,7 +483,7 @@ export async function POST(request: NextRequest) {
     if ((existingContributor as ContributorRow | null)?.id) {
       contributorId = (existingContributor as ContributorRow).id;
     } else {
-      const { data: newContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: newContributor } = await admin.from('contributors')
         .insert({ name: trimmedName, relation: 'family/friend' })
         .select('id')
         .single();
@@ -441,13 +513,13 @@ export async function POST(request: NextRequest) {
 
     // Create the response as a new event linked to the original
     const previewText = generatePreviewFromHtml(content, PREVIEW_MAX_LENGTH);
-    const { data: newEvent, error: eventError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: newEvent, error: eventError } = await admin.from('timeline_events')
       .insert({
         title: `Re: ${trimmedName}'s note`,
         full_entry: content.trim(),
         preview: previewText,
         type: 'memory',
-        status: 'published',
+        status: 'pending',
         year: typedEvent?.year || new Date().getFullYear(),
         year_end: typedEvent?.year_end,
         life_stage: typedEvent?.life_stage,
@@ -477,7 +549,7 @@ export async function POST(request: NextRequest) {
 
     // Create a memory thread linking the response to the original
     // TODO: After inserting, check if original contributor has email and send notification
-    await (admin.from('memory_threads') as ReturnType<typeof admin.from>).insert({
+    await admin.from('memory_threads').insert({
       original_event_id: typedInvite.event_id,
       response_event_id: typedNewEvent.id,
       relationship: normalizedRelationship,
@@ -495,7 +567,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Mark invite as contributed
-    await (admin.from('invites') as ReturnType<typeof admin.from>)
+    await admin.from('invites')
       .update({
         status: 'contributed',
         contributed_at: new Date().toISOString(),

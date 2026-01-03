@@ -27,6 +27,7 @@ CREATE TABLE contributors (
   relation TEXT NOT NULL,  -- "sister", "cousin", "husband", "friend"
   email TEXT,
   phone TEXT,
+  trusted BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   last_active TIMESTAMPTZ
 );
@@ -234,6 +235,11 @@ CREATE TABLE invites (
   method TEXT NOT NULL CHECK (method IN ('email', 'sms', 'link')),
   message TEXT,
   sender_id UUID REFERENCES contributors(id),
+  parent_invite_id UUID REFERENCES invites(id) ON DELETE SET NULL,
+  depth INTEGER DEFAULT 0,
+  max_uses INTEGER DEFAULT 10,
+  uses_count INTEGER DEFAULT 0,
+  expires_at TIMESTAMPTZ DEFAULT (now() + interval '72 hours'),
 
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'opened', 'clicked', 'contributed')),
   sent_at TIMESTAMPTZ,
@@ -726,6 +732,8 @@ CREATE UNIQUE INDEX idx_visibility_preferences_person_default ON visibility_pref
 WHERE contributor_id IS NULL;
 CREATE INDEX idx_witnesses_event ON witnesses(event_id);
 CREATE INDEX idx_witnesses_status ON witnesses(status);
+CREATE INDEX idx_invites_parent ON invites(parent_invite_id);
+CREATE INDEX idx_invites_expires_at ON invites(expires_at);
 CREATE INDEX idx_invites_status ON invites(status);
 CREATE INDEX idx_edit_tokens_token ON edit_tokens(token);
 CREATE INDEX idx_edit_tokens_contributor ON edit_tokens(contributor_id);

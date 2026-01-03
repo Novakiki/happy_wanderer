@@ -60,6 +60,14 @@ export type InviteData = {
   message: string;
 };
 
+export const INVITE_EXPIRY_HOURS = 72;
+export const INVITE_MAX_USES = 10;
+export const INVITE_MAX_DEPTH = 3;
+
+export function getInviteExpiryDate(now = Date.now()) {
+  return new Date(now + INVITE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
+}
+
 /**
  * Validates a person reference has required fields
  */

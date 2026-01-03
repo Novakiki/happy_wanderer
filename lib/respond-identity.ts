@@ -70,12 +70,12 @@ export async function upsertInviteIdentityReference({
     contributor: { name: string | null } | null;
   };
 
-  const { data: refs } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+  const { data: refs } = await admin.from('event_references')
     .select('id, display_name, relationship_to_subject, person:people(id, canonical_name), contributor:contributors(name)')
     .eq('event_id', eventId)
     .eq('type', 'person');
 
-  const match = (refs as RefRow[] | null)?.find((ref) => {
+  const match = (refs as unknown as RefRow[] | null)?.find((ref) => {
     const candidate =
       ref.person?.canonical_name ||
       ref.display_name ||
@@ -95,7 +95,7 @@ export async function upsertInviteIdentityReference({
     }
 
     if (Object.keys(updatePayload).length > 0) {
-      await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      await admin.from('event_references')
         .update(updatePayload)
         .eq('id', match.id);
     }
@@ -108,7 +108,7 @@ export async function upsertInviteIdentityReference({
 
   if (!personId) return;
 
-  await (admin.from('event_references') as ReturnType<typeof admin.from>).insert({
+  await admin.from('event_references').insert({
     event_id: eventId,
     type: 'person',
     person_id: personId,

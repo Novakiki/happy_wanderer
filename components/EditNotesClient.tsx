@@ -11,18 +11,16 @@ import {
 } from '@/lib/form-types';
 import { buildTimingRawText, validateYearRange } from '@/lib/form-validation';
 import { stripHtml } from '@/lib/html-utils';
+import { buildSmsLink } from '@/lib/invites';
 import type { ReferenceVisibility } from '@/lib/references';
 import { formStyles } from '@/lib/styles';
 import {
   ENTRY_TYPE_DESCRIPTIONS,
   ENTRY_TYPE_LABELS,
   LIFE_STAGE_YEAR_RANGES,
-  THREAD_RELATIONSHIP_LABELS,
-  TIMING_CERTAINTY,
-  TIMING_CERTAINTY_DESCRIPTIONS,
 } from '@/lib/terminology';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection } from './forms';
 import type { TimingMode } from './forms/TimingModeSelector';
 import { TimingModeSelector } from './forms/TimingModeSelector';
@@ -126,14 +124,23 @@ type Props = {
   initialEditingId?: string | null;
 };
 
-type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
-
 type LintWarning = {
   code: string;
   message: string;
   suggestion?: string;
   severity?: 'soft' | 'strong';
   match?: string;
+};
+
+type InviteSummary = {
+  id: string;
+  recipient_name: string;
+  recipient_contact: string;
+  method: string;
+  status: string;
+  sent_at?: string | null;
+  opened_at?: string | null;
+  contributed_at?: string | null;
 };
 
 export default function EditNotesClient({
@@ -244,23 +251,13 @@ export default function EditNotesClient({
       return acc;
     }, {} as Record<string, boolean>)
   );
-  const [linkRelationships, setLinkRelationships] = useState<Record<string, ThreadRelationship>>(
-    () =>
-      initialEvents.reduce((acc, event) => {
-        acc[event.id] = 'perspective';
-        return acc;
-      }, {} as Record<string, ThreadRelationship>)
-  );
-  const [linkNotes, setLinkNotes] = useState<Record<string, string>>(
-    () =>
-      initialEvents.reduce((acc, event) => {
-        acc[event.id] = '';
-        return acc;
-      }, {} as Record<string, string>)
-  );
   const [llmMessages, setLlmMessages] = useState<Record<string, string | null>>({});
   const [llmReasons, setLlmReasons] = useState<Record<string, string[]>>({});
   const [lintWarningsById, setLintWarningsById] = useState<Record<string, LintWarning[]>>({});
+  const [invitesByEvent, setInvitesByEvent] = useState<Record<string, InviteSummary[]>>({});
+  const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
+  const [connectionsLoading, setConnectionsLoading] = useState<Record<string, boolean>>({});
+  const connectionsRefs = useRef<Record<string, HTMLDivElement | null>>({}).current;
 
   useEffect(() => {
     if (!initialEditingId) return;
@@ -268,6 +265,36 @@ export default function EditNotesClient({
       setEditingId(initialEditingId);
     }
   }, [initialEditingId, events]);
+
+  useEffect(() => {
+    // Preload invites for all events
+    const controller = new AbortController();
+    const fetchInvites = async (eventId: string) => {
+      setConnectionsLoading((prev) => ({ ...prev, [eventId]: true }));
+      try {
+        const res = await fetch(`/api/edit/invites?token=${encodeURIComponent(token)}&event_id=${eventId}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (data?.invites) {
+          setInvitesByEvent((prev) => ({ ...prev, [eventId]: data.invites as InviteSummary[] }));
+        }
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          console.warn('Invite fetch failed', err);
+        }
+      } finally {
+        setConnectionsLoading((prev) => ({ ...prev, [eventId]: false }));
+      }
+    };
+
+    initialEvents.forEach((event) => {
+      fetchInvites(event.id);
+    });
+
+    return () => controller.abort();
+  }, [initialEvents, token]);
 
   // Warn user before leaving with unsaved changes
   useEffect(() => {
@@ -291,6 +318,92 @@ export default function EditNotesClient({
       return `${isApproximate ? '~' : ''}${event.year}–${event.year_end}`;
     }
     return isApproximate ? `~${event.year}` : String(event.year);
+  };
+
+  const scrollToConnections = (eventId: string) => {
+    const ref = connectionsRefs[eventId];
+    if (ref) {
+      ref.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const getConnectionSummary = (eventId: string, data: EditableEvent) => {
+    const invites = invitesByEvent[eventId] ?? [];
+    const existingContacts = new Set(invites.map((i) => i.recipient_contact));
+
+    let ready = 0;
+
+    if (data.provenance?.type === 'secondhand' && data.provenance.toldByPhone && data.provenance.toldByName) {
+      const phone = data.provenance.toldByPhone.trim();
+      if (phone && !existingContacts.has(phone)) {
+        ready += 1;
+      }
+    }
+
+    (data.person_refs || []).forEach((p) => {
+      const phone = p.phone?.trim();
+      if (phone && !existingContacts.has(phone)) {
+        ready += 1;
+      }
+    });
+
+    const contributed = invites.filter((i) => i.status === 'contributed').length;
+
+    return {
+      invitesCount: invites.length,
+      contributedCount: contributed,
+      readyCount: ready,
+    };
+  };
+
+  const handleManageInvites = (eventId: string) => {
+    setEditingId(eventId);
+    // allow render to occur before scrolling
+    setTimeout(() => scrollToConnections(eventId), 50);
+  };
+
+  const upsertInvite = async (
+    eventId: string,
+    payload: { name: string; contact: string; relationship?: string | null }
+  ) => {
+    setInviteStatus((prev) => ({ ...prev, [eventId]: `Sending to ${payload.name}...` }));
+    try {
+      const res = await fetch('/api/edit/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          event_id: eventId,
+          recipient_name: payload.name,
+          recipient_contact: payload.contact,
+          relationship_to_subject: payload.relationship || '',
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteStatus((prev) => ({ ...prev, [eventId]: data?.error || 'Could not send invite.' }));
+        return;
+      }
+
+      const smsLink = data?.sms_link as string | null | undefined;
+      if (smsLink) {
+        window.open(smsLink, '_blank');
+      }
+      // Refresh invites
+      const refresh = await fetch(`/api/edit/invites?token=${encodeURIComponent(token)}&event_id=${eventId}`);
+      if (refresh.ok) {
+        const refreshed = await refresh.json().catch(() => null);
+        if (refreshed?.invites) {
+          setInvitesByEvent((prev) => ({ ...prev, [eventId]: refreshed.invites as InviteSummary[] }));
+        }
+      }
+      setInviteStatus((prev) => ({ ...prev, [eventId]: 'Invite ready to text.' }));
+      setTimeout(() => setInviteStatus((prev) => ({ ...prev, [eventId]: '' })), 2500);
+    } catch (err) {
+      console.error(err);
+      setInviteStatus((prev) => ({ ...prev, [eventId]: 'Could not send invite.' }));
+    }
   };
 
   const updateField = (
@@ -515,280 +628,6 @@ export default function EditNotesClient({
     }
   };
 
-  const saveAsLinkedNote = async (eventId: string) => {
-    const payload = formState[eventId];
-    if (!payload) return;
-
-    const trimmedWhy = (payload.why_included || '').trim();
-    const derivedSource = provenanceToSource(payload.provenance);
-    const trimmedSourceName = derivedSource.source_name;
-    const trimmedSourceUrl = derivedSource.source_url;
-
-    const mode = timingMode[eventId] ?? 'year';
-    let timingInputType = payload.timing_input_type;
-    let timingCertainty = payload.timing_certainty || 'approximate';
-    let year = payload.year;
-    let year_end = payload.year_end;
-    let life_stage = payload.life_stage;
-    let date = payload.date;
-
-    if (mode === 'exact') {
-      if (!date) {
-        setStatus((prev) => ({ ...prev, [eventId]: 'Please select a date.' }));
-        return;
-      }
-      const derivedYear = Number.parseInt(date.split('-')[0], 10);
-      if (Number.isNaN(derivedYear)) {
-        setStatus((prev) => ({ ...prev, [eventId]: 'Date must include a year.' }));
-        return;
-      }
-      year = derivedYear;
-      year_end = null;
-      life_stage = null;
-      timingInputType = 'date';
-      timingCertainty = 'exact';
-    } else if (mode === 'year') {
-      if (!year || Number.isNaN(Number(year))) {
-        setStatus((prev) => ({ ...prev, [eventId]: 'Please enter a year.' }));
-        return;
-      }
-      timingInputType = year_end ? 'year_range' : 'year';
-      timingCertainty = timingCertainty || 'approximate';
-      life_stage = null;
-      date = null;
-      const rangeValidation = validateYearRange(year, year_end);
-      if (!rangeValidation.valid) {
-        setStatus((prev) => ({ ...prev, [eventId]: rangeValidation.error }));
-        return;
-      }
-    } else if (mode === 'chapter') {
-      if (!life_stage) {
-        setStatus((prev) => ({ ...prev, [eventId]: 'Select a life stage.' }));
-        return;
-      }
-      const stageRange = LIFE_STAGE_YEAR_RANGES[life_stage as keyof typeof LIFE_STAGE_YEAR_RANGES];
-      if (stageRange) {
-        year = stageRange[0];
-        year_end = stageRange[1];
-      }
-      timingInputType = 'life_stage';
-      timingCertainty = 'approximate';
-      date = null;
-    }
-
-    if (
-      payload.age_start !== null
-      && payload.age_end !== null
-      && payload.age_end < payload.age_start
-    ) {
-      setStatus((prev) => ({ ...prev, [eventId]: 'Age range end must be later.' }));
-      return;
-    }
-
-    setLlmMessages((prev) => ({ ...prev, [eventId]: null }));
-    setLlmReasons((prev) => ({ ...prev, [eventId]: [] }));
-    setStatus((prev) => ({ ...prev, [eventId]: 'linking' }));
-    try {
-      const timingRawText = buildTimingRawText({
-        timingInputType: timingInputType as EditableEvent['timing_input_type'],
-        exactDate: date,
-        year,
-        yearEnd: year_end,
-        lifeStage: life_stage,
-        ageStart: payload.age_start,
-        ageEnd: payload.age_end,
-      }) || payload.timing_raw_text || null;
-      const witnessType = payload.witness_type || provenanceToWitnessType(payload.provenance);
-      const recurrence = payload.recurrence || provenanceToRecurrence(payload.provenance);
-
-          const response = await fetch('/api/edit/linked', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          event_id: eventId,
-          relationship: linkRelationships[eventId] || 'perspective',
-          relationship_note: linkNotes[eventId] || '',
-          year,
-          year_end,
-          date,
-          age_start: payload.age_start,
-          age_end: payload.age_end,
-          life_stage,
-          timing_certainty: timingCertainty,
-          timing_input_type: timingInputType,
-          timing_note: payload.timing_note,
-          timing_raw_text: timingRawText,
-          witness_type: witnessType,
-          recurrence,
-          location: payload.location,
-          people_involved: (() => {
-            const namesFromRefs = (payload.person_refs || [])
-              .map((p) => p.name)
-              .filter((name) => name.trim());
-            return namesFromRefs.length > 0 ? namesFromRefs : payload.people_involved;
-          })(),
-          provenance: payload.provenance.type,
-          entry_type: payload.type,
-          title: payload.title,
-          content: payload.full_entry,
-          why_included: trimmedWhy,
-          source_name: trimmedSourceName,
-          source_url: trimmedSourceUrl,
-          privacy_level: payload.privacy_level,
-          attachment_type: 'none',
-          attachment_url: '',
-          attachment_caption: '',
-          references: {
-            links: payload.references,
-            people: (payload.person_refs || []).map((p) => ({
-              ...p,
-              role: mapToLegacyPersonRole(p.role),
-            })),
-          },
-        }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setLintWarningsById((prev) => ({
-          ...prev,
-          [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
-        }));
-        if (response.status === 422) {
-          setStatus((prev) => ({ ...prev, [eventId]: 'Blocked by LLM review.' }));
-          setLlmMessages((prev) => ({
-            ...prev,
-            [eventId]: 'LLM review blocked saving. Please address the issues below.',
-          }));
-          setLlmReasons((prev) => ({ ...prev, [eventId]: result?.reasons || [] }));
-          return;
-        }
-        setStatus((prev) => ({ ...prev, [eventId]: result?.error || 'Linked note failed.' }));
-        return;
-      }
-
-      setLintWarningsById((prev) => ({
-        ...prev,
-        [eventId]: Array.isArray(result?.lintWarnings) ? result.lintWarnings : [],
-      }));
-
-      setStatus((prev) => ({ ...prev, [eventId]: 'linked' }));
-      setTimeout(() => {
-        setStatus((prev) => ({ ...prev, [eventId]: '' }));
-      }, 1800);
-    } catch (err) {
-      console.error(err);
-      setStatus((prev) => ({ ...prev, [eventId]: 'link-error' }));
-    }
-  };
-
-  const updateReferenceField = (
-    eventId: string,
-    index: number,
-    field: 'display_name' | 'url',
-    value: string
-  ) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      const nextRefs = [...current.references];
-      nextRefs[index] = {
-        ...nextRefs[index],
-        [field]: value,
-      };
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: { ...current, references: nextRefs },
-      };
-    });
-  };
-
-  const updatePersonField = (
-    eventId: string,
-    index: number,
-    field: 'name' | 'relationship' | 'role' | 'phone',
-    value: string
-  ) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      const nextPeople = [...(current.person_refs || [])];
-      if (!nextPeople[index]) return prev;
-      nextPeople[index] = {
-        ...nextPeople[index],
-        [field]: value,
-      };
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: { ...current, person_refs: nextPeople },
-      };
-    });
-  };
-
-  const addPersonRefRow = (eventId: string) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: {
-          ...current,
-          person_refs: [
-            ...(current.person_refs || []),
-            { name: '', relationship: '', role: 'witness' as const, phone: '' },
-          ],
-        },
-      };
-    });
-  };
-
-  const removePersonRefRow = (eventId: string, index: number) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      const nextPeople = [...(current.person_refs || [])];
-      nextPeople.splice(index, 1);
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: { ...current, person_refs: nextPeople },
-      };
-    });
-  };
-
-  const addReference = (eventId: string) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: {
-          ...current,
-          references: [...current.references, { display_name: '', url: '' }],
-        },
-      };
-    });
-  };
-
-  const removeReference = (eventId: string, index: number) => {
-    setFormState((prev) => {
-      const current = prev[eventId];
-      if (!current) return prev;
-      const nextRefs = [...current.references];
-      nextRefs.splice(index, 1);
-      setIsDirty(true);
-      return {
-        ...prev,
-        [eventId]: { ...current, references: nextRefs },
-      };
-    });
-  };
-
   // Shared component handlers
   const updateProvenance = (eventId: string, provenance: ProvenanceData) => {
     setFormState((prev) => {
@@ -902,8 +741,8 @@ export default function EditNotesClient({
           if (current.person_refs.some((ref) => ref.person_id === personId)) {
             return prev;
           }
-          const nextRefs = [
-            ...current.person_refs,
+          const nextRefs: EditableEvent['person_refs'] = [
+            ...(current.person_refs || []),
             {
               person_id: personId,
               name: result.reference.person.name || mention.mention_text,
@@ -978,21 +817,52 @@ export default function EditNotesClient({
         return (
           <div key={event.id} className={formStyles.section}>
             {!isEditing ? (
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs text-white/50">{formatYearLabel(summaryEvent)}</p>
-                  <h3 className="text-lg font-serif text-white">{event.title}</h3>
-                  <p className="text-white/50 text-sm mt-2 line-clamp-2">
-                    {stripHtml(event.full_entry || '') || 'No text added yet.'}
-                  </p>
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs text-white/50">{formatYearLabel(summaryEvent)}</p>
+                    <h3 className="text-lg font-serif text-white">{event.title}</h3>
+                    <p className="text-white/50 text-sm mt-2 line-clamp-2">
+                      {stripHtml(event.full_entry || '') || 'No text added yet.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(event.id)}
+                    className="text-xs uppercase tracking-[0.2em] text-white/60 hover:text-white transition-colors"
+                  >
+                    Edit
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setEditingId(event.id)}
-                  className="text-xs uppercase tracking-[0.2em] text-white/60 hover:text-white transition-colors"
-                >
-                  Edit
-                </button>
+
+                {(() => {
+                  const summary = getConnectionSummary(event.id, summaryEvent as EditableEvent);
+                  const hasConnections = summary.invitesCount > 0 || summary.readyCount > 0;
+                  return (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/70">
+                      <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">
+                        Invites: {summary.invitesCount}
+                      </span>
+                      <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">
+                        Ready: {summary.readyCount}
+                      </span>
+                      {summary.contributedCount > 0 && (
+                        <span className="px-3 py-1 rounded-full border border-white/10 bg-white/5">
+                          Responses: {summary.contributedCount}
+                        </span>
+                      )}
+                      {hasConnections && (
+                        <button
+                          type="button"
+                          onClick={() => handleManageInvites(event.id)}
+                          className="ml-auto text-[#e07a5f] hover:text-white transition-colors"
+                        >
+                          Manage invites
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ) : null}
 
@@ -1042,7 +912,7 @@ export default function EditNotesClient({
                     showGuidanceWhy={guidanceWhyOpen[event.id] || false}
                     onToggleGuidanceWhy={() => setGuidanceWhyOpen((prev) => ({ ...prev, [event.id]: !prev[event.id] }))}
                     showWhyMeaningful={whyOpen[event.id] || false}
-                    onToggleWhyMeaningful={(open) => setWhyOpen((prev) => ({ ...prev, [event.id]: open }))}
+                    onToggleWhyMeaningful={(open: boolean) => setWhyOpen((prev) => ({ ...prev, [event.id]: open }))}
                     showTitle={true}
                     showPreview={false}
                   />
@@ -1206,7 +1076,16 @@ export default function EditNotesClient({
 
                 {/* THE CHAIN - provenance */}
                 <div className={formStyles.section}>
-                  <p className={formStyles.sectionLabel}>The Chain</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={formStyles.sectionLabel}>The Chain</p>
+                    <button
+                      type="button"
+                      onClick={() => scrollToConnections(event.id)}
+                      className="text-xs text-white/50 hover:text-white transition-colors"
+                    >
+                      Manage invites
+                    </button>
+                  </div>
                   <p className={`${formStyles.hint} mb-4`}>
                     These fields help keep memories connected without turning them into a single official story.
                   </p>
@@ -1220,7 +1099,16 @@ export default function EditNotesClient({
                 {/* PEOPLE - separate section, only for memories */}
                 {event.type === 'memory' && (
                   <div className={formStyles.section}>
-                    <p className={formStyles.sectionLabel}>People</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={formStyles.sectionLabel}>People</p>
+                      <button
+                        type="button"
+                        onClick={() => scrollToConnections(event.id)}
+                        className="text-xs text-white/50 hover:text-white transition-colors"
+                      >
+                        Manage invites
+                      </button>
+                    </div>
                     <PeopleSection
                       value={(data.person_refs || []).map((p) => ({
                         id: p.id,
@@ -1236,6 +1124,147 @@ export default function EditNotesClient({
                     />
                   </div>
                 )}
+
+                {/* CONNECTIONS - invites + outreach */}
+                <div
+                  className={formStyles.section}
+                  ref={(el) => {
+                    connectionsRefs[event.id] = el;
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className={formStyles.sectionLabel}>Connections</p>
+                      <p className={`${formStyles.hint} mb-2`}>Who you remember, who remembers you</p>
+                    </div>
+                    {connectionsLoading[event.id] && (
+                      <span className="text-xs text-white/50">Loading...</span>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const invites = invitesByEvent[event.id] ?? [];
+                    const existingContacts = new Set(invites.map((i) => i.recipient_contact));
+                    const potentials: Array<{ name: string; contact: string; source: string; relationship?: string | null }> = [];
+
+                    // Provenance: storyteller
+                    if (data.provenance?.type === 'secondhand' && data.provenance.toldByPhone && data.provenance.toldByName) {
+                      const phone = data.provenance.toldByPhone.trim();
+                      if (phone && !existingContacts.has(phone)) {
+                        potentials.push({
+                          name: data.provenance.toldByName.trim(),
+                          contact: phone,
+                          relationship: data.provenance.toldByRelationship || null,
+                          source: 'Storyteller',
+                        });
+                      }
+                    }
+
+                    // People section
+                    (data.person_refs || []).forEach((p) => {
+                      const phone = p.phone?.trim();
+                      if (phone && !existingContacts.has(phone)) {
+                        potentials.push({
+                          name: p.name || 'Someone',
+                          contact: phone,
+                          relationship: p.relationship || null,
+                          source: 'People',
+                        });
+                      }
+                    });
+
+                    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+
+                    return (
+                      <div className="space-y-4">
+                        {invites.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-sm text-white/70">Invites</p>
+                            <div className="space-y-2">
+                              {invites.map((invite) => {
+                                const isSms = invite.method === 'sms';
+                                const smsLink = isSms && invite.id ? buildSmsLink(invite.recipient_contact, invite.recipient_name, invite.id, baseUrl) : null;
+                                const status = invite.status || 'pending';
+                                const statusLabel =
+                                  status === 'sent'
+                                    ? 'Sent'
+                                    : status === 'opened'
+                                      ? 'Opened'
+                                      : status === 'clicked'
+                                        ? 'Clicked'
+                                        : status === 'contributed'
+                                          ? 'Contributed'
+                                          : 'Pending';
+                                return (
+                                  <div
+                                    key={invite.id}
+                                    className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                                  >
+                                    <div>
+                                      <p className="text-sm text-white">{invite.recipient_name}</p>
+                                      <p className="text-xs text-white/50">{invite.recipient_contact}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-xs text-white/60 border border-white/15 rounded-full px-3 py-1">
+                                        {statusLabel}
+                                      </span>
+                                      {smsLink && (
+                                        <a
+                                          href={smsLink}
+                                          className="text-xs text-[#e07a5f] hover:text-white transition-colors"
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Text link
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {potentials.length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-sm text-white/70">Ready to invite</p>
+                            <div className="space-y-2">
+                              {potentials.map((p, idx) => (
+                                <div
+                                  key={`${p.contact}-${idx}`}
+                                  className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                                >
+                                  <div>
+                                    <p className="text-sm text-white">{p.name}</p>
+                                    <p className="text-xs text-white/50">
+                                      {p.contact} {p.relationship ? `· ${p.relationship}` : ''} {p.source ? `· ${p.source}` : ''}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => upsertInvite(event.id, { name: p.name, contact: p.contact, relationship: p.relationship })}
+                                    className="text-xs text-[#e07a5f] hover:text-white transition-colors"
+                                  >
+                                    Send invite
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {invites.length === 0 && potentials.length === 0 && (
+                          <p className="text-sm text-white/50">No invites yet. Add a phone number in People or The Chain to invite someone.</p>
+                        )}
+
+                        {inviteStatus[event.id] && (
+                          <p className="text-xs text-white/60">{inviteStatus[event.id]}</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">

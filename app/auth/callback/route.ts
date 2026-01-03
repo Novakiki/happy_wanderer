@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       const admin = createAdminClient();
 
       // Check if profile exists
-      const { data: profile } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+      const { data: profile } = await admin.from('profiles')
         .select('id')
         .eq('id', data.user.id)
         .single() as { data: { id: string } | null };
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
           // Try to find existing contributor by email
           if (email) {
-            const { data: existingContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+            const { data: existingContributor } = await admin.from('contributors')
               .select('id')
               .ilike('email', email)
               .single() as { data: { id: string } | null };
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 
           // If no existing contributor, create one
           if (!contributorId) {
-            const { data: newContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+            const { data: newContributor } = await admin.from('contributors')
               .insert({
                 name,
                 relation,
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
           }
 
           // Create profile
-          await (admin.from('profiles') as ReturnType<typeof admin.from>).insert({
+          await admin.from('profiles').insert({
             id: data.user.id,
             name,
             relation,

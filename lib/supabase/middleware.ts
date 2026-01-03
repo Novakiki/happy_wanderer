@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { INVITE_COOKIE_NAME, readInviteSession } from '@/lib/invite-session';
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -37,15 +38,33 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const inviteSession = await readInviteSession(
+    request.cookies.get(INVITE_COOKIE_NAME)?.value
+  );
+  const isInviteBrowseRoute =
+    request.nextUrl.pathname === '/score' ||
+    request.nextUrl.pathname.startsWith('/memory/') ||
+    request.nextUrl.pathname === '/api/score' ||
+    request.nextUrl.pathname === '/api/score-peek';
+  const isScoreApiRoute =
+    request.nextUrl.pathname === '/api/score' ||
+    request.nextUrl.pathname === '/api/score-peek';
+
   // If not authenticated and not on an auth page, redirect to login
   if (
     !user &&
+    !(inviteSession && isInviteBrowseRoute) &&
+    !isScoreApiRoute &&
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/api/auth') &&
     !request.nextUrl.pathname.startsWith('/api/respond') &&
     !request.nextUrl.pathname.startsWith('/api/test/fixtures') &&
+    !request.nextUrl.pathname.startsWith('/api/test/login') &&
     !request.nextUrl.pathname.startsWith('/api/graph') &&
     !request.nextUrl.pathname.startsWith('/respond') &&
+    !request.nextUrl.pathname.startsWith('/claim') &&
+    !request.nextUrl.pathname.startsWith('/api/claim') &&
+    !request.nextUrl.pathname.startsWith('/test-login') &&
     !request.nextUrl.pathname.startsWith('/graph')
   ) {
     const url = request.nextUrl.clone();

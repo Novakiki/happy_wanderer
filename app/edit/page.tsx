@@ -1,28 +1,42 @@
 import EditNotesClient from '@/components/EditNotesClient';
 import EditRequestForm from '@/components/EditRequestForm';
 import Nav from '@/components/Nav';
+import EditSessionSetter from '@/components/EditSessionSetter';
 import { readEditSession } from '@/lib/edit-session';
-import { redactReferences } from '@/lib/references';
+import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { formStyles, subtleBackground } from '@/lib/styles';
 import { createAdminClient, createClient as createServerClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
 import { cookies } from 'next/headers';
 
+export const dynamic = 'force-dynamic';
+
 const MAGIC_LINK_TTL_DAYS = Number(process.env.MAGIC_LINK_TTL_DAYS || 30);
 
-function getMaxAgeSeconds() {
-  if (!MAGIC_LINK_TTL_DAYS || Number.isNaN(MAGIC_LINK_TTL_DAYS)) {
-    return undefined;
-  }
-  if (MAGIC_LINK_TTL_DAYS <= 0) return undefined;
-  return Math.floor(MAGIC_LINK_TTL_DAYS * 24 * 60 * 60);
+function coerceReferenceRows(value: unknown): ReferenceRow[] {
+  return Array.isArray(value) ? (value as unknown as ReferenceRow[]) : [];
 }
 
-// Get a specific event by ID if the user has permission to edit it
-async function getEventById(eventId: string, contributorName: string) {
+// Get a specific event by ID if the edit token authorizes it
+async function getEventForToken(eventId: string, token: string) {
   const admin = createAdminClient();
 
-  const { data: eventData } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+  const { data: tokenRow }: {
+    data: { contributor_id: string | null; expires_at: string | null } | null;
+  } = await admin
+    .from('edit_tokens')
+    .select('contributor_id, expires_at')
+    .eq('token', token)
+    .single();
+
+  if (!tokenRow?.contributor_id) return null;
+
+  if (tokenRow.expires_at && new Date(tokenRow.expires_at) < new Date()) {
+    return null;
+  }
+
+  const { data: eventData } = await admin
+    .from('timeline_events')
     .select(`
       id,
       year,
@@ -42,7 +56,6 @@ async function getEventById(eventId: string, contributorName: string) {
       source_name,
       source_url,
       privacy_level,
-      contributor:contributors(name),
       people_involved,
       references:event_references(
         id,
@@ -65,35 +78,20 @@ async function getEventById(eventId: string, contributorName: string) {
       )
     `)
     .eq('id', eventId)
+    .eq('contributor_id', tokenRow.contributor_id)
     .single();
 
-  const event = eventData as {
-    id: string;
-    year: number;
-    contributor: { name: string } | null;
-    [key: string]: unknown;
-  } | null;
+  if (!eventData) return null;
 
-  if (!event) return null;
-
-  // Check if the contributor name matches (case-insensitive)
-  const eventContributorName = event.contributor?.name;
-  if (!eventContributorName || eventContributorName.toLowerCase() !== contributorName.toLowerCase()) {
-    return null;
-  }
-
-  // Return without the contributor field to match expected format
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { contributor, ...eventWithoutContributor } = event;
   return {
-    ...eventWithoutContributor,
-    references: redactReferences((eventWithoutContributor as { references?: unknown }).references as any || [], {
+    ...eventData,
+    references: redactReferences(coerceReferenceRows((eventData as { references?: unknown }).references), {
       includeAuthorPayload: true,
     }),
   };
 }
 
-async function getEventsForToken(token: string, contributorName?: string) {
+async function getEventsForToken(token: string) {
   const admin = createAdminClient();
 
   // Get contributor from token
@@ -157,69 +155,9 @@ async function getEventsForToken(token: string, contributorName?: string) {
     .eq('contributor_id', tokenRow.contributor_id)
     .order('year', { ascending: true });
 
-  // If no events found by ID and we have a name, try finding by contributor name
-  if ((!events || events.length === 0) && contributorName) {
-    // Find all contributor IDs with this name
-    const { data: contributors }: { data: { id: string }[] | null } = await admin
-      .from('contributors')
-      .select('id')
-      .ilike('name', contributorName);
-
-    if (contributors && contributors.length > 0) {
-      const contributorIds = contributors.map(c => c.id);
-
-      const { data: eventsByName } = await admin
-        .from('timeline_events')
-        .select(`
-          id,
-          year,
-          year_end,
-          age_start,
-          age_end,
-          life_stage,
-          timing_certainty,
-          timing_input_type,
-          timing_note,
-          location,
-          type,
-          title,
-          preview,
-          full_entry,
-          why_included,
-          source_name,
-          source_url,
-          privacy_level,
-          people_involved,
-          references:event_references(
-            id,
-            type,
-            url,
-            display_name,
-            role,
-            visibility,
-            relationship_to_subject,
-            person_id,
-            person:people(id, canonical_name)
-          ),
-          mentions:note_mentions(
-            id,
-            mention_text,
-            status,
-            visibility,
-            display_label,
-            promoted_person_id
-          )
-        `)
-        .in('contributor_id', contributorIds)
-        .order('year', { ascending: true });
-
-      return eventsByName || [];
-    }
-  }
-
   return (events || []).map((evt) => ({
     ...evt,
-    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+    references: redactReferences(coerceReferenceRows((evt as { references?: unknown }).references), {
       includeAuthorPayload: true,
     }),
   }));
@@ -277,7 +215,7 @@ async function getEventForContributor(eventId: string, contributorId: string) {
   return event
     ? {
         ...event,
-        references: redactReferences((event as { references?: unknown }).references as any || [], {
+        references: redactReferences(coerceReferenceRows((event as { references?: unknown }).references), {
           includeAuthorPayload: true,
         }),
       }
@@ -334,7 +272,7 @@ async function getEventsForContributor(contributorId: string) {
 
   return (events || []).map((evt) => ({
     ...evt,
-    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+    references: redactReferences(coerceReferenceRows((evt as { references?: unknown }).references), {
       includeAuthorPayload: true,
     }),
   }));
@@ -399,7 +337,7 @@ export default async function EditPage({
   if (editSession?.token) {
     // If a specific event_id is provided, try to load just that event
     if (eventId) {
-      const event = await getEventById(eventId, editSession.name);
+      const event = await getEventForToken(eventId, editSession.token);
       if (event) {
         return (
           <div
@@ -408,6 +346,7 @@ export default async function EditPage({
           >
             <Nav />
             <section className={formStyles.contentWrapper}>
+            {contributorToken && <EditSessionSetter token={contributorToken} />}
               <p className={formStyles.subLabel}>
                 Your notes
               </p>
@@ -430,7 +369,7 @@ export default async function EditPage({
       // If event not found or no permission, fall through to show all notes
     }
 
-    const events = await getEventsForToken(editSession.token, editSession.name);
+    const events = await getEventsForToken(editSession.token);
 
     if (events) {
       return (
@@ -440,6 +379,7 @@ export default async function EditPage({
         >
           <Nav />
           <section className={formStyles.contentWrapper}>
+            {contributorToken && <EditSessionSetter token={contributorToken} />}
             <p className={formStyles.subLabel}>
               Your notes
             </p>
@@ -474,13 +414,14 @@ export default async function EditPage({
             style={subtleBackground}
           >
             <Nav />
-          <section className={formStyles.contentWrapper}>
-            <p className={formStyles.subLabel}>
-              Your notes
-            </p>
-            <h1 className={formStyles.pageTitle}>
-              Edit note
-            </h1>
+            <section className={formStyles.contentWrapper}>
+              {contributorToken && <EditSessionSetter token={contributorToken} />}
+              <p className={formStyles.subLabel}>
+                Your notes
+              </p>
+              <h1 className={formStyles.pageTitle}>
+                Edit note
+              </h1>
 
               <div className="mt-8">
                 <EditNotesClient
@@ -506,6 +447,7 @@ export default async function EditPage({
         >
           <Nav />
           <section className={formStyles.contentWrapper}>
+            {contributorToken && <EditSessionSetter token={contributorToken} />}
             <p className={formStyles.subLabel}>
               Your notes
             </p>

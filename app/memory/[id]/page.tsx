@@ -82,7 +82,10 @@ export default async function MemoryPage({
 
     if (eventError) {
       // Soft-fail: fall back to getEventById; avoid dev overlay noise
-      console.warn("Error fetching event via admin client:", eventError);
+      const errorCode = (eventError as { code?: string }).code;
+      if (errorCode !== "PGRST116") {
+        console.warn("Error fetching event via admin client:", eventError);
+      }
     } else if (eventData) {
       const baseEvent = eventData as Database["public"]["Views"]["current_notes"]["Row"];
 

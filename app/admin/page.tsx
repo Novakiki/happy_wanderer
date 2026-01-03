@@ -66,7 +66,7 @@ export default async function AdminPage() {
 
   const admin = createAdminClient();
 
-  const { data: pendingNotes = [] } = await admin
+  const { data: pendingNotes, error: pendingError } = await admin
     .from('timeline_events')
     .select(`
       id,
@@ -83,17 +83,29 @@ export default async function AdminPage() {
       created_at,
       privacy_level,
       contributor_id,
-      contributor:contributors(id, name, relation)
+      contributor:contributors!timeline_events_contributor_id_fkey(id, name, relation)
     `)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
     .returns<PendingNote[]>();
 
-  const { data: contributors = [] } = await admin
+  if (pendingError) {
+    console.error('Admin pending notes fetch error:', pendingError);
+  }
+
+  const safePendingNotes = Array.isArray(pendingNotes) ? pendingNotes : [];
+
+  const { data: contributors, error: contributorsError } = await admin
     .from('contributors')
     .select('id, name, relation, email, trusted, created_at, last_active')
     .order('name', { ascending: true })
     .returns<Contributor[]>();
+
+  if (contributorsError) {
+    console.error('Admin contributors fetch error:', contributorsError);
+  }
+
+  const safeContributors = Array.isArray(contributors) ? contributors : [];
 
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={subtleBackground}>
@@ -115,7 +127,7 @@ export default async function AdminPage() {
           </p>
         </header>
 
-        <AdminDashboard pendingNotes={pendingNotes} contributors={contributors} />
+        <AdminDashboard pendingNotes={safePendingNotes} contributors={safeContributors} />
       </main>
     </div>
   );

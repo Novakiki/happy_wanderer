@@ -20,16 +20,24 @@ export function getContentLabel(entryType: EntryType | string): string {
 export const CONTENT_SECTION = {
   hint: 'Describe what happened. Save what it meant for the section below.',
   placeholder: 'Share a story, a moment, or a note...',
+  // Synchronicity-specific
+  hintOrigin: 'Connect an outside fact to something in Val\'s life.',
+  placeholderOrigin: 'The song was released in 1961, the year Val was born...',
 } as const;
 
 /**
  * Shared copy for "Why it matters" section
  */
 export const WHY_IT_MATTERS = {
-  label: 'Why it matters to you',
+  label: 'Why it matters to you (optional)',
   addLabel: 'Add why it matters to you (optional)',
-  hint: 'Optional: your personal impact. Appears as an italic note beneath your memory.',
+  hint: 'Your personal reflection. Appears as an italic note beneath your memory.',
   placeholder: 'How it landed for you, why it still matters...',
+  // Synchronicity-specific
+  labelOrigin: 'The story behind it',
+  addLabelOrigin: 'Add the story behind it',
+  hintOrigin: 'The story/memory behind it.',
+  placeholderOrigin: 'How you connected the dots, what it revealed...',
 } as const;
 
 /**

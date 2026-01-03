@@ -32,14 +32,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'event_id is required' }, { status: 400 });
     }
 
-    const { data: profileRow } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+    const { data: profileRow } = await admin.from('profiles')
       .select('contributor_id')
       .eq('id', user.id)
       .limit(1);
     const contributorId = (profileRow && profileRow[0] ? profileRow[0].contributor_id : null) as string | null;
 
     const canUsePersonId = async (personId: string) => {
-      const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
+      const { data: personRows } = await admin.from('people')
         .select('id, visibility, created_by')
         .eq('id', personId)
         .limit(1);
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
 
       if (contributorId && personRow.created_by === contributorId) return true;
 
-      const { data: claimRows } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+      const { data: claimRows } = await admin.from('person_claims')
         .select('id')
         .eq('person_id', personId)
         .eq('status', 'approved')
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       if (claimRows && claimRows.length > 0) return true;
 
       if (contributorId) {
-        const { data: referenceRows } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+        const { data: referenceRows } = await admin.from('event_references')
           .select('id')
           .eq('person_id', personId)
           .eq('added_by', contributorId)
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data, error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data, error } = await admin.from('event_references')
       .insert({
         event_id,
         type,
@@ -133,13 +133,13 @@ export async function GET(request: NextRequest) {
     const admin = createAdminClient();
 
     // Get the event's contributor_id for preference lookups
-    const { data: eventData } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+    const { data: eventData } = await admin.from('current_notes')
       .select('contributor_id')
       .eq('id', eventId)
       .single();
     const eventContributorId = (eventData as { contributor_id?: string } | null)?.contributor_id;
 
-    const { data, error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data, error } = await admin.from('event_references')
       .select(`
         id,
         type,
@@ -164,19 +164,19 @@ export async function GET(request: NextRequest) {
       .filter(r => r.person?.id)
       .map(r => r.person!.id!);
 
-    let preferencesMap: Map<string, { contributor_preference?: string | null; global_preference?: string | null }> = new Map();
+    const preferencesMap: Map<string, { contributor_preference?: string | null; global_preference?: string | null }> = new Map();
 
     if (personIds.length > 0 && eventContributorId) {
       // Fetch preferences for these people (both contributor-specific and global)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: prefs } = await (admin.from('visibility_preferences' as any) as any)
+      const { data: prefs } = await admin.from('visibility_preferences' as any)
         .select('person_id, contributor_id, visibility')
         .in('person_id', personIds)
         .or(`contributor_id.eq.${eventContributorId},contributor_id.is.null`);
 
       // Build a map of person_id -> { contributor_preference, global_preference }
       if (prefs) {
-        for (const pref of prefs as { person_id: string; contributor_id: string | null; visibility: string }[]) {
+        for (const pref of prefs as unknown as { person_id: string; contributor_id: string | null; visibility: string }[]) {
           const existing = preferencesMap.get(pref.person_id) || {};
           if (pref.contributor_id === eventContributorId) {
             existing.contributor_preference = pref.visibility;

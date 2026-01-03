@@ -172,7 +172,7 @@ export async function GET() {
     let allPreferences: VisibilityPref[] = [];
     if (personIds.size > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let prefQuery = (admin.from('visibility_preferences' as any) as any)
+      let prefQuery = admin.from('visibility_preferences' as any)
         .select('person_id, contributor_id, visibility')
         .in('person_id', [...personIds]);
 
@@ -186,7 +186,7 @@ export async function GET() {
       }
 
       const { data: prefs } = await prefQuery;
-      allPreferences = (prefs || []) as VisibilityPref[];
+      allPreferences = (prefs || []) as unknown as VisibilityPref[];
     }
 
     const prefLookup = new Map<string, Map<string | null, string>>();

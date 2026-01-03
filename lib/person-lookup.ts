@@ -60,7 +60,7 @@ export function createPersonLookupHelpers(
     }
 
     // Fetch person record
-    const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
+    const { data: personRows } = await admin.from('people')
       .select('id, visibility, created_by')
       .eq('id', personId)
       .limit(1);
@@ -92,7 +92,7 @@ export function createPersonLookupHelpers(
     }
 
     // Check for approved claims
-    const { data: claimRows } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+    const { data: claimRows } = await admin.from('person_claims')
       .select('id')
       .eq('person_id', personId)
       .eq('status', 'approved')
@@ -104,7 +104,7 @@ export function createPersonLookupHelpers(
 
     // Check if contributor has previously referenced this person
     if (contributorId) {
-      const { data: referenceRows } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      const { data: referenceRows } = await admin.from('event_references')
         .select('id')
         .eq('person_id', personId)
         .eq('added_by', contributorId)
@@ -126,7 +126,7 @@ export function createPersonLookupHelpers(
 
     // Search by alias first (case-insensitive exact match)
     const escapedName = escapeIlikePattern(trimmedName);
-    const { data: aliasRows } = await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+    const { data: aliasRows } = await admin.from('person_aliases')
       .select('person_id')
       .ilike('alias', escapedName)
       .limit(5);
@@ -139,7 +139,7 @@ export function createPersonLookupHelpers(
     }
 
     // Search by canonical name (case-insensitive exact match)
-    const { data: personRows } = await (admin.from('people') as ReturnType<typeof admin.from>)
+    const { data: personRows } = await admin.from('people')
       .select('id')
       .ilike('canonical_name', escapedName)
       .limit(5);
@@ -147,7 +147,7 @@ export function createPersonLookupHelpers(
       for (const row of personRows as Array<{ id?: string | null }>) {
         if (row.id && await canUsePersonId(row.id)) {
           // Add alias for future lookups
-          await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+          await admin.from('person_aliases')
             .insert({
               person_id: row.id,
               alias: trimmedName,
@@ -159,7 +159,7 @@ export function createPersonLookupHelpers(
     }
 
     // Create new person if no match found
-    const { data: newPerson } = await (admin.from('people') as ReturnType<typeof admin.from>)
+    const { data: newPerson } = await admin.from('people')
       .insert({
         canonical_name: trimmedName,
         visibility: 'pending',
@@ -172,7 +172,7 @@ export function createPersonLookupHelpers(
     if (!newPersonId) return null;
 
     // Add alias for new person
-    await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+    await admin.from('person_aliases')
       .insert({
         person_id: newPersonId,
         alias: trimmedName,

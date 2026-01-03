@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
     }
 
     const origin = new URL(request.url).origin;
-    const link = `${origin}/edit?token=${token}`;
+    const link = `${origin}/edit/${token}`;
 
     return NextResponse.json({ link, token, expires_at: expiresAt });
   } catch (error) {

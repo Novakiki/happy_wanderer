@@ -138,7 +138,7 @@ export async function GET() {
       .map((pref) => pref.contributor_id)
       .filter((id): id is string => Boolean(id));
 
-    let authorLookup = new Map<string, { name: string | null; relation: string | null }>();
+    const authorLookup = new Map<string, { name: string | null; relation: string | null }>();
     if (authorIds.length > 0) {
       const { data: contributors } = await admin.from('contributors')
         .select('id, name, relation')

@@ -321,7 +321,7 @@ export default function ShareInvitePanel({
                 </optgroup>
               </select>
               <p className="text-xs text-white/30 mt-2">
-                Optional. Helps us show "a cousin" if they choose relationship-only.
+                Optional. Helps us show &quot;a cousin&quot; if they choose relationship-only.
               </p>
             </div>
           </div>

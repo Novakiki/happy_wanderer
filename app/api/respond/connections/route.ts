@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     contributor_id: string | null;
   };
 
-  const { data: event } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+  const { data: event } = await admin.from('current_notes')
     .select('contributor_id')
     .eq('id', eventId)
     .single();
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     response_event_id: string;
   };
 
-  const { data: threads } = await (admin.from('memory_threads') as ReturnType<typeof admin.from>)
+  const { data: threads } = await admin.from('memory_threads')
     .select('response_event_id')
     .eq('original_event_id', eventId);
 
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
   ));
 
   const { data: responseEvents } = responseEventIds.length > 0
-    ? await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+    ? await admin.from('current_notes')
         .select('id, contributor_id')
         .in('id', responseEventIds)
     : { data: [] };
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
   const contributorsById = new Map<string, { id: string; name: string; relation: string | null }>();
   if (contributorIds.size > 0) {
-    const { data: contributors } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+    const { data: contributors } = await admin.from('contributors')
       .select('id, name, relation')
       .in('id', [...contributorIds]);
 
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
     status: string;
   };
 
-  let invitesQuery = (admin.from('invites') as ReturnType<typeof admin.from>)
+  let invitesQuery = admin.from('invites')
     .select('id, recipient_name, status')
     .eq('event_id', eventId)
     .in('status', ['contributed', 'opened']);
@@ -162,13 +162,13 @@ export async function GET(request: NextRequest) {
     person: { id: string; canonical_name: string; visibility: string } | null;
   };
 
-  const { data: refs } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+  const { data: refs } = await admin.from('event_references')
     .select('person_id, relationship_to_subject, person:people(id, canonical_name, visibility)')
     .eq('event_id', eventId)
     .eq('type', 'person');
 
   if (refs) {
-    for (const ref of refs as RefRow[]) {
+    for (const ref of refs as unknown as RefRow[]) {
       if (ref.person && !seenIds.has(ref.person.id)) {
         seenIds.add(ref.person.id);
         people.push({
@@ -193,7 +193,7 @@ async function getContributorVisibility(
     person: { visibility: string } | null;
   };
 
-  const { data: claim } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+  const { data: claim } = await admin.from('person_claims')
     .select('person:people(visibility)')
     .eq('contributor_id', contributorId)
     .single();
@@ -213,7 +213,7 @@ async function getInviteeRelationship(
     person: { canonical_name: string } | null;
   };
 
-  const { data: refs } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+  const { data: refs } = await admin.from('event_references')
     .select('relationship_to_subject, person:people(canonical_name)')
     .eq('event_id', eventId)
     .eq('type', 'person');

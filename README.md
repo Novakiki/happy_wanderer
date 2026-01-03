@@ -29,6 +29,24 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Project Docs
+
+- `docs/routes.md` (routing and access overview)
+- `docs/architecture/auth-invite-access.md` (invite access + moderation)
+- `docs/roleplay-qa.md` (testing rituals for invite + moderation flows)
+
+## Roleplay Setup (dev only)
+
+Run the roleplay bootstrap to mint a fresh invite and get a ready-to-paste LLM prompt:
+
+```bash
+node scripts/roleplay-setup.js
+```
+
+Open the dev-only login page for quick role-based access:
+
+- `http://localhost:3000/test-login`
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

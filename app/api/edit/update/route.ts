@@ -8,7 +8,7 @@ import {
 } from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { buildInviteData } from '@/lib/invites';
+import { buildInviteData, getInviteExpiryDate } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
 import { lintNote } from '@/lib/note-lint';
 import { detectAndStoreMentions } from '@/lib/pending-names';
@@ -325,7 +325,7 @@ export async function POST(request: Request) {
         id: string,
         updates: Database['public']['Tables']['event_references']['Update']
       ) => {
-        const { error } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+        const { error } = await admin.from('event_references')
           .update(updates)
           .eq('id', id);
         if (error) {
@@ -420,7 +420,7 @@ export async function POST(request: Request) {
           if (phone) {
             let inviteName = String(raw?.name || raw?.display_name || '').trim();
             if (!inviteName) {
-              const { data: personRowsData } = await (admin.from('people') as ReturnType<typeof admin.from>)
+              const { data: personRowsData } = await admin.from('people')
                 .select('canonical_name')
                 .eq('id', personId)
                 .limit(1);
@@ -434,14 +434,14 @@ export async function POST(request: Request) {
             );
 
             if (inviteData) {
-              const { data: existingInvite } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+              const { data: existingInvite } = await admin.from('invites')
                 .select('id')
                 .eq('event_id', event_id)
                 .eq('recipient_contact', inviteData.recipient_contact)
                 .limit(1);
 
               if (!existingInvite || existingInvite.length === 0) {
-                await (admin.from('invites') as ReturnType<typeof admin.from>)
+                await admin.from('invites')
                   .insert({
                     event_id,
                     recipient_name: inviteData.recipient_name,
@@ -450,6 +450,7 @@ export async function POST(request: Request) {
                     message: inviteData.message,
                     sender_id: tokenRow.contributor_id,
                     status: 'pending',
+                    expires_at: getInviteExpiryDate(),
                   });
               }
             }
@@ -459,7 +460,7 @@ export async function POST(request: Request) {
 
       const allRows: Database['public']['Tables']['event_references']['Insert'][] = [...linkRows, ...personRows];
       if (allRows.length > 0) {
-        const { error: refError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+        const { error: refError } = await admin.from('event_references')
           .insert(allRows);
         if (refError) {
           throw refError;
@@ -471,7 +472,7 @@ export async function POST(request: Request) {
           .filter((ref: ExistingReference) => !linkKeepIds.has(ref.id))
           .map((ref: ExistingReference) => ref.id);
         if (linkIdsToDelete.length > 0) {
-          const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+          const { error: deleteError } = await admin.from('event_references')
             .update({ visibility: 'removed' })
             .in('id', linkIdsToDelete);
           if (deleteError) {
@@ -485,7 +486,7 @@ export async function POST(request: Request) {
           .filter((ref: ExistingReference) => !personKeepIds.has(ref.id))
           .map((ref: ExistingReference) => ref.id);
         if (personIdsToDelete.length > 0) {
-          const { error: deleteError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+          const { error: deleteError } = await admin.from('event_references')
             .update({ visibility: 'removed' })
             .in('id', personIdsToDelete);
           if (deleteError) {
@@ -503,7 +504,7 @@ export async function POST(request: Request) {
         : attachment_type === 'audio'
           ? 'audio'
           : 'document';
-      const { data: mediaData, error: mediaError } = await (admin.from('media') as ReturnType<typeof admin.from>)
+      const { data: mediaData, error: mediaError } = await admin.from('media')
         .insert({
           type: mediaType,
           url: trimmedAttachmentUrl,
@@ -524,7 +525,7 @@ export async function POST(request: Request) {
 
       const mediaId = (mediaData as { id?: string } | null)?.id;
       if (mediaId) {
-        const { error: linkError } = await (admin.from('event_media') as ReturnType<typeof admin.from>)
+        const { error: linkError } = await admin.from('event_media')
           .insert({
             event_id: event_id,
             media_id: mediaId,

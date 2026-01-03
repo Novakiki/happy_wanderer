@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       recipient_name: string;
     };
 
-    const { data: invite, error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+    const { data: invite, error: inviteError } = await admin.from('invites')
       .select('id, event_id, recipient_name')
       .eq('id', invite_id)
       .single();
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       contributor: { name: string | null } | null;
     };
 
-    const { data: refs } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data: refs } = await admin.from('event_references')
       .select('id, person_id, display_name, person:people(id, canonical_name), contributor:contributors(name)')
       .eq('event_id', typedInvite.event_id)
       .eq('type', 'person');
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     const recipientLower = typedInvite.recipient_name.trim().toLowerCase();
     const recipientParts = recipientLower.split(/\s+/);
 
-    const match = (refs as RefRow[]).find((ref) => {
+    const match = (refs as unknown as RefRow[]).find((ref) => {
       const candidate = (
         ref.person?.canonical_name ||
         ref.display_name ||
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     // Handle different scopes
     if (normalizedScope === 'this_note') {
       // Just update this note's reference
-      const { error: updateError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      const { error: updateError } = await admin.from('event_references')
         .update({ visibility: identity_visibility })
         .eq('id', match.id);
 
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       // Trust this specific contributor
       // Upsert into visibility_preferences
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: prefError } = await (admin.from('visibility_preferences' as any) as any)
+      const { error: prefError } = await admin.from('visibility_preferences' as any)
         .upsert({
           person_id: personId,
           contributor_id: contributor_id,
@@ -132,20 +132,20 @@ export async function POST(request: NextRequest) {
       }
 
       // Also update this note's reference to match
-      await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      await admin.from('event_references')
         .update({ visibility: identity_visibility })
         .eq('id', match.id);
 
     } else if (normalizedScope === 'all_notes' && personId) {
       // Set global default
       // 1. Update people.visibility as the fallback default
-      await (admin.from('people') as ReturnType<typeof admin.from>)
+      await admin.from('people')
         .update({ visibility: identity_visibility })
         .eq('id', personId);
 
       const now = new Date().toISOString();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: defaultRows, error: defaultLookupError } = await (admin.from('visibility_preferences' as any) as any)
+      const { data: defaultRows, error: defaultLookupError } = await admin.from('visibility_preferences' as any)
         .select('id')
         .eq('person_id', personId)
         .is('contributor_id', null)
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
 
       const existingDefault = (defaultRows as Array<{ id?: string }> | null)?.[0];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const defaultQuery = (admin.from('visibility_preferences' as any) as any);
+      const defaultQuery = admin.from('visibility_preferences' as any);
       const { error: prefError } = existingDefault?.id
         ? await defaultQuery
             .update({ visibility: identity_visibility, updated_at: now })
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 3. Also update this note's reference to match
-      await (admin.from('event_references') as ReturnType<typeof admin.from>)
+      await admin.from('event_references')
         .update({ visibility: identity_visibility })
         .eq('id', match.id);
     }

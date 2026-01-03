@@ -28,17 +28,17 @@ function decodeHtmlEntities(text: string): string {
 }
 
 function PersonRefItem({
-  ref,
+  reference,
   asOwner,
 }: {
-  ref: ReferenceItem;
+  reference: ReferenceItem;
   asOwner: boolean;
 }) {
   const [showExplainer, setShowExplainer] = useState(false);
-  const redacted = ref as RedactedReference;
-  const raw = ref as EventReferenceWithContributor;
+  const redacted = reference as RedactedReference;
+  const raw = reference as EventReferenceWithContributor;
 
-  const visibility = (redacted.identity_state || ref.visibility || 'pending') as string;
+  const visibility = (redacted.identity_state || reference.visibility || 'pending') as string;
   const isRedacted = visibility !== 'approved';
 
   // Owner sees real name from author_payload, public sees redacted render_label
@@ -50,7 +50,7 @@ function PersonRefItem({
 
   const displayName = asOwner ? ownerName : publicName;
 
-  const relationshipToSubject = (ref as { relationship_to_subject?: string }).relationship_to_subject;
+  const relationshipToSubject = (reference as { relationship_to_subject?: string }).relationship_to_subject;
 
   // Only show relationship parenthetical for approved visibility
   const showRelationship = visibility === 'approved' &&
@@ -66,9 +66,9 @@ function PersonRefItem({
   return (
     <div className="text-xs text-white/50 flex items-center gap-1.5">
       <span className="text-white/50">
-        {ref.role ? REFERENCE_ROLE_LABELS[ref.role as keyof typeof REFERENCE_ROLE_LABELS] || '' : ''}
+        {reference.role ? REFERENCE_ROLE_LABELS[reference.role as keyof typeof REFERENCE_ROLE_LABELS] || '' : ''}
       </span>
-      {ref.role && REFERENCE_ROLE_LABELS[ref.role as keyof typeof REFERENCE_ROLE_LABELS] ? ' ' : ''}
+      {reference.role && REFERENCE_ROLE_LABELS[reference.role as keyof typeof REFERENCE_ROLE_LABELS] ? ' ' : ''}
       <span className="text-white/60">
         {displayName}
       </span>
@@ -134,8 +134,8 @@ function PersonRefItem({
           )}
         </span>
       )}
-      {ref.note && (
-        <span className="text-white/30 italic"> &mdash; {ref.note}</span>
+      {reference.note && (
+        <span className="text-white/30 italic"> &mdash; {reference.note}</span>
       )}
     </div>
   );
@@ -157,8 +157,8 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
             Owner sees
           </p>
           <div className="space-y-1">
-            {personRefs.map((ref) => (
-              <PersonRefItem key={`owner-${ref.id}`} ref={ref} asOwner={true} />
+            {personRefs.map((reference) => (
+              <PersonRefItem key={`owner-${reference.id}`} reference={reference} asOwner={true} />
             ))}
           </div>
         </div>
@@ -169,8 +169,8 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
             Public sees
           </p>
           <div className="space-y-1">
-            {personRefs.map((ref) => (
-              <PersonRefItem key={`public-${ref.id}`} ref={ref} asOwner={false} />
+            {personRefs.map((reference) => (
+              <PersonRefItem key={`public-${reference.id}`} reference={reference} asOwner={false} />
             ))}
           </div>
         </div>
@@ -201,8 +201,8 @@ export function ReferencesList({ references, viewerIsOwner = false, showBothView
     <div className="space-y-3">
       {personRefs.length > 0 && (
         <div className="space-y-1">
-          {personRefs.map((ref) => (
-            <PersonRefItem key={ref.id} ref={ref} asOwner={viewerIsOwner} />
+          {personRefs.map((reference) => (
+            <PersonRefItem key={reference.id} reference={reference} asOwner={viewerIsOwner} />
           ))}
         </div>
       )}

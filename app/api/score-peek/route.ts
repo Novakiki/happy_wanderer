@@ -1,15 +1,27 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { INVITE_COOKIE_NAME, readInviteSession } from '@/lib/invite-session';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
 
 const admin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { data, error } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    const inviteSession = await readInviteSession(
+      request.cookies.get(INVITE_COOKIE_NAME)?.value
+    );
+
+    if (!user && !inviteSession) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { data, error } = await admin.from('current_notes')
       .select('id, year, year_end, title, root_event_id, chain_depth, status, privacy_level')
       .eq('status', 'published')
       .in('privacy_level', ['public', 'family'])

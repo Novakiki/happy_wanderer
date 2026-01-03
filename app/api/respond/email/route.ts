@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
 
     // Update the contributor's email (having email implies opt-in for notifications)
-    const { error } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+    const { error } = await admin.from('contributors')
       .update({
         email: email.trim().toLowerCase(),
       })

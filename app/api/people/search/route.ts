@@ -56,14 +56,14 @@ export async function GET(request: NextRequest) {
     const likePattern = `%${rawQuery}%`;
     const normalizedQuery = rawQuery.toLowerCase();
 
-    const { data: profileRow } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+    const { data: profileRow } = await admin.from('profiles')
       .select('contributor_id')
       .eq('id', user.id)
       .limit(1);
     const contributorId = (profileRow && profileRow[0] ? profileRow[0].contributor_id : null) as string | null;
 
     // Fetch matching aliases with their people
-    const { data: aliasRows, error: aliasError } = await (admin.from('person_aliases') as ReturnType<typeof admin.from>)
+    const { data: aliasRows, error: aliasError } = await admin.from('person_aliases')
       .select('person_id, alias, person:people(id, canonical_name, visibility, created_by)')
       .ilike('alias', likePattern)
       .limit(limit * 6);
@@ -112,14 +112,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Claims indicate a linked identity
-    const { data: claims } = await (admin.from('person_claims') as ReturnType<typeof admin.from>)
+    const { data: claims } = await admin.from('person_claims')
       .select('person_id')
       .in('person_id', personIds)
       .eq('status', 'approved');
     const linkedIds = new Set((claims as ClaimRow[] || []).map((c) => c.person_id));
 
     // Reference data: mention counts + latest relationship_to_subject
-    const { data: referenceRows } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+    const { data: referenceRows } = await admin.from('event_references')
       .select('person_id, relationship_to_subject, visibility, created_at, added_by')
       .eq('type', 'person')
       .in('person_id', personIds);

@@ -51,21 +51,20 @@ export const formatNoteCount = (count: number) =>
 export const MEMORY_PROVENANCE = {
   firsthand: "I was there",
   secondhand: "Someone told me",
-  from_references: "From a record",
   pattern_observed: "A pattern I noticed",
 } as const;
 
 export const MEMORY_PROVENANCE_DESCRIPTIONS = {
   firsthand: "You witnessed this memory yourself",
   secondhand: "Someone else shared this story with you",
-  from_references: "Photo, letter, journal, email, article, etc.",
   pattern_observed: "A meaningful coincidence or connection you noticed",
+  // Kept for backwards compatibility with legacy data
+  from_references: "Photo, letter, journal, email, article, etc.",
 } as const;
 
 export const MEMORY_PROVENANCE_SHORT = {
   firsthand: "I was there",
   secondhand: "I was told",
-  from_references: "I have a record",
   pattern_observed: "Pattern noticed",
 } as const;
 

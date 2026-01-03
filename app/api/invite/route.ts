@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
+import { getInviteExpiryDate } from '@/lib/invites';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     // Check that the event is a memory (not milestone or synchronicity)
-    const { data: event, error: eventError } = await (admin.from('current_notes') as ReturnType<typeof admin.from>)
+    const { data: event, error: eventError } = await admin.from('current_notes')
       .select('type, contributor_id')
       .eq('id', event_id)
       .single();
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     // Insert invite
-    const { data: invite, error: inviteError } = await (admin.from('invites') as ReturnType<typeof admin.from>)
+    const { data: invite, error: inviteError } = await admin.from('invites')
       .insert({
         event_id,
         recipient_name,
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
         method,
         message,
         sender_id: typedEvent.contributor_id ?? null,
+        expires_at: getInviteExpiryDate(),
       })
       .select('id')
       .single();
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
         }));
 
       if (witnessRows.length) {
-        const { error: witnessError } = await (admin.from('witnesses') as ReturnType<typeof admin.from>).insert(witnessRows);
+        const { error: witnessError } = await admin.from('witnesses').insert(witnessRows);
         if (witnessError) {
           console.warn('Witness insert error (continuing):', witnessError);
         }

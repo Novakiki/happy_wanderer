@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { maskContentWithReferences } from '@/lib/name-detection';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { INVITE_COOKIE_NAME, readInviteSession } from '@/lib/invite-session';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -37,8 +39,18 @@ type VisibilityPref = {
   visibility: string;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    const inviteSession = await readInviteSession(
+      request.cookies.get(INVITE_COOKIE_NAME)?.value
+    );
+
+    if (!user && !inviteSession) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const eventsResult = await admin
       .from('current_notes')
       .select('*')
@@ -178,11 +190,11 @@ export async function GET() {
       // Build OR filter for all contributor_ids plus NULL
       const contributorFilter = [...preferenceContributorIds].map(id => `contributor_id.eq.${id}`).join(',');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: prefs } = await (admin.from('visibility_preferences' as any) as any)
+      const { data: prefs } = await admin.from('visibility_preferences' as any)
         .select('person_id, contributor_id, visibility')
         .in('person_id', [...personIds])
         .or(`${contributorFilter},contributor_id.is.null`);
-      allPreferences = (prefs || []) as VisibilityPref[];
+      allPreferences = (prefs || []) as unknown as VisibilityPref[];
     }
 
     // Build lookup: personId -> contributorId -> visibility

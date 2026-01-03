@@ -4,10 +4,14 @@ import type { Database } from '@/lib/database.types';
 import EditNotesClient from '@/components/EditNotesClient';
 import EditSessionSetter from '@/components/EditSessionSetter';
 import Nav from '@/components/Nav';
-import { redactReferences } from '@/lib/references';
+import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { subtleBackground, formStyles } from '@/lib/styles';
 
 export const dynamic = 'force-dynamic';
+
+function coerceReferenceRows(value: unknown): ReferenceRow[] {
+  return Array.isArray(value) ? (value as unknown as ReferenceRow[]) : [];
+}
 
 export default async function EditTokenPage({
   params,
@@ -163,7 +167,7 @@ export default async function EditTokenPage({
 
   const redactedEvents = (events || []).map((evt) => ({
     ...evt,
-    references: redactReferences((evt as { references?: unknown }).references as any || [], {
+    references: redactReferences(coerceReferenceRows((evt as { references?: unknown }).references), {
       includeAuthorPayload: true,
     }),
   }));

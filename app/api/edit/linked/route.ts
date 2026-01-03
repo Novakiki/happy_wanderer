@@ -10,7 +10,7 @@ import {
 } from '@/lib/memories';
 import { hasContent } from '@/lib/html-utils';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { buildInviteData } from '@/lib/invites';
+import { buildInviteData, getInviteExpiryDate } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
 import { lintNote } from '@/lib/note-lint';
 import { detectAndStoreMentions } from '@/lib/pending-names';
@@ -226,8 +226,15 @@ export async function POST(request: Request) {
       root_event_id: parentEvent.root_event_id,
       chain_depth: parentEvent.chain_depth,
     });
+    const { data: contributorRow } = await admin
+      .from('contributors')
+      .select('trusted')
+      .eq('id', tokenRow.contributor_id)
+      .single();
+    const isTrusted = (contributorRow as { trusted?: boolean | null } | null)?.trusted === true;
+    const status = isTrusted ? 'published' : 'pending';
 
-    const { data: newEvent, error: insertError } = await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+    const { data: newEvent, error: insertError } = await admin.from('timeline_events')
       .insert({
         year: resolvedYear,
         year_end: resolvedYearEnd,
@@ -252,7 +259,7 @@ export async function POST(request: Request) {
         privacy_level: normalizedPrivacyLevel,
         people_involved: normalizedPeople.length > 0 ? normalizedPeople : null,
         contributor_id: tokenRow.contributor_id,
-        status: 'published',
+        status,
         prompted_by_event_id: parentEvent.id,
         root_event_id: chainInfo.rootEventId,
         chain_depth: chainInfo.chainDepth,
@@ -272,7 +279,7 @@ export async function POST(request: Request) {
     const newEventId = (newEvent as { id: string }).id;
 
     if (!chainInfo.rootEventId) {
-      await (admin.from('timeline_events') as ReturnType<typeof admin.from>)
+      await admin.from('timeline_events')
         .update({ root_event_id: newEventId })
         .eq('id', newEventId);
     }
@@ -281,7 +288,7 @@ export async function POST(request: Request) {
     const normalizedRelationship = allowedRelationships.has(relationship) ? relationship : 'perspective';
     const trimmedRelationshipNote = typeof relationship_note === 'string' ? relationship_note.trim() : '';
 
-    await (admin.from('memory_threads') as ReturnType<typeof admin.from>).insert({
+    await admin.from('memory_threads').insert({
       original_event_id: parentEvent.id,
       response_event_id: newEventId,
       relationship: normalizedRelationship,
@@ -382,7 +389,7 @@ export async function POST(request: Request) {
           if (phone) {
             let inviteName = String(raw?.name || raw?.display_name || '').trim();
             if (!inviteName) {
-              const { data: personRowsData } = await (admin.from('people') as ReturnType<typeof admin.from>)
+              const { data: personRowsData } = await admin.from('people')
                 .select('canonical_name')
                 .eq('id', personId)
                 .limit(1);
@@ -396,7 +403,7 @@ export async function POST(request: Request) {
             );
 
             if (inviteData) {
-              await (admin.from('invites') as ReturnType<typeof admin.from>)
+              await admin.from('invites')
                 .insert({
                   event_id: newEventId,
                   recipient_name: inviteData.recipient_name,
@@ -405,6 +412,7 @@ export async function POST(request: Request) {
                   message: inviteData.message,
                   sender_id: tokenRow.contributor_id,
                   status: 'pending',
+                  expires_at: getInviteExpiryDate(),
                 });
             }
           }
@@ -413,7 +421,7 @@ export async function POST(request: Request) {
 
       const allRows: Database['public']['Tables']['event_references']['Insert'][] = [...linkRows, ...personRows];
       if (allRows.length > 0) {
-        const { error: refError } = await (admin.from('event_references') as ReturnType<typeof admin.from>)
+        const { error: refError } = await admin.from('event_references')
           .insert(allRows);
         if (refError) {
           throw refError;
@@ -428,7 +436,7 @@ export async function POST(request: Request) {
         : attachment_type === 'audio'
           ? 'audio'
           : 'document';
-      const { data: mediaData, error: mediaError } = await (admin.from('media') as ReturnType<typeof admin.from>)
+      const { data: mediaData, error: mediaError } = await admin.from('media')
         .insert({
           type: mediaType,
           url: trimmedAttachmentUrl,
@@ -449,7 +457,7 @@ export async function POST(request: Request) {
 
       const mediaId = (mediaData as { id?: string } | null)?.id;
       if (mediaId) {
-        const { error: linkError } = await (admin.from('event_media') as ReturnType<typeof admin.from>)
+        const { error: linkError } = await admin.from('event_media')
           .insert({
             event_id: newEventId,
             media_id: mediaId,

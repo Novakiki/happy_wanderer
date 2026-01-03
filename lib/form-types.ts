@@ -13,6 +13,7 @@ export type ProvenanceData = {
   type: ProvenanceType;
   toldByName?: string;        // For 'secondhand' - who told you
   toldByRelationship?: string | null; // For 'secondhand' - their relationship to Val
+  toldByPhone?: string;       // For 'secondhand' - phone to invite them
   referenceName?: string;     // For 'from_references' - what record/document
   referenceUrl?: string;      // For 'from_references' - link to record
 };
@@ -277,7 +278,8 @@ export function getDefaultProvenanceForEntryType(entryType: EntryType): Provenan
     case 'origin':
       return { type: 'pattern_observed' };
     case 'milestone':
-      return { type: 'from_references' };
+      // Milestones are admin-seeded, but default to firsthand if accessed
+      return { type: 'firsthand' };
     case 'memory':
     default:
       return { type: 'firsthand' };

@@ -10,7 +10,7 @@ export const getLintSuggestion = (code: string, fallback?: string, message?: str
   if (LINT_SUGGESTIONS[code]) return LINT_SUGGESTIONS[code];
   const msg = (message || '').toLowerCase();
   if (msg.includes('consent') || msg.includes('named person')) {
-    return 'Use a relationship instead of a full name (e.g., “my husband,” “a cousin,” or initials) until they confirm how they want to appear.';
+    return 'Remove the name for now—use “someone” or no name. Best next step: add them in People and invite them so they can decide how they want to appear.';
   }
   return fallback;
 };

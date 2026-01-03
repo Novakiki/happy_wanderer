@@ -19,10 +19,11 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
 
     // Check if profile already exists
-    const { data: existingProfile } = await (admin.from('profiles') as ReturnType<typeof admin.from>)
+    const { data: existingProfile } = await admin
+      .from('profiles')
       .select('id')
       .eq('id', user.id)
-      .single() as { data: { id: string } | null };
+      .single();
 
     if (existingProfile) {
       return NextResponse.json({ error: 'Profile already exists' }, { status: 400 });
@@ -33,37 +34,39 @@ export async function POST(request: NextRequest) {
     const userEmail = email || user.email || '';
 
     if (userEmail) {
-      const { data: existingContributor } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: existingContributor } = await admin
+        .from('contributors')
         .select('id')
         .ilike('email', userEmail)
-        .single() as { data: { id: string } | null };
+        .single();
 
       if (existingContributor) {
-        contributorId = existingContributor.id;
+        contributorId = (existingContributor as { id: string }).id;
       }
     }
 
     // If no existing contributor, create one
     if (!contributorId) {
-      const { data: newContributor, error: contribError } = await (admin.from('contributors') as ReturnType<typeof admin.from>)
+      const { data: newContributor, error: contribError } = await admin
+        .from('contributors')
         .insert({
           name: name.trim(),
           relation: relation.trim(),
           email: userEmail || null,
         })
         .select('id')
-        .single() as { data: { id: string } | null; error: unknown };
+        .single();
 
       if (contribError) {
         console.error('Error creating contributor:', contribError);
         return NextResponse.json({ error: 'Failed to create contributor' }, { status: 500 });
       }
 
-      contributorId = newContributor?.id || null;
+      contributorId = (newContributor as { id: string } | null)?.id || null;
     }
 
     // Create profile
-    const { error: profileError } = await (admin.from('profiles') as ReturnType<typeof admin.from>).insert({
+    const { error: profileError } = await admin.from('profiles').insert({
       id: user.id,
       name: name.trim(),
       relation: relation.trim(),

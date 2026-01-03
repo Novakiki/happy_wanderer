@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { formStyles } from '@/lib/styles';
 
@@ -79,6 +80,17 @@ export default function EditRequestForm() {
       >
         {state === 'loading' ? 'Sending...' : 'Send magic link'}
       </button>
+
+      <p className="text-sm text-white/60">
+        Already have a password?{' '}
+        <Link
+          href={`/auth/login${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+          className="text-[#e07a5f] hover:text-white transition-colors"
+        >
+          Sign in instead
+        </Link>
+        .
+      </p>
     </form>
   );
 }
