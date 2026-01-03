@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { EntryType, PersonReference, ProvenanceData } from '@/lib/form-types';
 import {
   DEFAULT_PROVENANCE,

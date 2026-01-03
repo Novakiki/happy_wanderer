@@ -463,7 +463,7 @@ async function main() {
       continue;
     }
 
-    const referenceRows = (refs || []) as ReferenceRow[];
+    const referenceRows = (refs || []) as unknown as ReferenceRow[];
     const personIds = referenceRows
       .map((ref) => ref.person_id)
       .filter((id): id is string => Boolean(id));

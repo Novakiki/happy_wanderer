@@ -93,7 +93,9 @@ export default async function MemoryPage({
         .select(baseSelect)
         .eq("id", id)
         .single();
-      data = fallback.data;
+      // Fallback rows don't include the `trigger_event` relationship field.
+      // Cast so we can keep a single `data` variable shape.
+      data = fallback.data as unknown as typeof data;
       error = fallback.error;
     }
 
@@ -110,7 +112,7 @@ export default async function MemoryPage({
           .eq("id", triggerEventId)
           .single();
         if (triggerEvent) {
-          (data as { trigger_event?: typeof triggerEvent }).trigger_event = triggerEvent;
+          (data as { trigger_event?: Array<typeof triggerEvent> }).trigger_event = [triggerEvent];
         }
       }
 
