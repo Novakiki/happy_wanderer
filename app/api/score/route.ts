@@ -228,16 +228,22 @@ export async function GET(request: NextRequest) {
 
       const { version, version_created_at, version_created_by, ...safeEvent } = event;
 
-      const redactedReferences = redactReferences(enrichedRefs as ReferenceRow[]);
+      // Important: `maskContentWithReferences` requires `author_payload` to know which
+      // original names to replace. We include it only for masking, then strip it from
+      // the API response so we don't leak private names to the client.
+      const redactedForMasking = redactReferences(enrichedRefs as ReferenceRow[], {
+        includeAuthorPayload: true,
+      });
+      const redactedReferences = redactedForMasking.map(({ author_payload, ...rest }) => rest);
       const mentions = mentionsByEventId.get(event.id) ?? [];
 
       return {
         ...safeEvent,
         preview: safeEvent.preview
-          ? maskContentWithReferences(safeEvent.preview, redactedReferences, mentions)
+          ? maskContentWithReferences(safeEvent.preview, redactedForMasking, mentions)
           : safeEvent.preview,
         why_included: safeEvent.why_included
-          ? maskContentWithReferences(safeEvent.why_included, redactedReferences, mentions)
+          ? maskContentWithReferences(safeEvent.why_included, redactedForMasking, mentions)
           : safeEvent.why_included,
         references: redactedReferences,
       };
