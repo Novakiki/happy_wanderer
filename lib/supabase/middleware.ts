@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { INVITE_COOKIE_NAME, readInviteSession } from '@/lib/invite-session';
+import { INVITE_COOKIE_NAME, validateInviteSession } from '@/lib/invite-session';
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -38,9 +38,11 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const inviteSession = await readInviteSession(
-    request.cookies.get(INVITE_COOKIE_NAME)?.value
-  );
+  const inviteCookieValue = request.cookies.get(INVITE_COOKIE_NAME)?.value;
+  const inviteAccess = !user && inviteCookieValue
+    ? await validateInviteSession(inviteCookieValue)
+    : null;
+  const inviteSession = inviteAccess?.session ?? null;
   const isInviteBrowseRoute =
     request.nextUrl.pathname === '/score' ||
     request.nextUrl.pathname.startsWith('/memory/') ||
@@ -49,6 +51,13 @@ export async function updateSession(request: NextRequest) {
   const isScoreApiRoute =
     request.nextUrl.pathname === '/api/score' ||
     request.nextUrl.pathname === '/api/score-peek';
+
+  if (!inviteSession && inviteCookieValue) {
+    supabaseResponse.cookies.set(INVITE_COOKIE_NAME, '', {
+      path: '/',
+      maxAge: 0,
+    });
+  }
 
   // If not authenticated and not on an auth page, redirect to login
   if (

@@ -60,17 +60,18 @@ POST example:
 curl -s -X POST "http://localhost:3000/api/test/login" \
   -H "Content-Type: application/json" \
   -H "x-test-login-secret: $TEST_LOGIN_SECRET" \
-  -d '{"email":"mrsamygrant+admin@gmail.com"}'
+  -d '{"email":"roleplay-admin@example.com"}'
 ```
 
 GET example (browser redirect, local only):
 ```
-http://localhost:3000/api/test/login?secret=YOUR_SECRET&email=mrsamygrant+admin@gmail.com
+http://localhost:3000/api/test/login?secret=YOUR_SECRET&email=roleplay-admin@example.com
 ```
 
 Notes:
 - Dev-only (disabled in production).
 - Uses Supabase magic-link OTP internally; no email is sent.
+- For production-mode E2E runs, set `ALLOW_TEST_LOGIN=true` in `.env.e2e`.
 ## Setup checklist
 - Add admin emails to `ADMIN_EMAILS` in `.env.local`.
 - Ensure `INVITE_COOKIE_SECRET` is set.

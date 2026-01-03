@@ -13,7 +13,7 @@ import {
 } from '@/lib/memories';
 import { mapLegacyPersonRole } from '@/lib/form-types';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { shouldCreateInvite, buildInviteData, getInviteExpiryDate } from '@/lib/invites';
+import { shouldCreateInvite, buildInviteData, getInviteExpiryDate, INVITE_MAX_USES } from '@/lib/invites';
 import { lintNote } from '@/lib/note-lint';
 import { createPersonLookupHelpers } from '@/lib/person-lookup';
 import { llmReviewGate } from '@/lib/llm-review';
@@ -341,6 +341,9 @@ export async function POST(request: NextRequest) {
                 sender_id: contributorId,
                 status: 'pending',
                 expires_at: getInviteExpiryDate(),
+                parent_invite_id: null,
+                depth: 0,
+                max_uses: INVITE_MAX_USES,
               })
               .select('id')
               .single();
@@ -389,6 +392,9 @@ export async function POST(request: NextRequest) {
               sender_id: contributorId,
               status: 'pending',
               expires_at: getInviteExpiryDate(),
+              parent_invite_id: null,
+              depth: 0,
+              max_uses: INVITE_MAX_USES,
             })
             .select('id')
             .single();
@@ -467,6 +473,17 @@ export async function POST(request: NextRequest) {
         contributorId
       );
       mentionCandidates = nameResult.mentions;
+    }
+
+    // Send SMS claim notifications for invites with phone numbers (fire-and-forget)
+    const smsInviteIds = createdInvites.map((inv) => inv.id);
+    if (smsInviteIds.length > 0) {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || '';
+      fetch(`${baseUrl}/api/claim/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invite_ids: smsInviteIds }),
+      }).catch((err) => console.error('Claim SMS send error:', err));
     }
 
     return NextResponse.json({

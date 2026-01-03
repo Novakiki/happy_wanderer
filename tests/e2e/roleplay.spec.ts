@@ -186,4 +186,89 @@ test.describe('Roleplay flows', () => {
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Review pending notes' })).toBeVisible();
   });
+
+  test('admin can update notes and trust contributors', async ({ page }) => {
+    test.skip(
+      !resolvedAdminEmail || !testLoginSecret || !adminClient,
+      'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
+    );
+
+    const params = new URLSearchParams({
+      email: resolvedAdminEmail,
+      secret: testLoginSecret,
+    });
+    await page.goto(`/api/test/login?${params.toString()}`);
+    await page.waitForURL(/\/score/);
+    await ensureAdminProfile(resolvedAdminEmail);
+
+    const stamp = Date.now();
+    const { data: contributor } = await adminClient
+      .from('contributors')
+      .insert({
+        name: `E2E Admin Review ${stamp}`,
+        relation: 'family/friend',
+        email: `e2e-admin-review-${stamp}@example.com`,
+        trusted: false,
+      })
+      .select('id')
+      .single();
+
+    const contributorId = (contributor as { id?: string } | null)?.id ?? null;
+    if (!contributorId) {
+      test.skip(true, 'Failed to create contributor fixture.');
+      return;
+    }
+
+    const { data: note } = await adminClient
+      .from('timeline_events')
+      .insert({
+        year: 2001,
+        type: 'memory',
+        title: `E2E Pending Note ${stamp}`,
+        preview: 'Pending note for admin review.',
+        full_entry: 'Pending note for admin review.',
+        why_included: 'Admin review test.',
+        status: 'pending',
+        privacy_level: 'family',
+        contributor_id: contributorId,
+      })
+      .select('id')
+      .single();
+
+    const noteId = (note as { id?: string } | null)?.id ?? null;
+    if (!noteId) {
+      await adminClient.from('contributors').delete().eq('id', contributorId);
+      test.skip(true, 'Failed to create pending note fixture.');
+      return;
+    }
+
+    try {
+      const publishRes = await page.request.patch('/api/admin/notes', {
+        data: { id: noteId, status: 'published' },
+      });
+      expect(publishRes.ok()).toBeTruthy();
+
+      const trustRes = await page.request.patch('/api/admin/contributors', {
+        data: { contributor_id: contributorId, trusted: true },
+      });
+      expect(trustRes.ok()).toBeTruthy();
+
+      const { data: updatedNote } = await adminClient
+        .from('timeline_events')
+        .select('status')
+        .eq('id', noteId)
+        .single();
+      expect((updatedNote as { status?: string } | null)?.status).toBe('published');
+
+      const { data: updatedContributor } = await adminClient
+        .from('contributors')
+        .select('trusted')
+        .eq('id', contributorId)
+        .single();
+      expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
+    } finally {
+      await adminClient.from('timeline_events').delete().eq('id', noteId);
+      await adminClient.from('contributors').delete().eq('id', contributorId);
+    }
+  });
 });

@@ -335,19 +335,23 @@ export async function GET(request: NextRequest) {
     maskedContent = maskContentWithReferences(maskedContent, redactedRefs, mentionRows);
   }
 
-  const inviteUpdates: Record<string, unknown> = {};
+  const statusUpdates: Record<string, unknown> = {};
   if (typedInvite.status === 'pending' || typedInvite.status === 'sent') {
-    inviteUpdates.status = 'opened';
-    inviteUpdates.opened_at = new Date().toISOString();
-  }
-  if (!hasInviteSession) {
-    inviteUpdates.uses_count = usesCount + 1;
+    statusUpdates.status = 'opened';
+    statusUpdates.opened_at = new Date().toISOString();
   }
 
-  if (Object.keys(inviteUpdates).length > 0) {
+  if (Object.keys(statusUpdates).length > 0) {
     await admin.from('invites')
-      .update(inviteUpdates)
+      .update(statusUpdates)
       .eq('id', inviteId);
+  }
+
+  if (!hasInviteSession) {
+    await admin.from('invites')
+      .update({ uses_count: usesCount + 1 })
+      .eq('id', inviteId)
+      .eq('uses_count', usesCount);
   }
 
   const response = NextResponse.json({
@@ -475,16 +479,27 @@ export async function POST(request: NextRequest) {
     // Create or find contributor for the responder
     let contributorId: string | null = null;
 
-    const { data: existingContributor } = await admin.from('contributors')
-      .select('id')
-      .ilike('name', trimmedName)
-      .single();
+    const recipientContact = typedInvite.recipient_contact?.trim().toLowerCase() || '';
+    const recipientEmail = recipientContact.includes('@') ? recipientContact : null;
 
-    if ((existingContributor as ContributorRow | null)?.id) {
-      contributorId = (existingContributor as ContributorRow).id;
-    } else {
+    if (recipientEmail) {
+      const { data: existingContributor } = await admin.from('contributors')
+        .select('id')
+        .ilike('email', recipientEmail)
+        .single();
+
+      if ((existingContributor as ContributorRow | null)?.id) {
+        contributorId = (existingContributor as ContributorRow).id;
+      }
+    }
+
+    if (!contributorId) {
       const { data: newContributor } = await admin.from('contributors')
-        .insert({ name: trimmedName, relation: 'family/friend' })
+        .insert({
+          name: trimmedName,
+          relation: 'family/friend',
+          email: recipientEmail,
+        })
         .select('id')
         .single();
       contributorId = (newContributor as ContributorRow | null)?.id || null;

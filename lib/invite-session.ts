@@ -1,10 +1,11 @@
 export const INVITE_COOKIE_NAME = 'vals-memory-invite';
 export const INVITE_COOKIE_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-const INVITE_SESSION_VERSION = 1;
+const INVITE_SESSION_VERSION = 2;
 
 type InviteSessionPayload = {
   v: number;
+  invite_id: string;
   invite_hash: string;
   issued_at: number;
   expires_at: number;
@@ -83,6 +84,7 @@ export async function createInviteSessionCookie(inviteId: string) {
   const expiresAt = issuedAt + INVITE_COOKIE_TTL_SECONDS;
   const payload: InviteSessionPayload = {
     v: INVITE_SESSION_VERSION,
+    invite_id: inviteId,
     invite_hash: inviteHash,
     issued_at: issuedAt,
     expires_at: expiresAt,
@@ -115,6 +117,7 @@ export async function readInviteSession(cookieValue?: string) {
   }
 
   if (!payload || payload.v !== INVITE_SESSION_VERSION) return null;
+  if (!payload.invite_id) return null;
   if (payload.scope !== 'browse') return null;
   if (!payload.expires_at || payload.expires_at < Math.floor(Date.now() / 1000)) return null;
 
@@ -123,7 +126,54 @@ export async function readInviteSession(cookieValue?: string) {
 
 export async function inviteSessionMatchesInvite(session: InviteSessionPayload | null, inviteId: string) {
   if (!session) return false;
+  if (session.invite_id && session.invite_id !== inviteId) return false;
   const inviteHash = await hashInviteId(inviteId);
   if (!inviteHash) return false;
   return session.invite_hash === inviteHash;
+}
+
+type InviteAccessRow = {
+  id: string;
+  status: string | null;
+  expires_at: string | null;
+  max_uses: number | null;
+  uses_count: number | null;
+};
+
+const INVITE_ALLOWED_STATUS = new Set(['pending', 'sent', 'opened', 'clicked', 'contributed']);
+
+function isInviteActive(invite: InviteAccessRow) {
+  if (!invite) return false;
+  if (invite.status && !INVITE_ALLOWED_STATUS.has(invite.status)) return false;
+  return true;
+}
+
+async function fetchInviteAccess(inviteId: string): Promise<InviteAccessRow | null> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+
+  const url = new URL(`${supabaseUrl}/rest/v1/invites`);
+  url.searchParams.set('select', 'id,status,expires_at,max_uses,uses_count');
+  url.searchParams.set('id', `eq.${inviteId}`);
+
+  const resp = await fetch(url.toString(), {
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+    },
+  });
+
+  if (!resp.ok) return null;
+  const data = await resp.json().catch(() => []);
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return data[0] as InviteAccessRow;
+}
+
+export async function validateInviteSession(cookieValue?: string) {
+  const session = await readInviteSession(cookieValue);
+  if (!session?.invite_id) return null;
+  const invite = await fetchInviteAccess(session.invite_id);
+  if (!invite || !isInviteActive(invite)) return null;
+  return { session, invite };
 }

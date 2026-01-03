@@ -8,7 +8,7 @@ import {
 } from '@/lib/memories';
 import { hasContent, generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildTimingRawText } from '@/lib/form-validation';
-import { buildInviteData, getInviteExpiryDate } from '@/lib/invites';
+import { buildInviteData, getInviteExpiryDate, INVITE_MAX_USES } from '@/lib/invites';
 import { llmReviewGate } from '@/lib/llm-review';
 import { lintNote } from '@/lib/note-lint';
 import { detectAndStoreMentions } from '@/lib/pending-names';
@@ -451,6 +451,9 @@ export async function POST(request: Request) {
                     sender_id: tokenRow.contributor_id,
                     status: 'pending',
                     expires_at: getInviteExpiryDate(),
+                    parent_invite_id: null,
+                    depth: 0,
+                    max_uses: INVITE_MAX_USES,
                   });
               }
             }

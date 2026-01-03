@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
 import { getInviteExpiryDate } from '@/lib/invites';
+import { resolveInviteGraphContext } from '@/lib/invite-graph';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
       message,
       witnesses = [],
       relationship_to_subject,
+      parent_invite_id,
     } = body;
 
     if (!event_id || !recipient_name || !method) {
@@ -46,6 +48,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const graphResult = await resolveInviteGraphContext(
+      admin,
+      typeof parent_invite_id === 'string' ? parent_invite_id : null
+    );
+    if (!graphResult.ok) {
+      return NextResponse.json({ error: graphResult.error }, { status: 400 });
+    }
+
     // Insert invite
     const { data: invite, error: inviteError } = await admin.from('invites')
       .insert({
@@ -56,6 +66,9 @@ export async function POST(request: Request) {
         message,
         sender_id: typedEvent.contributor_id ?? null,
         expires_at: getInviteExpiryDate(),
+        parent_invite_id: graphResult.context.parent_invite_id,
+        depth: graphResult.context.depth,
+        max_uses: graphResult.context.max_uses,
       })
       .select('id')
       .single();

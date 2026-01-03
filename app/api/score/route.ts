@@ -4,7 +4,7 @@ import type { Database } from '@/lib/database.types';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { maskContentWithReferences } from '@/lib/name-detection';
 import { createClient as createServerClient } from '@/lib/supabase/server';
-import { INVITE_COOKIE_NAME, readInviteSession } from '@/lib/invite-session';
+import { INVITE_COOKIE_NAME, validateInviteSession } from '@/lib/invite-session';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -43,12 +43,17 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createServerClient();
     const { data: { user } } = await supabase.auth.getUser();
-    const inviteSession = await readInviteSession(
-      request.cookies.get(INVITE_COOKIE_NAME)?.value
-    );
+    const inviteCookieValue = request.cookies.get(INVITE_COOKIE_NAME)?.value;
+    const inviteAccess = !user && inviteCookieValue
+      ? await validateInviteSession(inviteCookieValue)
+      : null;
 
-    if (!user && !inviteSession) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!user && !inviteAccess) {
+      const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      if (inviteCookieValue) {
+        response.cookies.set(INVITE_COOKIE_NAME, '', { path: '/', maxAge: 0 });
+      }
+      return response;
     }
 
     const eventsResult = await admin

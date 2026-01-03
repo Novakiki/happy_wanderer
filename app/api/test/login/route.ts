@@ -8,8 +8,8 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 function isDevAllowed() {
   const isNonProd = process.env.NODE_ENV !== 'production';
-  const isFixtureRun = process.env.E2E_FIXTURE_ENABLED === 'true';
-  return (isNonProd || isFixtureRun) && typeof TEST_SECRET === 'string' && TEST_SECRET.length > 0;
+  const allowTestLogin = process.env.ALLOW_TEST_LOGIN === 'true';
+  return (isNonProd || allowTestLogin) && typeof TEST_SECRET === 'string' && TEST_SECRET.length > 0;
 }
 
 function getRequestSecret(request: NextRequest, body?: Record<string, unknown>) {
