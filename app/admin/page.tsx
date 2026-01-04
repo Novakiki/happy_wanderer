@@ -35,9 +35,11 @@ type Contributor = {
   name: string;
   relation: string;
   email: string | null;
+  phone: string | null;
   trusted: boolean | null;
   created_at: string | null;
   last_active: string | null;
+  disabled_at: string | null;
 };
 
 export default async function AdminPage() {
@@ -97,7 +99,7 @@ export default async function AdminPage() {
 
   const { data: contributors, error: contributorsError } = await admin
     .from('contributors')
-    .select('id, name, relation, email, trusted, created_at, last_active')
+    .select('id, name, relation, email, phone, trusted, created_at, last_active, disabled_at')
     .order('name', { ascending: true })
     .returns<Contributor[]>();
 

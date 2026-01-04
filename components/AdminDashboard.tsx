@@ -27,7 +27,9 @@ type Contributor = {
   name: string;
   relation: string;
   email: string | null;
+  phone: string | null;
   trusted: boolean | null;
+  disabled_at: string | null;
 };
 
 type Props = {
@@ -79,6 +81,10 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
   const [noteErrors, setNoteErrors] = useState<Record<string, string>>({});
   const [trustBusy, setTrustBusy] = useState<Record<string, boolean>>({});
   const [trustErrors, setTrustErrors] = useState<Record<string, string>>({});
+  const [editingContributor, setEditingContributor] = useState<Record<string, boolean>>({});
+  const [contributorDrafts, setContributorDrafts] = useState<
+    Record<string, { name: string; relation: string; email: string; phone: string }>
+  >({});
 
   const updateNoteStatus = async (noteId: string, status: 'published' | 'private') => {
     setNoteBusy((prev) => ({ ...prev, [noteId]: true }));
@@ -110,7 +116,17 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
     }
   };
 
-  const updateContributorTrust = async (contributorId: string, trusted: boolean) => {
+  const updateContributor = async (
+    contributorId: string,
+    updates: Partial<{
+      trusted: boolean;
+      disabled: boolean;
+      name: string;
+      relation: string;
+      email: string | null;
+      phone: string | null;
+    }>
+  ) => {
     setTrustBusy((prev) => ({ ...prev, [contributorId]: true }));
     setTrustErrors((prev) => ({ ...prev, [contributorId]: '' }));
 
@@ -118,7 +134,7 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
       const res = await fetch('/api/admin/contributors', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contributor_id: contributorId, trusted }),
+        body: JSON.stringify({ contributor_id: contributorId, ...updates }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -126,21 +142,105 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
           ...prev,
           [contributorId]: data?.error || 'Could not update trust.',
         }));
-        return;
+        return false;
       }
-      setContributorsState((prev) =>
-        prev.map((contributor) =>
-          contributor.id === contributorId ? { ...contributor, trusted } : contributor
-        )
-      );
+      setContributorsState((prev) => {
+        const next = prev.map((contributor) => {
+          if (contributor.id !== contributorId) return contributor;
+          const disabledAt =
+            typeof updates.disabled === 'boolean'
+              ? updates.disabled
+                ? new Date().toISOString()
+                : null
+              : contributor.disabled_at;
+          return {
+            ...contributor,
+            ...(typeof updates.trusted === 'boolean' ? { trusted: updates.trusted } : null),
+            ...(typeof updates.name === 'string' ? { name: updates.name } : null),
+            ...(typeof updates.relation === 'string' ? { relation: updates.relation } : null),
+            ...('email' in updates ? { email: updates.email ?? null } : null),
+            ...('phone' in updates ? { phone: updates.phone ?? null } : null),
+            disabled_at: disabledAt,
+          };
+        });
+
+        // Keep disabled contributors at the bottom.
+        return next.sort((a, b) => {
+          const aDisabled = Boolean(a.disabled_at);
+          const bDisabled = Boolean(b.disabled_at);
+          if (aDisabled !== bDisabled) return aDisabled ? 1 : -1;
+          return a.name.localeCompare(b.name);
+        });
+      });
+      return true;
     } catch (err) {
       console.error(err);
       setTrustErrors((prev) => ({
         ...prev,
         [contributorId]: 'Could not update trust.',
       }));
+      return false;
     } finally {
       setTrustBusy((prev) => ({ ...prev, [contributorId]: false }));
+    }
+  };
+
+  const updateContributorTrust = async (contributorId: string, trusted: boolean) => {
+    return updateContributor(contributorId, { trusted });
+  };
+
+  const toggleContributorDisabled = async (contributorId: string, disabled: boolean) => {
+    return updateContributor(contributorId, { disabled });
+  };
+
+  const startEditingContributor = (contributor: Contributor) => {
+    setEditingContributor((prev) => ({ ...prev, [contributor.id]: true }));
+    setContributorDrafts((prev) => ({
+      ...prev,
+      [contributor.id]: {
+        name: contributor.name ?? '',
+        relation: contributor.relation ?? '',
+        email: contributor.email ?? '',
+        phone: contributor.phone ?? '',
+      },
+    }));
+  };
+
+  const cancelEditingContributor = (contributorId: string) => {
+    setEditingContributor((prev) => ({ ...prev, [contributorId]: false }));
+    setContributorDrafts((prev) => {
+      const next = { ...prev };
+      delete next[contributorId];
+      return next;
+    });
+  };
+
+  const saveContributorEdits = async (contributorId: string) => {
+    const draft = contributorDrafts[contributorId];
+    if (!draft) return;
+
+    const name = draft.name.trim();
+    const relation = draft.relation.trim();
+    if (!name || !relation) {
+      setTrustErrors((prev) => ({
+        ...prev,
+        [contributorId]: 'Name and relationship are required.',
+      }));
+      return;
+    }
+
+    const email = draft.email.trim();
+    const phone = draft.phone.trim();
+
+    const ok = await updateContributor(contributorId, {
+      name,
+      relation,
+      email: email ? email : null,
+      phone: phone ? phone : null,
+    });
+
+    if (ok) {
+      cancelEditingContributor(contributorId);
     }
   };
 
@@ -232,7 +332,7 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
       <section className={formStyles.section}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Contributors</h2>
-          <span className="text-xs text-white/50">Trusted contributors auto-publish</span>
+          <span className="text-xs text-white/50">Auto-publish skips review</span>
         </div>
         {contributorsState.length === 0 ? (
           <p className="text-sm text-white/60">No contributors yet.</p>
@@ -240,8 +340,10 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
           <div className="space-y-3">
             {contributorsState.map((contributor) => {
               const trusted = Boolean(contributor.trusted);
+              const disabled = Boolean(contributor.disabled_at);
               const isBusy = Boolean(trustBusy[contributor.id]);
-              const label = trusted ? 'Revoke trust' : 'Mark trusted';
+              const isEditing = Boolean(editingContributor[contributor.id]);
+              const draft = contributorDrafts[contributor.id];
 
               return (
                 <div
@@ -257,25 +359,129 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
                     {trustErrors[contributor.id] && (
                       <p className={formStyles.error}>{trustErrors[contributor.id]}</p>
                     )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {disabled ? (
+                        <span className="text-xs text-white/50 border border-white/20 rounded-full px-3 py-1">
+                          Access paused
+                        </span>
+                      ) : (
+                        <span className="text-xs text-white/70 border border-white/20 rounded-full px-3 py-1">
+                          Active
+                        </span>
+                      )}
+                      {trusted && !disabled && (
+                        <span className="text-xs text-[#e07a5f] border border-[#e07a5f]/40 rounded-full px-3 py-1">
+                          Auto-publish
+                        </span>
+                      )}
+                    </div>
+
+                    {isEditing && draft && (
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="space-y-1">
+                          <span className={formStyles.label}>Name</span>
+                          <input
+                            className={formStyles.input}
+                            value={draft.name}
+                            onChange={(e) =>
+                              setContributorDrafts((prev) => ({
+                                ...prev,
+                                [contributor.id]: { ...prev[contributor.id], name: e.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className={formStyles.label}>Relationship</span>
+                          <input
+                            className={formStyles.input}
+                            value={draft.relation}
+                            onChange={(e) =>
+                              setContributorDrafts((prev) => ({
+                                ...prev,
+                                [contributor.id]: { ...prev[contributor.id], relation: e.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className={formStyles.label}>Email (optional)</span>
+                          <input
+                            className={formStyles.input}
+                            value={draft.email}
+                            onChange={(e) =>
+                              setContributorDrafts((prev) => ({
+                                ...prev,
+                                [contributor.id]: { ...prev[contributor.id], email: e.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className={formStyles.label}>Phone (optional)</span>
+                          <input
+                            className={formStyles.input}
+                            value={draft.phone}
+                            onChange={(e) =>
+                              setContributorDrafts((prev) => ({
+                                ...prev,
+                                [contributor.id]: { ...prev[contributor.id], phone: e.target.value },
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={
-                        trusted
-                          ? 'text-xs text-[#e07a5f] border border-[#e07a5f]/40 rounded-full px-3 py-1'
-                          : 'text-xs text-white/50 border border-white/20 rounded-full px-3 py-1'
-                      }
-                    >
-                      {trusted ? 'Trusted' : 'Untrusted'}
-                    </span>
-                    <button
-                      type="button"
-                      className={formStyles.buttonSecondary}
-                      disabled={isBusy}
-                      onClick={() => updateContributorTrust(contributor.id, !trusted)}
-                    >
-                      {label}
-                    </button>
+                    {isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          className={formStyles.buttonSecondary}
+                          disabled={isBusy}
+                          onClick={() => saveContributorEdits(contributor.id)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className={formStyles.buttonSecondary}
+                          disabled={isBusy}
+                          onClick={() => cancelEditingContributor(contributor.id)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={formStyles.buttonSecondary}
+                          disabled={isBusy}
+                          onClick={() => startEditingContributor(contributor)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={formStyles.buttonSecondary}
+                          disabled={isBusy}
+                          onClick={() => toggleContributorDisabled(contributor.id, !disabled)}
+                        >
+                          {disabled ? 'Restore access' : 'Pause access'}
+                        </button>
+                        <button
+                          type="button"
+                          className={formStyles.buttonSecondary}
+                          disabled={isBusy || disabled}
+                          onClick={() => updateContributorTrust(contributor.id, !trusted)}
+                          title={disabled ? 'Auto-publish is disabled while access is paused.' : undefined}
+                        >
+                          {trusted ? 'Disable auto-publish' : 'Enable auto-publish'}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );

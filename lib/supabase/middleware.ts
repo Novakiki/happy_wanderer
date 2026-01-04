@@ -38,6 +38,42 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // If the authenticated user maps to a deactivated contributor, block access.
+  // (This runs after getUser() to avoid session-debugging issues.)
+  if (
+    user &&
+    !request.nextUrl.pathname.startsWith('/auth/disabled') &&
+    !request.nextUrl.pathname.startsWith('/api/auth/logout')
+  ) {
+    const { data: profile, error: profileError } = await ((supabase.from('profiles') as unknown) as ReturnType<typeof supabase.from>)
+      .select('contributor_id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error('Middleware profile lookup error:', profileError);
+    }
+
+    const contributorId = (profile as { contributor_id?: string | null } | null)?.contributor_id ?? null;
+    if (contributorId) {
+      const { data: contributor, error: contributorError } = await ((supabase.from('contributors') as unknown) as ReturnType<typeof supabase.from>)
+        .select('disabled_at')
+        .eq('id', contributorId)
+        .maybeSingle();
+
+      if (contributorError) {
+        console.error('Middleware contributor lookup error:', contributorError);
+      }
+
+      const disabledAt = (contributor as { disabled_at?: string | null } | null)?.disabled_at ?? null;
+      if (disabledAt) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/auth/disabled';
+        return NextResponse.redirect(url);
+      }
+    }
+  }
+
   const inviteCookieValue = request.cookies.get(INVITE_COOKIE_NAME)?.value;
   const inviteAccess = !user && inviteCookieValue
     ? await validateInviteSession(inviteCookieValue)

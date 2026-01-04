@@ -28,6 +28,7 @@ CREATE TABLE contributors (
   email TEXT,
   phone TEXT,
   trusted BOOLEAN DEFAULT FALSE,
+  disabled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   last_active TIMESTAMPTZ
 );
