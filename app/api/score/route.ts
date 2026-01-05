@@ -48,11 +48,13 @@ export async function GET(request: NextRequest) {
       ? await validateInviteSession(inviteCookieValue)
       : null;
 
-    // Public endpoint:
-    // - Unauthenticated visitors can browse published public notes.
-    // - Authenticated users or valid invite sessions can also browse published family notes.
-    // If an invite cookie exists but is invalid/expired, clear it and fall back to public.
-    const allowFamily = Boolean(user || inviteAccess);
+    // Requires auth or invite session. (The /score page itself is gated by middleware.)
+    if (!user && !inviteAccess) {
+      return NextResponse.json({ events: [] }, { status: 401 });
+    }
+
+    // Authenticated users or valid invite sessions can browse published family notes.
+    const allowFamily = true;
     const privacyLevels: Array<Database['public']['Views']['current_notes']['Row']['privacy_level']> =
       allowFamily ? ['public', 'family'] : ['public'];
 

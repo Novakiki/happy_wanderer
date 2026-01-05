@@ -133,7 +133,7 @@ export default async function AdminPage() {
       message,
       status,
       created_at,
-      contributor:contributors(id, name, relation, email, phone, trusted, last_active)
+      contributor:contributors!trust_requests_contributor_id_fkey(id, name, relation, email, phone, trusted, last_active)
     `)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })

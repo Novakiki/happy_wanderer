@@ -102,6 +102,9 @@ export async function updateSession(request: NextRequest) {
     !isScoreApiRoute &&
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/api/auth') &&
+    !request.nextUrl.pathname.startsWith('/edit') &&
+    !request.nextUrl.pathname.startsWith('/api/edit') &&
+    !request.nextUrl.pathname.startsWith('/api/trust-requests') &&
     !request.nextUrl.pathname.startsWith('/api/respond') &&
     !request.nextUrl.pathname.startsWith('/api/test/fixtures') &&
     !request.nextUrl.pathname.startsWith('/api/test/login') &&

@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
   // Fetch event details
   const { data: event, error: eventError } = await admin
     .from('timeline_events')
-    .select('id, title, preview, year, year_end, contributor:contributors(id, name)')
+    .select('id, title, preview, year, year_end, contributor:contributors!timeline_events_contributor_id_fkey(id, name)')
     .eq('id', typedClaim.event_id)
     .single();
 
@@ -151,37 +151,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No references found' }, { status: 404 });
     }
 
-    // Find matching reference using flexible name matching
-    const recipientLower = typedClaim.recipient_name.trim().toLowerCase();
-    const recipientParts = recipientLower.split(/\s+/);
+    const typedRefs = refs as unknown as RefRow[];
 
-    const match = (refs as unknown as RefRow[]).find((ref) => {
-      const candidate = (
-        ref.person?.canonical_name ||
-        ref.display_name ||
-        ''
-      ).toLowerCase();
+    // Prefer explicit linkage via claim.person_id when available.
+    let match: RefRow | undefined;
+    if (typedClaim.person_id) {
+      match = typedRefs.find((ref) =>
+        ref.person_id === typedClaim.person_id || ref.person?.id === typedClaim.person_id
+      );
+    }
 
-      // Exact match
-      if (candidate === recipientLower) return true;
+    // Fall back to matching by recipient name.
+    if (!match) {
+      const recipientLower = typedClaim.recipient_name.trim().toLowerCase();
+      const recipientParts = recipientLower.split(/\s+/);
 
-      // Partial match: one contains the other
-      if (candidate.includes(recipientLower) || recipientLower.includes(candidate)) return true;
+      match = typedRefs.find((ref) => {
+        const candidate = (
+          ref.person?.canonical_name ||
+          ref.display_name ||
+          ''
+        ).toLowerCase();
 
-      // First name match
-      if (recipientParts.length > 0) {
-        const candidateParts = candidate.split(/\s+/);
-        if (candidateParts.some((part) => recipientParts.includes(part))) return true;
-      }
+        // Exact match
+        if (candidate === recipientLower) return true;
 
-      return false;
-    });
+        // Partial match: one contains the other
+        if (candidate.includes(recipientLower) || recipientLower.includes(candidate)) return true;
+
+        // First name match
+        if (recipientParts.length > 0) {
+          const candidateParts = candidate.split(/\s+/);
+          if (candidateParts.some((part) => recipientParts.includes(part))) return true;
+        }
+
+        return false;
+      });
+    }
+
+    // Last resort: if there is only one person reference on the note, assume it is the intended target.
+    if (!match && typedRefs.length === 1) {
+      match = typedRefs[0];
+    }
 
     if (!match) {
       return NextResponse.json({ error: 'Reference not found for this recipient' }, { status: 404 });
     }
 
-    const personId = match.person_id || match.person?.id;
+    const personId = match.person_id || match.person?.id || null;
 
     // Get contributor_id from the event for by_author scope
     let contributorId: string | null = null;

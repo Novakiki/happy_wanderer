@@ -189,7 +189,9 @@ export async function GET(request: NextRequest) {
   const maxUses = typedInvite.max_uses ?? null;
   const usesCount = typedInvite.uses_count ?? 0;
 
-  if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date()) {
+  // If the invite is expired, allow access only if the viewer has a valid invite
+  // session cookie proving they previously accessed this invite.
+  if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date() && !hasInviteSession) {
     return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
   }
 

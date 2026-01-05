@@ -1,6 +1,6 @@
+import { createAdminClient } from '@/lib/supabase/server';
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/server';
 
 const TEST_SECRET = process.env.TEST_LOGIN_SECRET;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -86,6 +86,47 @@ async function handleLogin(request: NextRequest, email: string, redirectTo?: str
 
   if (error) {
     return NextResponse.json({ error: 'Test login failed.' }, { status: 500 });
+  }
+
+  // Ensure the test user does not get blocked by contributor deactivation middleware.
+  // For test users, we prefer having a profile with no contributor_id, and we clear disabled_at
+  // if a contributor record is linked.
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.id) {
+      const admin = createAdminClient();
+
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('id, contributor_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const contributorId = (profile as { contributor_id?: string | null } | null)?.contributor_id ?? null;
+
+      if (!profile) {
+        await admin.from('profiles').insert({
+          id: user.id,
+          name: email.split('@')[0] || 'Test User',
+          relation: 'test',
+          email,
+          contributor_id: null,
+        });
+      } else if (contributorId) {
+        const { data: contributor } = await admin
+          .from('contributors')
+          .select('disabled_at')
+          .eq('id', contributorId)
+          .maybeSingle();
+
+        const disabledAt = (contributor as { disabled_at?: string | null } | null)?.disabled_at ?? null;
+        if (disabledAt) {
+          await admin.from('contributors').update({ disabled_at: null }).eq('id', contributorId);
+        }
+      }
+    }
+  } catch (profileError) {
+    console.warn('Test login profile setup failed:', profileError);
   }
 
   return response;

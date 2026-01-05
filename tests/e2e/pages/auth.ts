@@ -6,6 +6,15 @@ type LoginOptions = {
 };
 
 export async function login(page: Page, { email, password }: LoginOptions) {
+  const testSecret = process.env.TEST_LOGIN_SECRET;
+  if (testSecret) {
+    const params = new URLSearchParams({ email, secret: testSecret });
+    await page.goto(`/api/test/login?${params.toString()}`);
+    await page.waitForURL('**/score');
+    await expect(page).toHaveURL(/\/score/);
+    return;
+  }
+
   await page.goto('/auth/login');
   await page.getByTestId('login-email').fill(email);
   await page.getByTestId('login-password').fill(password);
