@@ -283,6 +283,23 @@ CREATE TABLE edit_tokens (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Claim tokens - SMS links for identity visibility controls
+CREATE TABLE claim_tokens (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token TEXT NOT NULL UNIQUE,
+  invite_id UUID REFERENCES invites(id) ON DELETE CASCADE,
+  person_id UUID REFERENCES people(id) ON DELETE SET NULL,
+  recipient_name TEXT NOT NULL,
+  recipient_phone TEXT NOT NULL,
+  event_id UUID REFERENCES timeline_events(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '7 days'),
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  sms_status TEXT DEFAULT 'pending' CHECK (sms_status IN ('pending', 'sent', 'delivered', 'failed')),
+  sms_sent_at TIMESTAMPTZ,
+  sms_sid TEXT
+);
+
 -- Notifications
 CREATE TABLE notifications (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -750,6 +767,10 @@ CREATE INDEX idx_invites_expires_at ON invites(expires_at);
 CREATE INDEX idx_invites_status ON invites(status);
 CREATE INDEX idx_edit_tokens_token ON edit_tokens(token);
 CREATE INDEX idx_edit_tokens_contributor ON edit_tokens(contributor_id);
+CREATE INDEX idx_claim_tokens_token ON claim_tokens(token);
+CREATE INDEX idx_claim_tokens_invite ON claim_tokens(invite_id);
+CREATE INDEX idx_claim_tokens_event ON claim_tokens(event_id);
+CREATE INDEX idx_claim_tokens_expires ON claim_tokens(expires_at);
 CREATE INDEX idx_notifications_user ON notifications(user_id);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE NOT read;
 CREATE INDEX idx_trust_requests_contributor ON trust_requests(contributor_id);
@@ -787,6 +808,7 @@ ALTER TABLE event_media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE witnesses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE edit_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claim_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE constellation_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memory_threads ENABLE ROW LEVEL SECURITY;
@@ -862,6 +884,7 @@ GRANT ALL ON TABLE
   witnesses,
   invites,
   edit_tokens,
+  claim_tokens,
   notifications,
   constellation_members,
   memory_threads,
