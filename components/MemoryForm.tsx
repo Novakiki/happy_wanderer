@@ -31,6 +31,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TimingMode } from './forms';
 import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection, TimingModeSelector } from './forms';
+import TrustRequestPanel from './TrustRequestPanel';
 
 // Helper for lint warning styling in success screen
 const lintTone = (severity?: 'soft' | 'strong') => ({
@@ -63,17 +64,24 @@ type UserProfile = {
   relation: string;
   email: string;
   contributorId: string;
+  trusted?: boolean | null;
 };
 
 type Props = {
   respondingToEventId?: string;
   storytellerName?: string;
   userProfile: UserProfile;
+  trustRequestStatus?: 'pending' | 'approved' | 'declined' | null;
 };
 
 type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
-export default function MemoryForm({ respondingToEventId, storytellerName, userProfile }: Props) {
+export default function MemoryForm({
+  respondingToEventId,
+  storytellerName,
+  userProfile,
+  trustRequestStatus,
+}: Props) {
   const [formData, setFormData] = useState({
     entry_type: 'memory',
     exact_date: '',
@@ -117,6 +125,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submittedStatus, setSubmittedStatus] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const [, setLlmReviewMessage] = useState<string | null>(null);
@@ -361,6 +370,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         setLintWarnings(result.lintWarnings);
       }
 
+      setSubmittedStatus(result?.event?.status || null);
       setIsSubmitted(true);
     } catch (err) {
       setError('Something went wrong. Please try again.');
@@ -372,13 +382,29 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
 
   if (isSubmitted) {
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const isTrusted = userProfile?.trusted === true;
+    const statusMessage =
+      submittedStatus === 'published'
+        ? 'Your Note is now part of The Score.'
+        : submittedStatus === 'pending'
+          ? 'Your Note is pending review before it appears in The Score.'
+          : 'Your Note has been added to The Score.';
 
     return (
       <div className="py-16 text-center text-white">
         <h1 className="text-3xl sm:text-4xl font-serif text-white mb-4">Thank you</h1>
         <p className="text-lg text-white/60 mb-12">
-          Your note has been added to the score.
+          {statusMessage}
         </p>
+
+        {!isTrusted && (
+          <div className="mb-8 max-w-lg mx-auto">
+            <TrustRequestPanel
+              isTrusted={isTrusted}
+              status={trustRequestStatus || null}
+            />
+          </div>
+        )}
 
         {/* Show "Text them" buttons if invites were created */}
         {createdInvites.length > 0 && (
@@ -759,7 +785,7 @@ export default function MemoryForm({ respondingToEventId, storytellerName, userP
         {/* Review notice */}
         <div className="p-5 rounded-2xl border border-white/5 bg-white/[0.03] text-left">
           <p className="text-sm font-medium text-white mb-2">
-            Every note is reviewed before it goes live
+            Notes from new contributors are reviewed before they go live
           </p>
           <div className="mt-3 pt-3 border-t border-white/10 text-white/60 space-y-3">
             <p className="text-sm">

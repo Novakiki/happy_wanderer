@@ -32,9 +32,27 @@ type Contributor = {
   disabled_at: string | null;
 };
 
+type TrustRequest = {
+  id: string;
+  contributor_id: string;
+  message: string | null;
+  status: string | null;
+  created_at: string | null;
+  contributor: {
+    id: string;
+    name: string | null;
+    relation: string | null;
+    email: string | null;
+    phone: string | null;
+    trusted: boolean | null;
+    last_active: string | null;
+  } | null;
+};
+
 type Props = {
   pendingNotes: PendingNote[];
   contributors: Contributor[];
+  trustRequests: TrustRequest[];
 };
 
 const PENDING_ACTIONS = [
@@ -74,13 +92,23 @@ function getPreview(note: PendingNote) {
   return `${base.slice(0, 260).trim()}...`;
 }
 
-export default function AdminDashboard({ pendingNotes, contributors }: Props) {
+function formatShortDate(value: string | null) {
+  if (!value) return 'Unknown date';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Unknown date';
+  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export default function AdminDashboard({ pendingNotes, contributors, trustRequests }: Props) {
   const [notes, setNotes] = useState<PendingNote[]>(pendingNotes);
   const [contributorsState, setContributorsState] = useState<Contributor[]>(contributors);
+  const [requests, setRequests] = useState<TrustRequest[]>(trustRequests);
   const [noteBusy, setNoteBusy] = useState<Record<string, boolean>>({});
   const [noteErrors, setNoteErrors] = useState<Record<string, string>>({});
   const [trustBusy, setTrustBusy] = useState<Record<string, boolean>>({});
   const [trustErrors, setTrustErrors] = useState<Record<string, string>>({});
+  const [requestBusy, setRequestBusy] = useState<Record<string, boolean>>({});
+  const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
   const [editingContributor, setEditingContributor] = useState<Record<string, boolean>>({});
   const [contributorDrafts, setContributorDrafts] = useState<
     Record<string, { name: string; relation: string; email: string; phone: string }>
@@ -193,6 +221,49 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
     return updateContributor(contributorId, { disabled });
   };
 
+  const updateTrustRequestStatus = async (
+    requestId: string,
+    contributorId: string,
+    status: 'approved' | 'declined'
+  ) => {
+    setRequestBusy((prev) => ({ ...prev, [requestId]: true }));
+    setRequestErrors((prev) => ({ ...prev, [requestId]: '' }));
+
+    try {
+      const res = await fetch('/api/admin/trust-requests', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: requestId, status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRequestErrors((prev) => ({
+          ...prev,
+          [requestId]: data?.error || 'Could not update this request.',
+        }));
+        return;
+      }
+
+      setRequests((prev) => prev.filter((request) => request.id !== requestId));
+
+      if (status === 'approved') {
+        setContributorsState((prev) =>
+          prev.map((contributor) =>
+            contributor.id === contributorId ? { ...contributor, trusted: true } : contributor
+          )
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setRequestErrors((prev) => ({
+        ...prev,
+        [requestId]: 'Could not update this request.',
+      }));
+    } finally {
+      setRequestBusy((prev) => ({ ...prev, [requestId]: false }));
+    }
+  };
+
   const startEditingContributor = (contributor: Contributor) => {
     setEditingContributor((prev) => ({ ...prev, [contributor.id]: true }));
     setContributorDrafts((prev) => ({
@@ -246,6 +317,73 @@ export default function AdminDashboard({ pendingNotes, contributors }: Props) {
 
   return (
     <div className="space-y-10">
+      <section className={formStyles.section}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Trust requests</h2>
+          <span className="text-xs text-white/50">{requests.length} pending</span>
+        </div>
+        {requests.length === 0 ? (
+          <p className="text-sm text-white/60">No trust requests right now.</p>
+        ) : (
+          <div className="space-y-3">
+            {requests.map((request) => {
+              const contributor = request.contributor;
+              const name = contributor?.name || 'Unknown contributor';
+              const relation = contributor?.relation || '';
+              const email = contributor?.email || '';
+              const metaLine = [relation, email].filter(Boolean).join(' · ') || 'No details';
+              const message = request.message?.trim();
+              const isBusy = Boolean(requestBusy[request.id]);
+
+              return (
+                <div
+                  key={request.id}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 space-y-3"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm text-white">{name}</p>
+                      <p className="text-xs text-white/50">{metaLine}</p>
+                      <p className="text-xs text-white/40 mt-1">
+                        Requested {formatShortDate(request.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className={formStyles.buttonPrimary}
+                        disabled={isBusy}
+                        onClick={() => updateTrustRequestStatus(request.id, request.contributor_id, 'approved')}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        className={formStyles.buttonSecondary}
+                        disabled={isBusy}
+                        onClick={() => updateTrustRequestStatus(request.id, request.contributor_id, 'declined')}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+
+                  {message && (
+                    <p className="text-sm text-white/70 whitespace-pre-line">
+                      {message}
+                    </p>
+                  )}
+
+                  {requestErrors[request.id] && (
+                    <p className={formStyles.error}>{requestErrors[request.id]}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section className={formStyles.section}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Pending notes</h2>

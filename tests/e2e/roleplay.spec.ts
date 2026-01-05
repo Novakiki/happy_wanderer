@@ -63,6 +63,31 @@ const cleanupInvite = async (request: APIRequestContext, inviteId: string | null
   });
 };
 
+const createClaimToken = async (inviteId: string, eventId: string) => {
+  if (!adminClient) return null;
+  const token = crypto.randomUUID();
+  const { data: claim, error } = await adminClient
+    .from('claim_tokens')
+    .insert({
+      token,
+      invite_id: inviteId,
+      recipient_name: 'E2E Claim Test',
+      recipient_phone: '+15551234567',
+      event_id: eventId,
+      sms_status: 'sent',
+    })
+    .select('id, token')
+    .single();
+
+  if (error || !claim) return null;
+  return { id: claim.id, token: claim.token };
+};
+
+const cleanupClaimToken = async (claimId: string | null) => {
+  if (!claimId || !adminClient) return;
+  await adminClient.from('claim_tokens').delete().eq('id', claimId);
+};
+
 const findUserByEmail = async (email: string) => {
   if (!adminClient) return null;
   const { data, error } = await adminClient.auth.admin.listUsers({
@@ -171,6 +196,102 @@ test.describe('Roleplay flows', () => {
     }
   });
 
+  test('claim token flow allows visibility control', async ({ page, request }) => {
+    test.skip(!fixtureEnabled || !fixtureKey || !adminClient, 'Enable fixtures to run claim tests.');
+
+    const eventId = await seedIdentityNote(request);
+    if (!eventId) {
+      test.skip(true, 'No fixture notes available.');
+      return;
+    }
+
+    const inviteId = await createInvite(eventId);
+    if (!inviteId) {
+      test.skip(true, 'Failed to create invite.');
+      return;
+    }
+
+    const claimData = await createClaimToken(inviteId, eventId);
+    if (!claimData) {
+      await cleanupInvite(request, inviteId);
+      test.skip(true, 'Failed to create claim token.');
+      return;
+    }
+
+    try {
+      // Navigate to claim page
+      await page.goto(`/claim/${claimData.token}`);
+      await expect(page.getByRole('heading', { name: 'Choose how your name appears.' })).toBeVisible();
+
+      // Verify context is shown
+      await expect(page.getByText('You were mentioned by')).toBeVisible();
+
+      // Select visibility option (blurred)
+      await page.getByLabel('Show initials only').click();
+
+      // Submit
+      await page.getByRole('button', { name: 'Save my preference' }).click();
+
+      // Verify success
+      await expect(page.getByRole('heading', { name: 'Saved' })).toBeVisible();
+      await expect(page.getByText('initials only')).toBeVisible();
+
+      // Verify token was marked as used
+      const { data: updatedToken } = await adminClient
+        .from('claim_tokens')
+        .select('used_at')
+        .eq('id', claimData.id)
+        .single();
+      expect((updatedToken as { used_at: string | null } | null)?.used_at).toBeTruthy();
+    } finally {
+      await cleanupClaimToken(claimData.id);
+      await cleanupInvite(request, inviteId);
+    }
+  });
+
+  test('expired claim token shows error', async ({ page, request }) => {
+    test.skip(!fixtureEnabled || !fixtureKey || !adminClient, 'Enable fixtures to run claim tests.');
+
+    const eventId = await seedIdentityNote(request);
+    if (!eventId) {
+      test.skip(true, 'No fixture notes available.');
+      return;
+    }
+
+    const inviteId = await createInvite(eventId);
+    if (!inviteId) {
+      test.skip(true, 'Failed to create invite.');
+      return;
+    }
+
+    // Create an expired token
+    const token = crypto.randomUUID();
+    const { data: claim } = await adminClient
+      .from('claim_tokens')
+      .insert({
+        token,
+        invite_id: inviteId,
+        recipient_name: 'E2E Expired Test',
+        recipient_phone: '+15551234567',
+        event_id: eventId,
+        expires_at: new Date(Date.now() - 1000).toISOString(), // Already expired
+        sms_status: 'sent',
+      })
+      .select('id')
+      .single();
+
+    const claimId = (claim as { id: string } | null)?.id ?? null;
+
+    try {
+      await page.goto(`/claim/${token}`);
+      await expect(page.getByRole('heading', { name: 'Oops' })).toBeVisible();
+      await expect(page.getByText('invalid or has expired')).toBeVisible();
+    } finally {
+      if (claimId) await cleanupClaimToken(claimId);
+      await cleanupInvite(request, inviteId);
+    }
+  });
+
   test('admin dashboard loads for admins', async ({ page }) => {
     test.skip(
       !resolvedAdminEmail || !testLoginSecret || !adminClient,
@@ -268,6 +389,60 @@ test.describe('Roleplay flows', () => {
       expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
     } finally {
       await adminClient.from('timeline_events').delete().eq('id', noteId);
+      await adminClient.from('contributors').delete().eq('id', contributorId);
+    }
+  });
+
+  test('edit link shows trust request CTA for untrusted contributor', async ({ page }) => {
+    test.skip(!adminClient, 'Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
+
+    const stamp = Date.now();
+    const { data: contributor } = await adminClient
+      .from('contributors')
+      .insert({
+        name: `E2E Trust Request ${stamp}`,
+        relation: 'family/friend',
+        email: `e2e-trust-request-${stamp}@example.com`,
+        trusted: false,
+      })
+      .select('id')
+      .single();
+
+    const contributorId = (contributor as { id?: string } | null)?.id ?? null;
+    if (!contributorId) {
+      test.skip(true, 'Failed to create contributor fixture.');
+      return;
+    }
+
+    const token = crypto.randomUUID();
+    const { data: editToken } = await adminClient
+      .from('edit_tokens')
+      .insert({
+        token,
+        contributor_id: contributorId,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .select('id')
+      .single();
+
+    const editTokenId = (editToken as { id?: string } | null)?.id ?? null;
+    if (!editTokenId) {
+      await adminClient.from('contributors').delete().eq('id', contributorId);
+      test.skip(true, 'Failed to create edit token fixture.');
+      return;
+    }
+
+    try {
+      await page.goto(`/edit/${token}`);
+      await page.waitForResponse((res) => res.url().includes('/api/edit/session') && res.ok());
+
+      const requestButton = page.getByRole('button', { name: 'Request trusted status' });
+      await expect(requestButton).toBeVisible();
+      await requestButton.click();
+      await expect(page.getByText('Trusted status request received')).toBeVisible();
+    } finally {
+      await adminClient.from('trust_requests').delete().eq('contributor_id', contributorId);
+      await adminClient.from('edit_tokens').delete().eq('id', editTokenId);
       await adminClient.from('contributors').delete().eq('id', contributorId);
     }
   });

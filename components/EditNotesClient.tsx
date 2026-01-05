@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DisclosureSection, NoteContentSection, PeopleSection, ProvenanceSection, ReferencesSection } from './forms';
 import type { TimingMode } from './forms/TimingModeSelector';
 import { TimingModeSelector } from './forms/TimingModeSelector';
+import TrustRequestPanel from './TrustRequestPanel';
 
 type EditableEvent = {
   id: string;
@@ -122,6 +123,8 @@ type Props = {
   contributorName: string;
   events: IncomingEvent[];
   initialEditingId?: string | null;
+  isTrusted?: boolean | null;
+  trustRequestStatus?: 'pending' | 'approved' | 'declined' | null;
 };
 
 type LintWarning = {
@@ -148,7 +151,10 @@ export default function EditNotesClient({
   contributorName,
   events: initialEvents,
   initialEditingId = null,
+  isTrusted = null,
+  trustRequestStatus = null,
 }: Props) {
+  const isContributorTrusted = isTrusted === true;
   const [events, setEvents] = useState(initialEvents);
   const [editingId, setEditingId] = useState<string | null>(() => {
     if (initialEditingId && initialEvents.some((event) => event.id === initialEditingId)) {
@@ -794,6 +800,13 @@ export default function EditNotesClient({
       <div className="text-white/60">
         Editing notes submitted by <span className="text-white">{contributorName}</span>
       </div>
+
+      {!isContributorTrusted && (
+        <TrustRequestPanel
+          isTrusted={isContributorTrusted}
+          status={trustRequestStatus}
+        />
+      )}
 
       {events.length === 0 && (
         <div className="space-y-3 text-white/60">

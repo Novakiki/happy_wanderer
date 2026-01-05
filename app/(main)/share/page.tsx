@@ -1,6 +1,6 @@
 import MemoryForm from "@/components/MemoryForm";
 import Nav from "@/components/Nav";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { subtleBackground } from "@/lib/styles";
 import { redirect } from "next/navigation";
 
@@ -37,7 +37,30 @@ export default async function SharePage({ searchParams }: Props) {
     relation: profile.relation,
     email: profile.email,
     contributorId: profile.contributor_id || "",
+    trusted: false,
   };
+
+  let trustRequestStatus: 'pending' | 'approved' | 'declined' | null = null;
+
+  if (profile.contributor_id) {
+    const admin = createAdminClient();
+
+    const { data: contributor } = await admin
+      .from("contributors")
+      .select("trusted")
+      .eq("id", profile.contributor_id)
+      .single();
+
+    userProfile.trusted = contributor?.trusted === true;
+
+    const { data: requestRows } = await ((admin.from("trust_requests") as unknown) as ReturnType<typeof admin.from>)
+      .select("status")
+      .eq("contributor_id", profile.contributor_id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    trustRequestStatus = Array.isArray(requestRows) ? (requestRows[0]?.status ?? null) : null;
+  }
 
   return (
     <div
@@ -50,6 +73,7 @@ export default async function SharePage({ searchParams }: Props) {
           respondingToEventId={respondingTo}
           storytellerName={storytellerName}
           userProfile={userProfile}
+          trustRequestStatus={trustRequestStatus}
         />
       </section>
     </div>

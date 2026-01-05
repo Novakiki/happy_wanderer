@@ -42,6 +42,23 @@ type Contributor = {
   disabled_at: string | null;
 };
 
+type TrustRequest = {
+  id: string;
+  contributor_id: string;
+  message: string | null;
+  status: string | null;
+  created_at: string | null;
+  contributor: {
+    id: string;
+    name: string | null;
+    relation: string | null;
+    email: string | null;
+    phone: string | null;
+    trusted: boolean | null;
+    last_active: string | null;
+  } | null;
+};
+
 export default async function AdminPage() {
   const supabase = await createClient();
   const {
@@ -109,6 +126,25 @@ export default async function AdminPage() {
 
   const safeContributors = Array.isArray(contributors) ? contributors : [];
 
+  const { data: trustRequests, error: trustError } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+    .select(`
+      id,
+      contributor_id,
+      message,
+      status,
+      created_at,
+      contributor:contributors(id, name, relation, email, phone, trusted, last_active)
+    `)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .returns<TrustRequest[]>();
+
+  if (trustError) {
+    console.error('Admin trust requests fetch error:', trustError);
+  }
+
+  const safeTrustRequests = Array.isArray(trustRequests) ? trustRequests : [];
+
   return (
     <div className="min-h-screen text-white bg-[#0b0b0b]" style={subtleBackground}>
       <Nav
@@ -125,11 +161,15 @@ export default async function AdminPage() {
           <p className={formStyles.subLabel}>Admin</p>
           <h1 className="text-3xl font-serif text-white">Review pending notes</h1>
           <p className="text-white/60 max-w-2xl">
-            Approve new notes and manage trusted contributors.
+            Review trust requests, approve notes, and manage trusted contributors.
           </p>
         </header>
 
-        <AdminDashboard pendingNotes={safePendingNotes} contributors={safeContributors} />
+        <AdminDashboard
+          pendingNotes={safePendingNotes}
+          contributors={safeContributors}
+          trustRequests={safeTrustRequests}
+        />
       </main>
     </div>
   );

@@ -97,11 +97,22 @@ export default async function EditTokenPage({
     .update(tokenUpdate)
     .eq('id', tokenRow.id);
 
-  const { data: contributor }: { data: { name: string | null } | null } = await admin
+  const { data: contributor }: { data: { name: string | null; trusted: boolean | null } | null } = await admin
     .from('contributors')
-    .select('name')
+    .select('name, trusted')
     .eq('id', tokenRow.contributor_id)
     .single();
+
+  const { data: requestRows } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+    .select('status')
+    .eq('contributor_id', tokenRow.contributor_id)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  const trustRequestStatus =
+    Array.isArray(requestRows) && requestRows.length > 0
+      ? (requestRows[0]?.status as 'pending' | 'approved' | 'declined' | null)
+      : null;
 
   const buildEventsQuery = () =>
     admin
@@ -204,6 +215,8 @@ export default async function EditTokenPage({
             contributorName={contributor?.name || 'Contributor'}
             events={redactedEvents}
             initialEditingId={requestedEventFound ? eventId : null}
+            isTrusted={contributor?.trusted === true}
+            trustRequestStatus={trustRequestStatus}
           />
         </div>
       </section>

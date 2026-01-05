@@ -33,6 +33,18 @@ CREATE TABLE contributors (
   last_active TIMESTAMPTZ
 );
 
+-- Trust requests - in-app requests to become trusted
+CREATE TABLE trust_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  contributor_id UUID NOT NULL REFERENCES contributors(id) ON DELETE CASCADE,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'approved', 'declined')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ,
+  resolved_by UUID REFERENCES contributors(id)
+);
+
 -- People - identity nodes (separate from accounts)
 CREATE TABLE people (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -740,6 +752,10 @@ CREATE INDEX idx_edit_tokens_token ON edit_tokens(token);
 CREATE INDEX idx_edit_tokens_contributor ON edit_tokens(contributor_id);
 CREATE INDEX idx_notifications_user ON notifications(user_id);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE NOT read;
+CREATE INDEX idx_trust_requests_contributor ON trust_requests(contributor_id);
+CREATE INDEX idx_trust_requests_status ON trust_requests(status);
+CREATE INDEX idx_trust_requests_created_at ON trust_requests(created_at);
+CREATE UNIQUE INDEX idx_trust_requests_pending_unique ON trust_requests(contributor_id) WHERE status = 'pending';
 CREATE INDEX idx_references_event ON event_references(event_id);
 CREATE INDEX idx_references_contributor ON event_references(contributor_id);
 CREATE INDEX idx_references_type ON event_references(type);
@@ -760,6 +776,7 @@ CREATE INDEX idx_motif_links_note_id ON motif_links(note_id) WHERE status = 'act
 -- =============================================================================
 
 ALTER TABLE contributors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trust_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE people ENABLE ROW LEVEL SECURITY;
 ALTER TABLE person_aliases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE person_claims ENABLE ROW LEVEL SECURITY;
@@ -830,6 +847,7 @@ TO anon, authenticated;
 
 GRANT ALL ON TABLE
   contributors,
+  trust_requests,
   people,
   person_aliases,
   person_claims,
