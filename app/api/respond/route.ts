@@ -348,10 +348,62 @@ export async function GET(request: NextRequest) {
   }
 
   if (!hasInviteSession) {
-    await admin.from('invites')
-      .update({ uses_count: usesCount + 1 })
-      .eq('id', inviteId)
-      .eq('uses_count', usesCount);
+    // Consume one invite "use" with optimistic concurrency + verification.
+    // Without verification, concurrent requests can silently fail the `.eq('uses_count', X)` filter,
+    // causing `uses_count` to lag behind reality and allowing effectively unlimited reuse.
+    let currentUsesCount = usesCount;
+    let didIncrement = false;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (maxUses !== null && currentUsesCount >= maxUses) {
+        // Treat exhausted invites as "not found" to avoid leaking invite existence.
+        return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+      }
+
+      const updateQuery = admin
+        .from('invites')
+        .update({ uses_count: currentUsesCount + 1 })
+        .eq('id', inviteId)
+        .eq('uses_count', currentUsesCount)
+        .select('id');
+
+      const { data: updatedRows, error: updateError } = await updateQuery;
+      if (updateError) {
+        console.warn('Invite uses_count increment failed:', updateError);
+        return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+      }
+
+      if (updatedRows && updatedRows.length === 1) {
+        didIncrement = true;
+        break;
+      }
+
+      // Another request beat us to it; refresh and retry.
+      const { data: freshInvite, error: freshError } = await admin
+        .from('invites')
+        .select('uses_count, max_uses, expires_at')
+        .eq('id', inviteId)
+        .single();
+
+      if (freshError || !freshInvite) {
+        return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+      }
+
+      if (freshInvite.expires_at && new Date(freshInvite.expires_at) < new Date()) {
+        return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+      }
+
+      currentUsesCount = freshInvite.uses_count ?? 0;
+      const freshMaxUses = freshInvite.max_uses ?? null;
+      if (freshMaxUses !== null && currentUsesCount >= freshMaxUses) {
+        return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+      }
+    }
+
+    if (!didIncrement) {
+      // We couldn't reliably consume a use after several retries; fail closed.
+      return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
+    }
   }
 
   const response = NextResponse.json({
