@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/database.types';
-import { redactReferences, type ReferenceRow } from '@/lib/references';
-import { maskContentWithReferences } from '@/lib/name-detection';
-import { createClient as createServerClient } from '@/lib/supabase/server';
 import { INVITE_COOKIE_NAME, validateInviteSession } from '@/lib/invite-session';
+import { maskContentWithReferences } from '@/lib/name-detection';
+import { redactReferences, type ReferenceRow } from '@/lib/references';
+import { createClient as createServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY!;
@@ -48,28 +48,37 @@ export async function GET(request: NextRequest) {
       ? await validateInviteSession(inviteCookieValue)
       : null;
 
-    if (!user && !inviteAccess) {
-      const response = NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      if (inviteCookieValue) {
-        response.cookies.set(INVITE_COOKIE_NAME, '', { path: '/', maxAge: 0 });
-      }
-      return response;
-    }
+    // Public endpoint:
+    // - Unauthenticated visitors can browse published public notes.
+    // - Authenticated users or valid invite sessions can also browse published family notes.
+    // If an invite cookie exists but is invalid/expired, clear it and fall back to public.
+    const allowFamily = Boolean(user || inviteAccess);
+    const privacyLevels: Array<Database['public']['Views']['current_notes']['Row']['privacy_level']> =
+      allowFamily ? ['public', 'family'] : ['public'];
 
     const eventsResult = await admin
       .from('current_notes')
       .select('*')
       .eq('status', 'published')
+      .in('privacy_level', privacyLevels)
       .order('year', { ascending: true });
 
     if (eventsResult.error) {
       console.error('Score fetch error', { eventsError: eventsResult.error });
-      return NextResponse.json({ events: [] }, { status: 500 });
+      const response = NextResponse.json({ events: [] }, { status: 500 });
+      if (inviteCookieValue && !inviteAccess) {
+        response.cookies.set(INVITE_COOKIE_NAME, '', { path: '/', maxAge: 0 });
+      }
+      return response;
     }
 
     const rows = (eventsResult.data || []) as Database['public']['Views']['current_notes']['Row'][];
     if (rows.length === 0) {
-      return NextResponse.json({ events: [] });
+      const response = NextResponse.json({ events: [] });
+      if (inviteCookieValue && !inviteAccess) {
+        response.cookies.set(INVITE_COOKIE_NAME, '', { path: '/', maxAge: 0 });
+      }
+      return response;
     }
 
     const eventIds = rows.map((event) => event.id);
@@ -254,7 +263,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ events });
+    const response = NextResponse.json({ events });
+    if (inviteCookieValue && !inviteAccess) {
+      response.cookies.set(INVITE_COOKIE_NAME, '', { path: '/', maxAge: 0 });
+    }
+    return response;
   } catch (error) {
     console.error('Score API error:', error);
     return NextResponse.json({ events: [] }, { status: 500 });
