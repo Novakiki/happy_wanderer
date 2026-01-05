@@ -10,7 +10,11 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "cf:build": "npx opennextjs-cloudflare build",
+    "cf:dev": "npx opennextjs-cloudflare dev",
+    "cf:preview": "npx opennextjs-cloudflare preview",
+    "cf:deploy": "npx opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -34,6 +38,7 @@
     "sigma": "^3.0.2"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.14.7",
     "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",

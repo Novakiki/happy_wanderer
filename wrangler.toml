@@ -1,0 +1,18 @@
+#:schema node_modules/wrangler/config-schema.json
+
+name = "vals-memory"
+main = ".open-next/worker.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cloudflare Pages assets
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
+# Environment variables (set via wrangler secret or Cloudflare dashboard)
+# NEXT_PUBLIC_SUPABASE_URL
+# NEXT_PUBLIC_SUPABASE_ANON_KEY
+# SUPABASE_SERVICE_ROLE_KEY
+# ANTHROPIC_API_KEY
+
+[observability]
+enabled = true
