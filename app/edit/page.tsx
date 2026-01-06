@@ -1,13 +1,14 @@
 import EditNotesClient from '@/components/EditNotesClient';
 import EditRequestForm from '@/components/EditRequestForm';
-import Nav from '@/components/Nav';
 import EditSessionSetter from '@/components/EditSessionSetter';
+import Nav from '@/components/Nav';
 import { readEditSession } from '@/lib/edit-session';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { formStyles, subtleBackground } from '@/lib/styles';
 import { createAdminClient, createClient as createServerClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -313,11 +314,19 @@ async function getOrCreateEditTokenForContributor(contributorId: string) {
 export default async function EditPage({
   searchParams,
 }: {
-  searchParams: Promise<{ event_id?: string }>;
+  searchParams: Promise<{ event_id?: string; token?: string }>;
 }) {
   const cookieStore = await cookies();
   const editSession = readEditSession(cookieStore.get('vals-memory-edit')?.value);
-  const { event_id: eventId } = await searchParams;
+  const { event_id: eventId, token: tokenParam } = await searchParams;
+
+  // Backwards compatibility: support legacy links like /edit?token=... (and optional &event_id=...).
+  const normalizedTokenParam = typeof tokenParam === 'string' ? tokenParam.trim() : '';
+  if (normalizedTokenParam) {
+    const basePath = `/edit/${encodeURIComponent(normalizedTokenParam)}`;
+    const destination = eventId ? `${basePath}?event_id=${encodeURIComponent(eventId)}` : basePath;
+    redirect(destination);
+  }
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 

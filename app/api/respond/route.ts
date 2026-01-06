@@ -41,22 +41,22 @@
  * - /lib/invites.ts - Invite creation helpers
  * - /app/api/memories/route.ts - Where invites are created during memory submission
  */
-import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
 import { buildTimingRawText } from '@/lib/form-validation';
+import { generatePreviewFromHtml, PREVIEW_MAX_LENGTH } from '@/lib/html-utils';
+import {
+  createInviteSessionCookie,
+  INVITE_COOKIE_NAME,
+  INVITE_COOKIE_TTL_SECONDS,
+  inviteSessionMatchesInvite,
+  readInviteSession,
+} from '@/lib/invite-session';
 import { llmReviewGate } from '@/lib/llm-review';
+import { maskContentWithReferences } from '@/lib/name-detection';
 import { lintNote } from '@/lib/note-lint';
 import { detectAndStoreMentions } from '@/lib/pending-names';
-import { maskContentWithReferences } from '@/lib/name-detection';
 import { redactReferences, type ReferenceRow } from '@/lib/references';
 import { upsertInviteIdentityReference } from '@/lib/respond-identity';
 import { createAdminClient, createClient } from '@/lib/supabase/server';
-import {
-  createInviteSessionCookie,
-  inviteSessionMatchesInvite,
-  INVITE_COOKIE_NAME,
-  INVITE_COOKIE_TTL_SECONDS,
-  readInviteSession,
-} from '@/lib/invite-session';
 import { NextRequest, NextResponse } from 'next/server';
 
 type Visibility = 'approved' | 'blurred' | 'anonymized' | 'removed' | 'pending';
@@ -189,9 +189,7 @@ export async function GET(request: NextRequest) {
   const maxUses = typedInvite.max_uses ?? null;
   const usesCount = typedInvite.uses_count ?? 0;
 
-  // If the invite is expired, allow access only if the viewer has a valid invite
-  // session cookie proving they previously accessed this invite.
-  if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date() && !hasInviteSession) {
+  if (typedInvite.expires_at && new Date(typedInvite.expires_at) < new Date()) {
     return NextResponse.json({ error: 'Invite not found' }, { status: 404 });
   }
 
