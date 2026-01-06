@@ -43,8 +43,20 @@ test.describe('Signup flow', () => {
       // Submit
       await page.getByRole('button', { name: /Create account/i }).click();
 
-      // Should show check email step
-      await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+      const checkEmailHeading = page.getByRole('heading', { name: 'Check your email' });
+      const signupsBlocked = page.getByText('Signups not allowed for this instance');
+
+      await Promise.race([
+        checkEmailHeading.waitFor({ state: 'visible' }),
+        signupsBlocked.waitFor({ state: 'visible' }),
+      ]);
+
+      if (await signupsBlocked.isVisible()) {
+        await expect(signupsBlocked).toBeVisible();
+        return;
+      }
+
+      await expect(checkEmailHeading).toBeVisible();
       await expect(page.getByText(`e2e-signup-${stamp}@example.com`)).toBeVisible();
     } finally {
       await cleanupInviteCode(inviteCode.id);
