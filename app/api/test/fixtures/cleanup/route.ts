@@ -30,9 +30,29 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const noteIds = Array.isArray(body?.noteIds) ? body.noteIds : [];
     const inviteIds = Array.isArray(body?.inviteIds) ? body.inviteIds : [];
+    const titlePrefix = typeof body?.titlePrefix === 'string' ? body.titlePrefix.trim() : '';
 
-    if (noteIds.length === 0 && inviteIds.length === 0) {
-      return NextResponse.json({ error: 'noteIds or inviteIds required' }, { status: 400 });
+    let resolvedNoteIds = noteIds.slice();
+
+    if (titlePrefix) {
+      const { data: rows, error: titleError } = await admin
+        .from('timeline_events')
+        .select('id')
+        .ilike('title', `${titlePrefix}%`);
+
+      if (titleError) {
+        return NextResponse.json({ error: 'Failed to resolve note fixtures' }, { status: 500 });
+      }
+
+      const idsFromTitle = (rows || [])
+        .map((row) => (row as { id?: string } | null)?.id)
+        .filter(Boolean) as string[];
+
+      resolvedNoteIds = Array.from(new Set([...resolvedNoteIds, ...idsFromTitle]));
+    }
+
+    if (resolvedNoteIds.length === 0 && inviteIds.length === 0) {
+      return NextResponse.json({ error: 'noteIds, titlePrefix, or inviteIds required' }, { status: 400 });
     }
 
     if (inviteIds.length > 0) {
@@ -46,11 +66,17 @@ export async function POST(request: Request) {
       }
     }
 
-    if (noteIds.length > 0) {
+    if (resolvedNoteIds.length > 0) {
+      // Delete references first (should also cascade, but this avoids constraint issues if schema changes).
+      await admin
+        .from('event_references')
+        .delete()
+        .in('event_id', resolvedNoteIds);
+
       const { error: noteError } = await admin
         .from('timeline_events')
         .delete()
-        .in('id', noteIds);
+        .in('id', resolvedNoteIds);
 
       if (noteError) {
         return NextResponse.json({ error: 'Failed to delete note fixtures' }, { status: 500 });
@@ -60,7 +86,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       deleted: {
-        notes: noteIds.length,
+        notes: resolvedNoteIds.length,
         invites: inviteIds.length,
       },
     });

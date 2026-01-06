@@ -34,6 +34,27 @@ export default function ChaptersPage() {
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const lastTouchDistance = useRef<number | null>(null);
+  const [timelineViewportWidth, setTimelineViewportWidth] = useState(0);
+
+  // Track the visible width of the scroll viewport so we can avoid overlapping measure labels.
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+
+    const update = () => setTimelineViewportWidth(el.clientWidth || 0);
+    update();
+
+    // Prefer ResizeObserver for accuracy across layout changes.
+    // Fall back to window resize if unavailable.
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => update());
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   // Map of event_id -> event for quick lookups (e.g., trigger titles)
   const eventLookup = useMemo(() => {
@@ -202,6 +223,64 @@ export default function ChaptersPage() {
       position: (startPos + endPos) / 2,
     };
   });
+
+  const visibleMeasureLabels = useMemo(() => {
+    // Effective pixel width of the inner timeline content.
+    // The inner container scales with zoomLevel but is clamped to at least 100% width.
+    const effectiveWidthPx = timelineViewportWidth * Math.max(1, zoomLevel);
+    if (!effectiveWidthPx || measureLabels.length <= 2) return measureLabels;
+
+    // Use shorter labels when space is tight or there are many measures.
+    const useShort =
+      zoomLevel < 1 ||
+      effectiveWidthPx < 900 ||
+      measureLabels.length >= 8;
+
+    // Approximate label width to prevent collisions (10px font + tracking).
+    const charPx = 7;
+    const paddingPx = 18; // small buffer around the text
+    const minGapExtraPx = 18;
+
+    const labels = measureLabels.map((m) => {
+      const text = useShort ? m.shortLabel : m.label;
+      const approxWidth = text.length * charPx + paddingPx;
+      const xPx = (m.position / 100) * effectiveWidthPx;
+      return { ...m, text, approxWidth, xPx };
+    });
+
+    const picked: typeof labels = [];
+
+    // Always keep the first label.
+    picked.push(labels[0]);
+
+    for (let i = 1; i < labels.length - 1; i += 1) {
+      const prev = picked[picked.length - 1];
+      const next = labels[i];
+      const minGap = Math.max(prev.approxWidth, next.approxWidth) + minGapExtraPx;
+      if (next.xPx - prev.xPx >= minGap) {
+        picked.push(next);
+      }
+    }
+
+    // Always keep the last label, but if it would overlap, prefer the last and drop earlier ones.
+    const last = labels[labels.length - 1];
+    while (picked.length > 0) {
+      const prev = picked[picked.length - 1];
+      const minGap = Math.max(prev.approxWidth, last.approxWidth) + minGapExtraPx;
+      if (last.xPx - prev.xPx >= minGap || picked.length === 1) break;
+      picked.pop();
+    }
+    picked.push(last);
+
+    return picked.map((m) => ({
+      label: m.label,
+      shortLabel: m.shortLabel,
+      position: m.position,
+      // carry through the chosen text so render doesn't have to re-decide
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _text: (m as any).text as string,
+    }));
+  }, [measureLabels, timelineViewportWidth, zoomLevel]);
 
   const measureBarlines = decadeGroups.slice(1).map((group, index) => {
     const prevGroup = decadeGroups[index];
@@ -430,16 +509,17 @@ export default function ChaptersPage() {
           ) : (
             <>
               {/* Measure labels */}
-              {measureLabels.map((measure, index) => (
+              {visibleMeasureLabels.map((measure, index) => (
                 <div
-                  key={measure.label}
+                  key={`${measure.label}-${index}`}
                   className={`absolute top-[18%] pointer-events-none z-10 hidden sm:block ${
-                    index === 0 ? '' : index === measureLabels.length - 1 ? '-translate-x-full' : '-translate-x-1/2'
+                    index === 0 ? '' : index === visibleMeasureLabels.length - 1 ? '-translate-x-full' : '-translate-x-1/2'
                   }`}
                   style={{ left: `${measure.position}%` }}
                 >
                   <span className="text-[10px] uppercase tracking-[0.2em] text-white/50 whitespace-nowrap">
-                    {zoomLevel < 0.75 ? measure.shortLabel : measure.label}
+                    {/* @ts-expect-error - internal render hint from visibleMeasureLabels */}
+                    {measure._text ?? (zoomLevel < 0.75 ? measure.shortLabel : measure.label)}
                   </span>
                 </div>
               ))}

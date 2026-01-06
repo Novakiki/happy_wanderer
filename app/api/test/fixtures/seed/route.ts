@@ -25,6 +25,32 @@ type NoteFixture = {
   title: string;
 };
 
+const IDENTITY_NOTE_FIXTURES: Array<{
+  key: 'A' | 'B';
+  year: number;
+  title: string;
+  preview: string;
+  entry: (personName: string) => string;
+  referenceVisibility: 'blurred' | 'pending';
+}> = [
+  {
+    key: 'A',
+    year: 1991,
+    title: 'E2E Identity Note A',
+    preview: 'Identity visibility test note A.',
+    entry: (personName: string) => `I remember talking with ${personName} by the kitchen window.`,
+    referenceVisibility: 'blurred',
+  },
+  {
+    key: 'B',
+    year: 1994,
+    title: 'E2E Identity Note B',
+    preview: 'Identity visibility test note B.',
+    entry: (personName: string) => `${personName} told us a story that night.`,
+    referenceVisibility: 'pending',
+  },
+];
+
 function isAuthorized(request: Request) {
   const key = request.headers.get('x-e2e-fixture-key');
   return fixtureEnabled && fixtureKey && key === fixtureKey;
@@ -190,59 +216,93 @@ async function ensureDefaultVisibility(identity: IdentityInfo): Promise<void> {
 async function seedIdentityNotes(identity: IdentityInfo): Promise<NoteFixture[]> {
   if (!admin) return [];
 
-  const stamp = Date.now();
-  const entries = [
-    {
-      year: 1991,
-      type: 'memory',
-      title: `E2E Identity Note ${stamp} A`,
-      preview: 'Identity visibility test note A.',
-      full_entry: `I remember talking with ${identity.personName} by the kitchen window.`,
-      why_included: 'Identity visibility test.',
-      status: 'published',
-      privacy_level: 'family',
-      contributor_id: null,
-    },
-    {
-      year: 1994,
-      type: 'memory',
-      title: `E2E Identity Note ${stamp} B`,
-      preview: 'Identity visibility test note B.',
-      full_entry: `${identity.personName} told us a story that night.`,
-      why_included: 'Identity visibility test.',
-      status: 'published',
-      privacy_level: 'family',
-      contributor_id: null,
-    },
-  ];
+  // Idempotent seeding: reuse a stable pair of notes so repeated runs don't crowd The Score.
+  const titles = IDENTITY_NOTE_FIXTURES.map((fixture) => fixture.title);
 
-  const { data: events, error } = await admin
+  const { data: existingEvents } = await admin
     .from('timeline_events')
-    .insert(entries)
-    .select('id, title');
+    .select('id, title')
+    .in('title', titles)
+    .eq('status', 'published')
+    .eq('privacy_level', 'family');
 
-  if (error || !events || events.length < 2) return [];
-
-  const references = events.map((event, index) => ({
-    event_id: event.id,
-    type: 'person',
-    person_id: identity.personId,
-    role: 'witness',
-    visibility: index === 0 ? 'blurred' : 'pending',
-    relationship_to_subject: null,
-    added_by: null,
-  }));
-
-  const { error: refError } = await admin.from('event_references').insert(references);
-  if (refError) {
-    await admin.from('timeline_events').delete().in('id', events.map((event) => event.id));
-    return [];
+  const byTitle = new Map<string, { id: string; title: string }>();
+  for (const row of existingEvents || []) {
+    if (row?.id && row?.title) byTitle.set(row.title, row as { id: string; title: string });
   }
 
-  return events.map((event) => ({
-    id: event.id,
-    title: event.title,
-  }));
+  const missing = IDENTITY_NOTE_FIXTURES.filter((fixture) => !byTitle.has(fixture.title));
+  if (missing.length > 0) {
+    const entries = missing.map((fixture) => ({
+      year: fixture.year,
+      type: 'memory',
+      title: fixture.title,
+      preview: fixture.preview,
+      full_entry: fixture.entry(identity.personName),
+      why_included: 'Identity visibility test.',
+      status: 'published',
+      privacy_level: 'family',
+      contributor_id: null,
+    }));
+
+    const { data: inserted, error: insertError } = await admin
+      .from('timeline_events')
+      .insert(entries)
+      .select('id, title');
+
+    if (insertError || !inserted) return [];
+
+    for (const row of inserted) {
+      if (row?.id && row?.title) byTitle.set(row.title, row as { id: string; title: string });
+    }
+  }
+
+  const orderedEvents = IDENTITY_NOTE_FIXTURES
+    .map((fixture) => byTitle.get(fixture.title))
+    .filter(Boolean) as Array<{ id: string; title: string }>;
+
+  if (orderedEvents.length !== IDENTITY_NOTE_FIXTURES.length) return [];
+
+  // Ensure we have the expected person reference rows (and the desired visibility) for each note.
+  const ids = orderedEvents.map((e) => e.id);
+
+  const { data: existingRefs } = await admin
+    .from('event_references')
+    .select('id, event_id')
+    .in('event_id', ids)
+    .eq('type', 'person')
+    .eq('role', 'witness')
+    .eq('person_id', identity.personId);
+
+  const refByEventId = new Map<string, { id: string; event_id: string }>();
+  for (const ref of existingRefs || []) {
+    if (ref?.id && ref?.event_id) refByEventId.set(ref.event_id, ref as { id: string; event_id: string });
+  }
+
+  for (const fixture of IDENTITY_NOTE_FIXTURES) {
+    const event = byTitle.get(fixture.title);
+    if (!event) continue;
+
+    const existingRef = refByEventId.get(event.id);
+    if (existingRef?.id) {
+      await admin
+        .from('event_references')
+        .update({ visibility: fixture.referenceVisibility })
+        .eq('id', existingRef.id);
+    } else {
+      await admin.from('event_references').insert({
+        event_id: event.id,
+        type: 'person',
+        person_id: identity.personId,
+        role: 'witness',
+        visibility: fixture.referenceVisibility,
+        relationship_to_subject: null,
+        added_by: null,
+      });
+    }
+  }
+
+  return orderedEvents.map((event) => ({ id: event.id, title: event.title }));
 }
 
 export async function POST(request: Request) {
