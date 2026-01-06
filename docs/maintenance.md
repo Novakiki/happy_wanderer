@@ -12,9 +12,11 @@ Use this to keep the database tidy after development and tests.
 
 ### Handy commands
 
-- Fast sanity check (desktop + mobile smoke tests): `npm run test:e2e:smoke`
+- Most of the time (Level 2 full suite): `npm run test:e2e`
+- Fast sanity check (runs smoke tests on Desktop + Mobile): `npm run test:e2e:smoke`
 - Mobile-only quick check: `npm run test:e2e:smoke:mobile`
-- Full suite with Safari engine included: `npm run test:e2e:l3`
+- Occasional extra confidence (Level 3 full suite incl. Safari engine): `npm run test:e2e:l3`
+- Optional Level 3 smoke only: `npm run test:e2e:smoke:l3`
 
 ## After new migrations
 - Run the new migration in Supabase SQL Editor.
