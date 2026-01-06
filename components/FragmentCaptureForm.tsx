@@ -239,6 +239,24 @@ export default function FragmentCaptureForm({ contributorId }: Props) {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Reset form
+  // ---------------------------------------------------------------------------
+  const resetForm = useCallback(() => {
+    setSelectedSignalIds([]);
+    setFreeformSignal('');
+    setFreeformKept(false);
+    setSuggestions([]);
+    setConfirmCandidate(null);
+    setShowConfirm(false);
+    setContent('');
+    setShowOptional(false);
+    setTimeAnchor('');
+    setWitnessType('');
+    setPeople([]);
+    setEntryMode('signal_first');
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Submit
   // ---------------------------------------------------------------------------
   const submit = useCallback(
@@ -337,6 +355,7 @@ export default function FragmentCaptureForm({ contributorId }: Props) {
       freeformKept,
       contributorId,
       supabase,
+      resetForm,
     ]
   );
 
@@ -379,7 +398,7 @@ export default function FragmentCaptureForm({ contributorId }: Props) {
         setIsSubmitting(false);
       }
     },
-    [postSubmitEventId, supabase]
+    [postSubmitEventId, supabase, resetForm]
   );
 
   const dismissPostSubmitPrompt = useCallback(() => {
@@ -387,25 +406,7 @@ export default function FragmentCaptureForm({ contributorId }: Props) {
     setPostSubmitEventId(null);
     setIsSubmitted(true);
     resetForm();
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Reset form
-  // ---------------------------------------------------------------------------
-  const resetForm = useCallback(() => {
-    setSelectedSignalIds([]);
-    setFreeformSignal('');
-    setFreeformKept(false);
-    setSuggestions([]);
-    setConfirmCandidate(null);
-    setShowConfirm(false);
-    setContent('');
-    setShowOptional(false);
-    setTimeAnchor('');
-    setWitnessType('');
-    setPeople([]);
-    setEntryMode('signal_first');
-  }, []);
+  }, [resetForm]);
 
   // ---------------------------------------------------------------------------
   // Derived state

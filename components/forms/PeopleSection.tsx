@@ -101,11 +101,7 @@ export default function PeopleSection({
 
   // Debounced search for people
   useEffect(() => {
-    if (!showTypeahead || newName.length < 2) {
-      setSearchResults([]);
-      setShowDropdown(false);
-      return;
-    }
+    if (!showTypeahead || newName.length < 2) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -270,8 +266,13 @@ export default function PeopleSection({
               type="text"
               value={newName}
               onChange={(e) => {
-                setNewName(e.target.value);
+                const nextName = e.target.value;
+                setNewName(nextName);
                 setNewPersonId(null);
+                if (!showTypeahead || nextName.length < 2) {
+                  setSearchResults([]);
+                  setShowDropdown(false);
+                }
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -282,7 +283,7 @@ export default function PeopleSection({
                 }
               }}
               onFocus={() => {
-                if (searchResults.length > 0) {
+                if (showTypeahead && newName.length >= 2 && searchResults.length > 0) {
                   setShowDropdown(true);
                 }
               }}
@@ -294,7 +295,7 @@ export default function PeopleSection({
               autoComplete="off"
             />
             {/* Typeahead dropdown */}
-            {showDropdown && searchResults.length > 0 && (
+            {showTypeahead && showDropdown && newName.length >= 2 && searchResults.length > 0 && (
               <div className="absolute z-10 left-0 right-0 mt-1 rounded-xl border border-white/10 bg-[#1a1a1a] shadow-lg overflow-hidden">
                 {searchResults.map((person) => (
                   <button

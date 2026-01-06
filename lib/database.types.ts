@@ -120,6 +120,83 @@ export type Database = {
           },
         ]
       }
+      claim_tokens: {
+        Row: {
+          created_at: string | null
+          event_id: string
+          expires_at: string
+          id: string
+          invite_id: string | null
+          person_id: string | null
+          recipient_name: string
+          recipient_phone: string
+          sms_sent_at: string | null
+          sms_sid: string | null
+          sms_status: string | null
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          event_id: string
+          expires_at?: string
+          id?: string
+          invite_id?: string | null
+          person_id?: string | null
+          recipient_name: string
+          recipient_phone: string
+          sms_sent_at?: string | null
+          sms_sid?: string | null
+          sms_status?: string | null
+          token: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          event_id?: string
+          expires_at?: string
+          id?: string
+          invite_id?: string | null
+          person_id?: string | null
+          recipient_name?: string
+          recipient_phone?: string
+          sms_sent_at?: string | null
+          sms_sid?: string | null
+          sms_status?: string | null
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "claim_tokens_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "claim_tokens_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "claim_tokens_invite_id_fkey"
+            columns: ["invite_id"]
+            isOneToOne: false
+            referencedRelation: "invites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "claim_tokens_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_media: {
         Row: {
           event_id: string

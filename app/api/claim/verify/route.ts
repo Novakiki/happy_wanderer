@@ -44,9 +44,8 @@ export async function GET(request: NextRequest) {
   const admin = createAdminClient();
 
   // Fetch claim token
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: claim, error: claimError } = await admin
-    .from('claim_tokens' as any)
+    .from('claim_tokens')
     .select('id, token, invite_id, person_id, recipient_name, event_id, expires_at, used_at')
     .eq('token', token)
     .single();
@@ -115,9 +114,8 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
 
     // Fetch and validate claim token
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: claim, error: claimError } = await admin
-      .from('claim_tokens' as any)
+      .from('claim_tokens')
       .select('id, invite_id, person_id, recipient_name, event_id, expires_at')
       .eq('token', token)
       .single();
@@ -218,8 +216,7 @@ export async function POST(request: NextRequest) {
         .update({ visibility })
         .eq('id', match.id);
     } else if (normalizedScope === 'by_author' && contributorId && personId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await admin.from('visibility_preferences' as any).upsert(
+      await admin.from('visibility_preferences').upsert(
         {
           person_id: personId,
           contributor_id: contributorId,
@@ -239,9 +236,8 @@ export async function POST(request: NextRequest) {
 
       // Upsert global visibility_preference
       const now = new Date().toISOString();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: existing } = await admin
-        .from('visibility_preferences' as any)
+        .from('visibility_preferences')
         .select('id')
         .eq('person_id', personId)
         .is('contributor_id', null)
@@ -250,14 +246,12 @@ export async function POST(request: NextRequest) {
       const existingId = (existing as Array<{ id: string }> | null)?.[0]?.id;
 
       if (existingId) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await admin
-          .from('visibility_preferences' as any)
+          .from('visibility_preferences')
           .update({ visibility, updated_at: now })
           .eq('id', existingId);
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await admin.from('visibility_preferences' as any).insert({
+        await admin.from('visibility_preferences').insert({
           person_id: personId,
           contributor_id: null,
           visibility,
@@ -273,9 +267,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Mark token as used
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await admin
-      .from('claim_tokens' as any)
+      .from('claim_tokens')
       .update({ used_at: new Date().toISOString() })
       .eq('id', typedClaim.id);
 

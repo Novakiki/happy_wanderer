@@ -23,7 +23,7 @@ export function readFixtures(): E2EFixtures {
   try {
     const raw = fs.readFileSync(fixturePath, 'utf8');
     return JSON.parse(raw) as E2EFixtures;
-  } catch (error) {
+  } catch {
     return {};
   }
 }
@@ -39,7 +39,7 @@ export function writeFixtures(data: E2EFixtures): void {
 export function clearFixtures(): void {
   try {
     fs.unlinkSync(fixturePath);
-  } catch (error) {
+  } catch {
     // ignore missing file
   }
 }

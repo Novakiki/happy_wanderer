@@ -243,6 +243,9 @@ export async function GET(request: NextRequest) {
       });
 
       const { version, version_created_at, version_created_by, ...safeEvent } = event;
+      void version;
+      void version_created_at;
+      void version_created_by;
 
       // Important: `maskContentWithReferences` requires `author_payload` to know which
       // original names to replace. We include it only for masking, then strip it from
@@ -250,7 +253,10 @@ export async function GET(request: NextRequest) {
       const redactedForMasking = redactReferences(enrichedRefs as ReferenceRow[], {
         includeAuthorPayload: true,
       });
-      const redactedReferences = redactedForMasking.map(({ author_payload, ...rest }) => rest);
+      const redactedReferences = redactedForMasking.map(({ author_payload, ...rest }) => {
+        void author_payload;
+        return rest;
+      });
       const mentions = mentionsByEventId.get(event.id) ?? [];
 
       return {

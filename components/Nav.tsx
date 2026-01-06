@@ -59,8 +59,9 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
     let isActive = true;
 
     if (!profileToUse) {
-      setIsAdmin(false);
-      return;
+      return () => {
+        isActive = false;
+      };
     }
 
     fetch('/api/admin/status')
@@ -81,7 +82,7 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
     return () => {
       isActive = false;
     };
-  }, [profileToUse?.name, profileToUse?.relation]);
+  }, [profileToUse]);
 
   if (variant === 'back') {
     return (

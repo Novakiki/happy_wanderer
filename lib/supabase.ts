@@ -77,6 +77,9 @@ export async function getTimelineEvents(options?: { privacyLevels?: PrivacyLevel
 
   return rows.map((event) => {
     const { version, version_created_at, version_created_by, ...safeEvent } = event;
+    void version;
+    void version_created_at;
+    void version_created_by;
     return {
       ...safeEvent,
       contributor: event.contributor_id ? contributorsById.get(event.contributor_id) ?? null : null,
@@ -135,6 +138,9 @@ export async function getEventById(id: string) {
   }
 
   const { version, version_created_at, version_created_by, ...safeEvent } = event;
+  void version;
+  void version_created_at;
+  void version_created_by;
 
   return {
     ...safeEvent,

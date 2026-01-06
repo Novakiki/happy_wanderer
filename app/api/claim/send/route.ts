@@ -63,8 +63,7 @@ export async function POST(request: NextRequest) {
     const token = generateClaimToken();
 
     // Create claim_token record
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: insertError } = await admin.from('claim_tokens' as any).insert({
+    const { error: insertError } = await admin.from('claim_tokens').insert({
       token,
       invite_id: inviteId,
       recipient_name: typedInvite.recipient_name,
@@ -84,9 +83,8 @@ export async function POST(request: NextRequest) {
     const smsResult = await sendSms(typedInvite.recipient_contact, message);
 
     // Update token with SMS result
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await admin
-      .from('claim_tokens' as any)
+      .from('claim_tokens')
       .update({
         sms_status: smsResult.success ? 'sent' : 'failed',
         sms_sent_at: smsResult.success ? new Date().toISOString() : null,

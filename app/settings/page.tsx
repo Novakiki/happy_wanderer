@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 import { formStyles, subtleBackground } from '@/lib/styles';
@@ -222,7 +222,7 @@ export default function SettingsPage() {
     void loadProfile();
   }, [supabase]);
 
-  const loadIdentity = async (options?: { silent?: boolean }) => {
+  const loadIdentity = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
     if (!silent) {
       setIdentityLoading(true);
@@ -248,11 +248,11 @@ export default function SettingsPage() {
         setIdentityLoading(false);
       }
     }
-  };
+  }, [displayNameEditing]);
 
   useEffect(() => {
     void loadIdentity();
-  }, []);
+  }, [loadIdentity]);
 
   const handleRelationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

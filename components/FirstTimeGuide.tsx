@@ -32,11 +32,31 @@ export default function FirstTimeGuide({
   showLinksWhenCollapsed = false,
   className = '',
 }: Props) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [dismissed, setDismissed] = useState(false);
-
   const dismissKey = useMemo(() => `${storageKey}:dismissed`, [storageKey]);
   const openKey = useMemo(() => `${storageKey}:open`, [storageKey]);
+
+  const initialState = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { dismissed: false, open: defaultOpen };
+    }
+
+    const hasLegacyDismissal = legacyDismissKeys.some(
+      (key) => localStorage.getItem(key) === '1'
+    );
+    const isDismissed =
+      localStorage.getItem(dismissKey) === '1' || hasLegacyDismissal;
+    const storedOpen = localStorage.getItem(openKey);
+    const resolvedOpen =
+      storedOpen === '1' ? true : storedOpen === '0' ? false : defaultOpen;
+
+    return {
+      dismissed: isDismissed,
+      open: isDismissed ? false : resolvedOpen,
+    };
+  }, [defaultOpen, dismissKey, openKey, legacyDismissKeys]);
+
+  const [open, setOpen] = useState(() => initialState.open);
+  const [dismissed, setDismissed] = useState(() => initialState.dismissed);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -50,18 +70,7 @@ export default function FirstTimeGuide({
       }
       legacyDismissKeys.forEach((key) => localStorage.removeItem(key));
     }
-
-    const isDismissed = localStorage.getItem(dismissKey) === '1';
-    if (isDismissed) {
-      setDismissed(true);
-      setOpen(false);
-      return;
-    }
-
-    const storedOpen = localStorage.getItem(openKey);
-    if (storedOpen === '0') setOpen(false);
-    if (storedOpen === '1') setOpen(true);
-  }, [dismissKey, openKey, legacyDismissKeys]);
+  }, [dismissKey, legacyDismissKeys]);
 
   const handleDismiss = () => {
     setDismissed(true);
