@@ -1,26 +1,30 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { ensureAdminProfile } from './actors/admin';
 import {
-  cleanupContributor,
-  cleanupInviteCode,
-  cleanupProfile,
-  cleanupTimelineEvent,
-  cleanupTrustRequest,
-  createContributorFixture,
-  createInviteCodeFixture,
-  createProfileFixture,
-  createTrustRequestFixture,
+    cleanupContributor,
+    cleanupInviteCode,
+    cleanupProfile,
+    cleanupTimelineEvent,
+    cleanupTrustRequest,
+    createContributorFixture,
+    createInviteCodeFixture,
+    createProfileFixture,
+    createTrustRequestFixture,
 } from './actors/db-fixtures';
 import { adminClient, resolvedAdminEmail, testLoginSecret } from './actors/env';
-import { login } from './pages/auth';
 import { withFixtures } from './fixtures/with-fixtures';
+import { login } from './pages/auth';
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
 
 test.describe('Signup flow', () => {
   test('new user can sign up with invite code', async ({ page }) => {
-    test.skip(!adminClient, 'Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
+    if (!adminClient) {
+      console.info('[e2e] Skipping signup-with-invite: missing SUPABASE_URL/SUPABASE_SECRET_KEY.');
+      test.skip(true, 'Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
+      return;
+    }
 
     const stamp = Date.now();
     const inviteCode = await createInviteCodeFixture({
@@ -29,6 +33,7 @@ test.describe('Signup flow', () => {
     });
 
     if (!inviteCode) {
+      console.info('[e2e] Skipping signup-with-invite: failed to create invite code fixture.');
       test.skip(true, 'Failed to create invite code fixture.');
       return;
     }

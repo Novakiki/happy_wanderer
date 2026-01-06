@@ -216,7 +216,9 @@ test.describe('Smoke checks', () => {
 
     const identity = await loadIdentity(page);
     if (!identity?.person) {
+      console.info('[e2e] Skipping identity default persists: no identity claim available for this user.');
       test.skip(true, 'No identity claim available for this user.');
+      return;
     }
 
     const current = identity.default_visibility as string;
@@ -242,19 +244,25 @@ test.describe('Smoke checks', () => {
     const personName = (identity?.person?.name || fixturePersonName).trim();
 
     if (!identity?.person || !personName) {
+      console.info('[e2e] Skipping identity default applies: no identity claim available for visibility test.');
       test.skip(true, 'No identity claim available for visibility test.');
+      return;
     }
 
     const current = identity?.default_visibility as string;
     if (!current || current === 'pending') {
+      console.info('[e2e] Skipping identity default applies: default visibility must be set (not pending).');
       test.skip(true, 'Default visibility must be set to run this test.');
+      return;
     }
 
     const next = current === 'approved' ? 'blurred' : 'approved';
     const seededNotes = fixtures.identityNotes ?? [];
 
     if (!seededNotes || seededNotes.length < 2) {
+      console.info('[e2e] Skipping identity default applies: fixture notes missing for identity visibility test.');
       test.skip(true, 'Fixture notes missing for identity visibility test.');
+      return;
     }
 
     const nameRegex = new RegExp(`\\b${escapeRegExp(personName)}\\b`, 'i');
@@ -298,11 +306,15 @@ test.describe('Smoke checks', () => {
 
     const identity = await loadIdentity(page);
     if (!identity?.person) {
+      console.info('[e2e] Skipping per-note override persists: no identity claim available for per-note overrides.');
       test.skip(true, 'No identity claim available for per-note overrides.');
+      return;
     }
 
     if (!seededNotes || seededNotes.length === 0) {
+      console.info('[e2e] Skipping per-note override persists: no fixture notes available for per-note overrides.');
       test.skip(true, 'No fixture notes available for per-note overrides.');
+      return;
     }
 
     let targetNote = identity?.notes?.find((note: any) =>
@@ -310,7 +322,9 @@ test.describe('Smoke checks', () => {
     );
 
     if (!targetNote) {
+      console.info('[e2e] Skipping per-note override persists: no fixture note references found for per-note overrides.');
       test.skip(true, 'No fixture note references found for per-note overrides.');
+      return;
     }
 
     let refId = targetNote.reference_id as string;
@@ -354,6 +368,7 @@ test.describe('Smoke checks', () => {
 
       if (!noteSelectVisible) {
         test.skip(true, 'No per-note visibility control available for this note.');
+        console.info('[e2e] Skipping per-note override persists: no per-note visibility control available for this note.');
         return;
       }
 
