@@ -152,3 +152,74 @@ export async function cleanupTrustRequest(trustRequestId: string | null) {
   if (!adminClient || !trustRequestId) return;
   await adminClient.from('trust_requests').delete().eq('id', trustRequestId);
 }
+
+type AuthUser = { id: string; email?: string | null };
+
+export async function createProfileFixture(input: {
+  email: string;
+  name: string;
+  relation: string;
+  contributorId: string;
+}) {
+  if (!adminClient) return null;
+
+  // Find or create Supabase auth user
+  const { data: listData } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+  const users = (listData?.users ?? []) as AuthUser[];
+  const existingUser = users.find(
+    (u) => u.email?.toLowerCase() === input.email.toLowerCase()
+  );
+
+  let userId: string | null = existingUser?.id ?? null;
+
+  if (!userId) {
+    const { data: createData } = await adminClient.auth.admin.createUser({
+      email: input.email,
+      email_confirm: true,
+    });
+    userId = createData?.user?.id ?? null;
+  }
+
+  if (!userId) return null;
+
+  // Check if profile already exists
+  const { data: existingProfile } = await adminClient
+    .from('profiles')
+    .select('id')
+    .eq('id', userId)
+    .single();
+
+  if (existingProfile) {
+    return { userId };
+  }
+
+  // Create profile
+  const { error } = await adminClient.from('profiles').insert({
+    id: userId,
+    name: input.name,
+    relation: input.relation,
+    email: input.email,
+    contributor_id: input.contributorId,
+  });
+
+  if (error) {
+    console.error('Failed to create profile:', error);
+    return null;
+  }
+
+  return { userId };
+}
+
+export async function cleanupProfile(userId: string | null) {
+  if (!adminClient || !userId) return;
+  await adminClient.from('profiles').delete().eq('id', userId);
+}
+
+export async function cleanupTimelineEvent(eventId: string | null) {
+  if (!adminClient || !eventId) return;
+  // Clean up related records first
+  await adminClient.from('event_references').delete().eq('event_id', eventId);
+  await adminClient.from('memory_threads').delete().eq('response_event_id', eventId);
+  await adminClient.from('memory_threads').delete().eq('original_event_id', eventId);
+  await adminClient.from('timeline_events').delete().eq('id', eventId);
+}

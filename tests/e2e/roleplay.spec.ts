@@ -5,10 +5,12 @@ import {
   cleanupContributor,
   cleanupEditToken,
   cleanupNote,
+  cleanupProfile,
   cleanupTrustRequests,
   createContributorFixture,
   createEditTokenFixture,
   createPendingNoteFixture,
+  createProfileFixture,
 } from './actors/db-fixtures';
 import { adminClient, baseUrl, fixtureEnabled, fixtureKey, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { seedIdentityNote } from './actors/fixtures';
@@ -271,5 +273,74 @@ test.describe('Roleplay flows', () => {
         await expect(page.getByText('Trusted status request received')).toBeVisible();
       }
     );
+  });
+
+  test('non-admin user cannot access admin dashboard', async ({ page }) => {
+    test.skip(
+      !testLoginSecret || !adminClient,
+      'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.'
+    );
+
+    const stamp = Date.now();
+    const testEmail = `e2e-nonadmin-${stamp}@example.com`;
+
+    await withFixtures(
+      async (use) => {
+        // Create a regular (non-admin) contributor
+        const contributor = await createContributorFixture({
+          name: `E2E Non-Admin ${stamp}`,
+          relation: 'friend',
+          email: testEmail,
+          trusted: false,
+        });
+        if (!contributor) {
+          test.skip(true, 'Failed to create contributor fixture.');
+          return { contributorId: null, userId: null };
+        }
+        use(contributor, () => cleanupContributor(contributor.id));
+
+        // Create profile
+        const profile = await createProfileFixture({
+          email: testEmail,
+          name: `E2E Non-Admin ${stamp}`,
+          relation: 'friend',
+          contributorId: contributor.id,
+        });
+        if (!profile) {
+          test.skip(true, 'Failed to create profile fixture.');
+          return { contributorId: contributor.id, userId: null };
+        }
+        use(profile, () => cleanupProfile(profile.userId));
+
+        return { contributorId: contributor.id, userId: profile.userId };
+      },
+      async ({ contributorId, userId }) => {
+        if (!contributorId || !userId) return;
+
+        // Login as non-admin user
+        const params = new URLSearchParams({
+          email: testEmail,
+          secret: testLoginSecret,
+        });
+        await page.goto(`/api/test/login?${params.toString()}`);
+        await page.waitForURL(/\/score/);
+
+        // Try to access admin page
+        const response = await page.goto('/admin');
+
+        // Should get 404 (notFound())
+        expect(response?.status()).toBe(404);
+      }
+    );
+  });
+
+  test('unauthenticated user is redirected from admin', async ({ page }) => {
+    // Clear any session
+    await page.context().clearCookies();
+
+    await page.goto('/admin');
+
+    // Should redirect to login
+    await expect(page).toHaveURL(/\/auth\/login/);
   });
 });
