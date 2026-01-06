@@ -2,7 +2,7 @@
 
 import { formStyles } from '@/lib/styles';
 import { createClient } from '@/lib/supabase/client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function SignupForm() {
   const [formData, setFormData] = useState({
@@ -12,11 +12,26 @@ export default function SignupForm() {
     name: '',
     relation: '',
   });
+  const [codeFromUrl, setCodeFromUrl] = useState('');
   const [step, setStep] = useState<'form' | 'check-email' | 'success'>('form');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   const supabase = createClient();
+
+  // If the user arrives via an invite link like `/auth/signup?code=...`, prefill the code.
+  // Keep the field editable in case they need to correct it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = (params.get('code') ?? '').trim();
+    if (!code) return;
+
+    setCodeFromUrl(code);
+    setFormData((prev) => {
+      if (prev.inviteCode.trim()) return prev;
+      return { ...prev, inviteCode: code };
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,7 +132,9 @@ export default function SignupForm() {
         <label htmlFor="inviteCode" className={formStyles.label}>
           Family invite code <span className={formStyles.required}>*</span>
         </label>
-        <p className={formStyles.hint}>Ask a family member for the code</p>
+        <p className={formStyles.hint}>
+          {codeFromUrl ? "This link prefilled your code. You can edit it if needed." : 'Ask a family member for the code'}
+        </p>
         <input
           type="text"
           id="inviteCode"
