@@ -71,9 +71,23 @@ test.describe('Signup flow', () => {
 });
 
 test.describe('Chat interaction', () => {
-  test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
+  const mockChatResponse = {
+    message:
+      'Based on notes from family members, Val was known for her warm hospitality. Her daughter Sarah shared that she always had fresh cookies ready for visitors.',
+  };
 
   test('user can send a message and receive a response', async ({ page }) => {
+    test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
+
+    // Mock the chat API to avoid real LLM calls
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockChatResponse),
+      });
+    });
+
     await login(page, { email: email as string, password: password as string });
     await page.goto('/chat');
 
@@ -85,30 +99,27 @@ test.describe('Chat interaction', () => {
     // Type and send a message
     const input = page.getByPlaceholder('Ask about Val...');
     await input.fill('Tell me something about Val');
-
-    const [response] = await Promise.all([
-      page.waitForResponse((resp) =>
-        resp.url().includes('/api/chat') && resp.request().method() === 'POST'
-      ),
-      page.getByRole('button', { name: 'Send' }).click(),
-    ]);
-
-    expect(response.ok()).toBeTruthy();
+    await page.getByRole('button', { name: 'Send' }).click();
 
     // Should show user message
     await expect(page.getByText('Tell me something about Val')).toBeVisible();
 
-    // Should show assistant response (wait for thinking to complete)
-    await expect(page.getByText('Thinking...')).toBeHidden({ timeout: 30000 });
-
-    // Verify there's a second assistant message (the response)
-    const assistantMessages = page.locator('[class*="bg-white"]').filter({
-      hasText: /./,
-    });
-    await expect(assistantMessages).toHaveCount(2, { timeout: 30000 });
+    // Should show mocked assistant response
+    await expect(page.getByText(/Val was known for her warm hospitality/)).toBeVisible();
   });
 
   test('suggested questions work', async ({ page }) => {
+    test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
+
+    // Mock the chat API
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockChatResponse),
+      });
+    });
+
     await login(page, { email: email as string, password: password as string });
     await page.goto('/chat');
 
@@ -118,18 +129,38 @@ test.describe('Chat interaction', () => {
     // Click a suggested question
     const suggestedButton = page.getByRole('button', { name: 'Tell me a funny story about Val' });
     await expect(suggestedButton).toBeVisible();
-
-    const [response] = await Promise.all([
-      page.waitForResponse((resp) =>
-        resp.url().includes('/api/chat') && resp.request().method() === 'POST'
-      ),
-      suggestedButton.click(),
-    ]);
-
-    expect(response.ok()).toBeTruthy();
+    await suggestedButton.click();
 
     // Message should appear in chat
     await expect(page.getByText('Tell me a funny story about Val')).toBeVisible();
+
+    // Should show mocked response
+    await expect(page.getByText(/Val was known for her warm hospitality/)).toBeVisible();
+  });
+
+  test('chat handles API error gracefully', async ({ page }) => {
+    test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
+
+    // Mock a failing chat API
+    await page.route('**/api/chat', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Failed to process chat message' }),
+      });
+    });
+
+    await login(page, { email: email as string, password: password as string });
+    await page.goto('/chat');
+
+    await expect(page.getByText(/Hello.*I'm here to help you learn about Val/i)).toBeVisible();
+
+    const input = page.getByPlaceholder('Ask about Val...');
+    await input.fill('Test message');
+    await page.getByRole('button', { name: 'Send' }).click();
+
+    // Should show error message
+    await expect(page.getByText(/something went wrong/i)).toBeVisible();
   });
 });
 
