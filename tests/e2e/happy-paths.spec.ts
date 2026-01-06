@@ -10,6 +10,7 @@ import {
 } from './actors/db-fixtures';
 import { adminClient, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { login } from './pages/auth';
+import { withFixtures } from './fixtures/with-fixtures';
 
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
@@ -185,31 +186,31 @@ test.describe('Admin trust request approval', () => {
 
     const stamp = Date.now();
 
-    // Create untrusted contributor with pending trust request
-    const contributor = await createContributorFixture({
-      name: `E2E Trust Approve ${stamp}`,
-      relation: 'family/friend',
-      email: `e2e-trust-approve-${stamp}@example.com`,
-      trusted: false,
-    });
+    await withFixtures(
+      async (use) => {
+        const contributor = await createContributorFixture({
+          name: `E2E Trust Approve ${stamp}`,
+          relation: 'family/friend',
+          email: `e2e-trust-approve-${stamp}@example.com`,
+          trusted: false,
+        });
+        if (!contributor?.id) {
+          test.skip(true, 'Failed to create contributor fixture.');
+        }
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
-    if (!contributor) {
-      test.skip(true, 'Failed to create contributor fixture.');
-      return;
-    }
+        const trustRequest = await createTrustRequestFixture({
+          contributorId,
+          message: 'Please trust me, I am a real family member.',
+        });
+        if (!trustRequest?.id) {
+          test.skip(true, 'Failed to create trust request fixture.');
+        }
+        const trustRequestId = use(trustRequest.id, () => cleanupTrustRequest(trustRequest.id));
 
-    const trustRequest = await createTrustRequestFixture({
-      contributorId: contributor.id,
-      message: 'Please trust me, I am a real family member.',
-    });
-
-    if (!trustRequest) {
-      await cleanupContributor(contributor.id);
-      test.skip(true, 'Failed to create trust request fixture.');
-      return;
-    }
-
-    try {
+        return { contributorId, trustRequestId };
+      },
+      async ({ contributorId, trustRequestId }) => {
       // Login as admin
       const params = new URLSearchParams({
         email: resolvedAdminEmail,
@@ -221,7 +222,7 @@ test.describe('Admin trust request approval', () => {
 
       // Approve via API
       const approveRes = await page.request.patch('/api/admin/trust-requests', {
-        data: { id: trustRequest.id, status: 'approved' },
+        data: { id: trustRequestId, status: 'approved' },
       });
       expect(approveRes.ok()).toBeTruthy();
 
@@ -229,7 +230,7 @@ test.describe('Admin trust request approval', () => {
       const { data: updatedRequest } = await adminClient
         .from('trust_requests')
         .select('status, resolved_at')
-        .eq('id', trustRequest.id)
+        .eq('id', trustRequestId)
         .single();
       expect((updatedRequest as { status?: string } | null)?.status).toBe('approved');
       expect((updatedRequest as { resolved_at?: string } | null)?.resolved_at).toBeTruthy();
@@ -238,13 +239,11 @@ test.describe('Admin trust request approval', () => {
       const { data: updatedContributor } = await adminClient
         .from('contributors')
         .select('trusted')
-        .eq('id', contributor.id)
+        .eq('id', contributorId)
         .single();
       expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
-    } finally {
-      await cleanupTrustRequest(trustRequest.id);
-      await cleanupContributor(contributor.id);
-    }
+      }
+    );
   });
 
   test('admin can decline a trust request', async ({ page }) => {
@@ -255,30 +254,31 @@ test.describe('Admin trust request approval', () => {
 
     const stamp = Date.now();
 
-    const contributor = await createContributorFixture({
-      name: `E2E Trust Decline ${stamp}`,
-      relation: 'unknown',
-      email: `e2e-trust-decline-${stamp}@example.com`,
-      trusted: false,
-    });
+    await withFixtures(
+      async (use) => {
+        const contributor = await createContributorFixture({
+          name: `E2E Trust Decline ${stamp}`,
+          relation: 'unknown',
+          email: `e2e-trust-decline-${stamp}@example.com`,
+          trusted: false,
+        });
+        if (!contributor?.id) {
+          test.skip(true, 'Failed to create contributor fixture.');
+        }
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
-    if (!contributor) {
-      test.skip(true, 'Failed to create contributor fixture.');
-      return;
-    }
+        const trustRequest = await createTrustRequestFixture({
+          contributorId,
+          message: 'I want trusted status.',
+        });
+        if (!trustRequest?.id) {
+          test.skip(true, 'Failed to create trust request fixture.');
+        }
+        const trustRequestId = use(trustRequest.id, () => cleanupTrustRequest(trustRequest.id));
 
-    const trustRequest = await createTrustRequestFixture({
-      contributorId: contributor.id,
-      message: 'I want trusted status.',
-    });
-
-    if (!trustRequest) {
-      await cleanupContributor(contributor.id);
-      test.skip(true, 'Failed to create trust request fixture.');
-      return;
-    }
-
-    try {
+        return { contributorId, trustRequestId };
+      },
+      async ({ contributorId, trustRequestId }) => {
       // Login as admin
       const params = new URLSearchParams({
         email: resolvedAdminEmail,
@@ -290,7 +290,7 @@ test.describe('Admin trust request approval', () => {
 
       // Decline via API
       const declineRes = await page.request.patch('/api/admin/trust-requests', {
-        data: { id: trustRequest.id, status: 'declined' },
+        data: { id: trustRequestId, status: 'declined' },
       });
       expect(declineRes.ok()).toBeTruthy();
 
@@ -298,7 +298,7 @@ test.describe('Admin trust request approval', () => {
       const { data: updatedRequest } = await adminClient
         .from('trust_requests')
         .select('status')
-        .eq('id', trustRequest.id)
+        .eq('id', trustRequestId)
         .single();
       expect((updatedRequest as { status?: string } | null)?.status).toBe('declined');
 
@@ -306,12 +306,10 @@ test.describe('Admin trust request approval', () => {
       const { data: updatedContributor } = await adminClient
         .from('contributors')
         .select('trusted')
-        .eq('id', contributor.id)
+        .eq('id', contributorId)
         .single();
       expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(false);
-    } finally {
-      await cleanupTrustRequest(trustRequest.id);
-      await cleanupContributor(contributor.id);
-    }
+      }
+    );
   });
 });

@@ -13,6 +13,7 @@ import {
 import { adminClient, baseUrl, fixtureEnabled, fixtureKey, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { seedIdentityNote } from './actors/fixtures';
 import { cleanupInvite, createInvite } from './actors/invites';
+import { withFixtures } from './fixtures/with-fixtures';
 
 test.describe('Roleplay flows', () => {
   test('score api requires auth or invite', async () => {
@@ -175,100 +176,100 @@ test.describe('Roleplay flows', () => {
     await ensureAdminProfile(resolvedAdminEmail);
 
     const stamp = Date.now();
-    const contributor = await createContributorFixture({
-      name: `E2E Admin Review ${stamp}`,
-      relation: 'family/friend',
-      email: `e2e-admin-review-${stamp}@example.com`,
-      trusted: false,
-    });
-    const contributorId = contributor?.id ?? null;
-    if (!contributorId) {
-      test.skip(true, 'Failed to create contributor fixture.');
-      return;
-    }
 
-    const note = await createPendingNoteFixture({
-      contributorId,
-      year: 2001,
-      title: `E2E Pending Note ${stamp}`,
-      preview: 'Pending note for admin review.',
-      full_entry: 'Pending note for admin review.',
-      why_included: 'Admin review test.',
-    });
-    const noteId = note?.id ?? null;
-    if (!noteId) {
-      await cleanupContributor(contributorId);
-      test.skip(true, 'Failed to create pending note fixture.');
-      return;
-    }
+    await withFixtures(
+      async (use) => {
+        const contributor = await createContributorFixture({
+          name: `E2E Admin Review ${stamp}`,
+          relation: 'family/friend',
+          email: `e2e-admin-review-${stamp}@example.com`,
+          trusted: false,
+        });
+        if (!contributor?.id) {
+          test.skip(true, 'Failed to create contributor fixture.');
+        }
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
-    try {
-      const publishRes = await page.request.patch('/api/admin/notes', {
-        data: { id: noteId, status: 'published' },
-      });
-      expect(publishRes.ok()).toBeTruthy();
+        const note = await createPendingNoteFixture({
+          contributorId,
+          year: 2001,
+          title: `E2E Pending Note ${stamp}`,
+          preview: 'Pending note for admin review.',
+          full_entry: 'Pending note for admin review.',
+          why_included: 'Admin review test.',
+        });
+        if (!note?.id) {
+          test.skip(true, 'Failed to create pending note fixture.');
+        }
+        const noteId = use(note.id, () => cleanupNote(note.id));
 
-      const trustRes = await page.request.patch('/api/admin/contributors', {
-        data: { contributor_id: contributorId, trusted: true },
-      });
-      expect(trustRes.ok()).toBeTruthy();
+        return { contributorId, noteId };
+      },
+      async ({ contributorId, noteId }) => {
+        const publishRes = await page.request.patch('/api/admin/notes', {
+          data: { id: noteId, status: 'published' },
+        });
+        expect(publishRes.ok()).toBeTruthy();
 
-      const { data: updatedNote } = await adminClient
-        .from('timeline_events')
-        .select('status')
-        .eq('id', noteId)
-        .single();
-      expect((updatedNote as { status?: string } | null)?.status).toBe('published');
+        const trustRes = await page.request.patch('/api/admin/contributors', {
+          data: { contributor_id: contributorId, trusted: true },
+        });
+        expect(trustRes.ok()).toBeTruthy();
 
-      const { data: updatedContributor } = await adminClient
-        .from('contributors')
-        .select('trusted')
-        .eq('id', contributorId)
-        .single();
-      expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
-    } finally {
-      await cleanupNote(noteId);
-      await cleanupContributor(contributorId);
-    }
+        const { data: updatedNote } = await adminClient
+          .from('timeline_events')
+          .select('status')
+          .eq('id', noteId)
+          .single();
+        expect((updatedNote as { status?: string } | null)?.status).toBe('published');
+
+        const { data: updatedContributor } = await adminClient
+          .from('contributors')
+          .select('trusted')
+          .eq('id', contributorId)
+          .single();
+        expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
+      }
+    );
   });
 
   test('edit link shows trust request CTA for untrusted contributor', async ({ page }) => {
     test.skip(!adminClient, 'Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
 
     const stamp = Date.now();
-    const contributor = await createContributorFixture({
-      name: `E2E Trust Request ${stamp}`,
-      relation: 'family/friend',
-      email: `e2e-trust-request-${stamp}@example.com`,
-      trusted: false,
-    });
-    const contributorId = contributor?.id ?? null;
-    if (!contributorId) {
-      test.skip(true, 'Failed to create contributor fixture.');
-      return;
-    }
 
-    const editToken = await createEditTokenFixture({ contributorId, hoursValid: 24 });
-    const editTokenId = editToken?.id ?? null;
-    const token = editToken?.token ?? null;
-    if (!editTokenId || !token) {
-      await cleanupContributor(contributorId);
-      test.skip(true, 'Failed to create edit token fixture.');
-      return;
-    }
+    await withFixtures(
+      async (use) => {
+        const contributor = await createContributorFixture({
+          name: `E2E Trust Request ${stamp}`,
+          relation: 'family/friend',
+          email: `e2e-trust-request-${stamp}@example.com`,
+          trusted: false,
+        });
+        if (!contributor?.id) {
+          test.skip(true, 'Failed to create contributor fixture.');
+        }
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
-    try {
-      await page.goto(`/edit/${token}`);
-      await page.waitForResponse((res) => res.url().includes('/api/edit/session') && res.ok());
+        const editToken = await createEditTokenFixture({ contributorId, hoursValid: 24 });
+        if (!editToken?.id || !editToken?.token) {
+          test.skip(true, 'Failed to create edit token fixture.');
+        }
+        use(contributorId, () => cleanupTrustRequests(contributorId));
+        const token = editToken.token;
+        use(editToken.id, () => cleanupEditToken(editToken.id));
 
-      const requestButton = page.getByRole('button', { name: 'Request trusted status' });
-      await expect(requestButton).toBeVisible();
-      await requestButton.click();
-      await expect(page.getByText('Trusted status request received')).toBeVisible();
-    } finally {
-      await cleanupTrustRequests(contributorId);
-      await cleanupEditToken(editTokenId);
-      await cleanupContributor(contributorId);
-    }
+        return { token };
+      },
+      async ({ token }) => {
+        await page.goto(`/edit/${token}`);
+        await page.waitForResponse((res) => res.url().includes('/api/edit/session') && res.ok());
+
+        const requestButton = page.getByRole('button', { name: 'Request trusted status' });
+        await expect(requestButton).toBeVisible();
+        await requestButton.click();
+        await expect(page.getByText('Trusted status request received')).toBeVisible();
+      }
+    );
   });
 });
