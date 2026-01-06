@@ -48,7 +48,7 @@ export async function ensureAdminProfile(email: string) {
     const { data: newContributor } = await adminClient
       .from('contributors')
       .insert({
-        name: 'Roleplay Admin',
+        name: 'E2E Admin',
         relation: 'admin',
         email: normalizedEmail,
       })
@@ -59,7 +59,7 @@ export async function ensureAdminProfile(email: string) {
 
   await adminClient.from('profiles').insert({
     id: userId,
-    name: 'Roleplay Admin',
+    name: 'E2E Admin',
     relation: 'admin',
     email: normalizedEmail,
     contributor_id: contributorId,

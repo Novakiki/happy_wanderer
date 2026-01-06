@@ -1,5 +1,9 @@
 import { adminClient } from './env';
 
+// NOTE:
+// - `actors/db-fixtures.ts` uses the Supabase admin client to insert/delete rows directly (fast, flexible).
+// - `actors/fixtures.ts` uses the app's test-only HTTP endpoints (more "end-to-end", but requires fixture key setup).
+
 export async function createContributorFixture(input: {
   name: string;
   relation: string;
