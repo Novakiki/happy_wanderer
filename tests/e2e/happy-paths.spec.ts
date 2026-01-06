@@ -360,61 +360,74 @@ test.describe('Share memory flow', () => {
       async ({ contributorId, userId }) => {
         if (!contributorId || !userId) return;
 
-        // Login via test endpoint
-        const params = new URLSearchParams({
-          email: `e2e-share-${stamp}@example.com`,
-          secret: testLoginSecret,
-        });
-        await page.goto(`/api/test/login?${params.toString()}`);
-        await page.waitForURL(/\/score/);
+        let createdEventId: string | null = null;
 
-        // Navigate to share page
-        await page.goto('/share');
-        await expect(page.getByRole('heading', { name: "Add to Valerie's score" })).toBeVisible();
+        try {
+          // Login via test endpoint
+          const params = new URLSearchParams({
+            email: `e2e-share-${stamp}@example.com`,
+            secret: testLoginSecret,
+          });
+          await page.goto(`/api/test/login?${params.toString()}`);
+          await page.waitForURL(/\/score/);
 
-        // Fill the form - entry type defaults to 'memory'
+          // Navigate to share page
+          await page.goto('/share');
+          await expect(page.getByRole('heading', { name: "Add to Valerie's score" })).toBeVisible();
 
-        // Select timing mode (year)
-        await page.getByRole('button', { name: /^Around a year/i }).click();
-        const yearInputs = page.getByRole('spinbutton');
-        await yearInputs.first().fill('1995');
+          // Fill the form - entry type defaults to 'memory'
 
-        // Select provenance (required)
-        await page.getByRole('button', { name: /^I was there/i }).click();
+          // Select timing mode (year)
+          await page.getByRole('button', { name: /^Around a year/i }).click();
+          const yearInputs = page.getByRole('spinbutton');
+          await yearInputs.first().fill('1995');
 
-        // Fill content (required)
-        const memoryEditor = page.locator('.ProseMirror').first();
-        await memoryEditor.click();
-        await memoryEditor.fill(
-          'This is a test memory from the E2E suite. Val loved to garden in the summer.'
-        );
+          // Select provenance (required)
+          await page.getByRole('button', { name: /^I was there/i }).click();
 
-        // Fill title
-        await page.getByPlaceholder(/A short title for this note/i).fill('Summer Gardening');
+          // Fill content (required)
+          const memoryEditor = page.locator('.ProseMirror').first();
+          await memoryEditor.click();
+          await memoryEditor.fill(
+            'This is a test memory from the E2E suite. Val loved to garden in the summer.'
+          );
 
-        // Submit
-        const submit = page.getByRole('button', { name: 'Add This Memory' });
-        await expect(submit).toBeEnabled();
-        await submit.click();
+          // Fill title
+          await page.getByPlaceholder(/A short title for this note/i).fill('Summer Gardening');
 
-        // Should see success screen
-        await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
-        await expect(page.getByText(/pending review/i)).toBeVisible();
+          // Submit
+          const submit = page.getByRole('button', { name: 'Add This Memory' });
+          await expect(submit).toBeEnabled();
+          const [createRes] = await Promise.all([
+            page.waitForResponse((resp) => resp.url().includes('/api/memories') && resp.request().method() === 'POST'),
+            submit.click(),
+          ]);
 
-        // Verify in database
-        const { data: events } = await adminClient
-          .from('timeline_events')
-          .select('id, title, status, contributor_id')
-          .eq('contributor_id', contributorId)
-          .eq('title', 'Summer Gardening');
+          // Should see success screen
+          await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
+          await expect(page.getByText(/pending review/i)).toBeVisible();
 
-        expect(events).toBeTruthy();
-        expect(events!.length).toBeGreaterThan(0);
-        const event = events![0] as { id: string; title: string; status: string };
-        expect(event.status).toBe('pending'); // untrusted contributor
+          const createPayload = await createRes.json().catch(() => ({}));
+          createdEventId = (createPayload as { event?: { id?: string } } | null)?.event?.id ?? null;
+          expect(createRes.ok()).toBeTruthy();
+          expect(createdEventId).toBeTruthy();
 
-        // Clean up the created event
-        await cleanupTimelineEvent(event.id);
+          // Verify in database
+          const { data: events } = await adminClient
+            .from('timeline_events')
+            .select('id, title, status, contributor_id')
+            .eq('contributor_id', contributorId)
+            .eq('title', 'Summer Gardening');
+
+          expect(events).toBeTruthy();
+          expect(events!.length).toBeGreaterThan(0);
+          const event = events![0] as { id: string; title: string; status: string };
+          expect(event.status).toBe('pending'); // untrusted contributor
+        } finally {
+          if (createdEventId) {
+            await cleanupTimelineEvent(createdEventId);
+          }
+        }
       }
     );
   });
@@ -461,54 +474,67 @@ test.describe('Share memory flow', () => {
       async ({ contributorId, userId }) => {
         if (!contributorId || !userId) return;
 
-        // Login
-        const params = new URLSearchParams({
-          email: testEmail,
-          secret: testLoginSecret,
-        });
-        await page.goto(`/api/test/login?${params.toString()}`);
-        await page.waitForURL(/\/score/);
+        let createdEventId: string | null = null;
 
-        // Navigate to share page
-        await page.goto('/share');
+        try {
+          // Login
+          const params = new URLSearchParams({
+            email: testEmail,
+            secret: testLoginSecret,
+          });
+          await page.goto(`/api/test/login?${params.toString()}`);
+          await page.waitForURL(/\/score/);
 
-        // Fill form
-        await page.getByRole('button', { name: /^Around a year/i }).click();
-        const yearInputs = page.getByRole('spinbutton');
-        await yearInputs.first().fill('2000');
+          // Navigate to share page
+          await page.goto('/share');
 
-        // Select provenance (required)
-        await page.getByRole('button', { name: /^I was there/i }).click();
+          // Fill form
+          await page.getByRole('button', { name: /^Around a year/i }).click();
+          const yearInputs = page.getByRole('spinbutton');
+          await yearInputs.first().fill('2000');
 
-        const memoryEditor = page.locator('.ProseMirror').first();
-        await memoryEditor.click();
-        await memoryEditor.fill('Trusted user memory - should be published immediately.');
+          // Select provenance (required)
+          await page.getByRole('button', { name: /^I was there/i }).click();
 
-        await page.getByPlaceholder(/A short title for this note/i).fill('Trusted Memory');
+          const memoryEditor = page.locator('.ProseMirror').first();
+          await memoryEditor.click();
+          await memoryEditor.fill('Trusted user memory - should be published immediately.');
 
-        // Submit
-        const submit = page.getByRole('button', { name: 'Add This Memory' });
-        await expect(submit).toBeEnabled();
-        await submit.click();
+          await page.getByPlaceholder(/A short title for this note/i).fill('Trusted Memory');
 
-        // Should see success with "published" message
-        await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
-        await expect(page.getByText(/part of The Score/i)).toBeVisible();
+          // Submit
+          const submit = page.getByRole('button', { name: 'Add This Memory' });
+          await expect(submit).toBeEnabled();
+          const [createRes] = await Promise.all([
+            page.waitForResponse((resp) => resp.url().includes('/api/memories') && resp.request().method() === 'POST'),
+            submit.click(),
+          ]);
 
-        // Verify status is published
-        const { data: events } = await adminClient
-          .from('timeline_events')
-          .select('id, status')
-          .eq('contributor_id', contributorId)
-          .eq('title', 'Trusted Memory');
+          // Should see success with "published" message
+          await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
+          await expect(page.getByText(/part of The Score/i)).toBeVisible();
 
-        expect(events).toBeTruthy();
-        expect(events!.length).toBeGreaterThan(0);
-        const event = events![0] as { id: string; status: string };
-        expect(event.status).toBe('published');
+          const createPayload = await createRes.json().catch(() => ({}));
+          createdEventId = (createPayload as { event?: { id?: string } } | null)?.event?.id ?? null;
+          expect(createRes.ok()).toBeTruthy();
+          expect(createdEventId).toBeTruthy();
 
-        // Cleanup
-        await cleanupTimelineEvent(event.id);
+          // Verify status is published
+          const { data: events } = await adminClient
+            .from('timeline_events')
+            .select('id, status')
+            .eq('contributor_id', contributorId)
+            .eq('title', 'Trusted Memory');
+
+          expect(events).toBeTruthy();
+          expect(events!.length).toBeGreaterThan(0);
+          const event = events![0] as { id: string; status: string };
+          expect(event.status).toBe('published');
+        } finally {
+          if (createdEventId) {
+            await cleanupTimelineEvent(createdEventId);
+          }
+        }
       }
     );
   });
