@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Memory } from './types';
+import type { InterpreterPayload } from './interpreter/types';
+import { buildInterpreterSystemMessage } from './interpreter/interpreterSystemPrompt';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -84,6 +86,37 @@ ${memoriesContext}`;
 
   const textContent = response.content.find(block => block.type === 'text');
   return textContent ? textContent.text : 'I apologize, but I was unable to respond. Please try again.';
+}
+
+/**
+ * Enriched chat using the structured interpreter payload.
+ *
+ * This version sends the full enriched payload (with temporal structure,
+ * provenance, recurrence, motifs, and threads) to enable genuine pattern-finding.
+ *
+ * Feature flag: USE_ENRICHED_INTERPRETER_PAYLOAD
+ */
+export async function chatWithEnrichedPayload(
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  payload: InterpreterPayload
+): Promise<string> {
+  const payloadJson = JSON.stringify(payload, null, 2);
+  const systemMessage = buildInterpreterSystemMessage(payloadJson);
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1500, // Slightly higher for richer responses
+    system: systemMessage,
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  });
+
+  const textContent = response.content.find((block) => block.type === 'text');
+  return textContent
+    ? textContent.text
+    : 'I apologize, but I was unable to respond. Please try again.';
 }
 
 /**
