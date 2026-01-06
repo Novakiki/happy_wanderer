@@ -68,10 +68,17 @@ export async function POST(request: Request) {
 
     if (resolvedNoteIds.length > 0) {
       // Delete references first (should also cascade, but this avoids constraint issues if schema changes).
-      await admin
+      const { error: referencesError } = await admin
         .from('event_references')
         .delete()
         .in('event_id', resolvedNoteIds);
+
+      if (referencesError) {
+        return NextResponse.json(
+          { error: 'Failed to delete note reference fixtures' },
+          { status: 500 }
+        );
+      }
 
       const { error: noteError } = await admin
         .from('timeline_events')
