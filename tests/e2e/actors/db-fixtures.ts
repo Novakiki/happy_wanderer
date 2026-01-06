@@ -97,3 +97,54 @@ export async function cleanupTrustRequests(contributorId: string | null) {
   if (!adminClient || !contributorId) return;
   await adminClient.from('trust_requests').delete().eq('contributor_id', contributorId);
 }
+
+export async function createInviteCodeFixture(input: {
+  code: string;
+  usesRemaining?: number | null;
+  expiresAt?: string | null;
+}) {
+  if (!adminClient) return null;
+
+  const { data: inviteCode } = await adminClient
+    .from('invite_codes')
+    .insert({
+      code: input.code,
+      uses_remaining: input.usesRemaining ?? null,
+      expires_at: input.expiresAt ?? null,
+    })
+    .select('id')
+    .single();
+
+  const id = (inviteCode as { id?: string } | null)?.id ?? null;
+  return id ? { id, code: input.code } : null;
+}
+
+export async function cleanupInviteCode(inviteCodeId: string | null) {
+  if (!adminClient || !inviteCodeId) return;
+  await adminClient.from('invite_codes').delete().eq('id', inviteCodeId);
+}
+
+export async function createTrustRequestFixture(input: {
+  contributorId: string;
+  message?: string | null;
+}) {
+  if (!adminClient) return null;
+
+  const { data: request } = await adminClient
+    .from('trust_requests')
+    .insert({
+      contributor_id: input.contributorId,
+      status: 'pending',
+      message: input.message ?? null,
+    })
+    .select('id')
+    .single();
+
+  const id = (request as { id?: string } | null)?.id ?? null;
+  return id ? { id } : null;
+}
+
+export async function cleanupTrustRequest(trustRequestId: string | null) {
+  if (!adminClient || !trustRequestId) return;
+  await adminClient.from('trust_requests').delete().eq('id', trustRequestId);
+}
