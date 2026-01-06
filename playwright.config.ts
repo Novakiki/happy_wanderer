@@ -1,6 +1,6 @@
+import { defineConfig, devices } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { defineConfig, devices } from '@playwright/test';
 
 const loadEnvFile = (filename: string) => {
   const filePath = path.resolve(process.cwd(), filename);
