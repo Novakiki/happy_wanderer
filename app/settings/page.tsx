@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 import { formStyles, subtleBackground } from '@/lib/styles';
@@ -161,6 +161,11 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('');
   const [displayNameSaving, setDisplayNameSaving] = useState(false);
   const [displayNameEditing, setDisplayNameEditing] = useState(false);
+  const displayNameEditingRef = useRef(displayNameEditing);
+
+  useEffect(() => {
+    displayNameEditingRef.current = displayNameEditing;
+  }, [displayNameEditing]);
 
   // Notes visibility UI state
   const [showAllNotes, setShowAllNotes] = useState(false);
@@ -237,7 +242,9 @@ export default function SettingsPage() {
       }
       const data = await res.json();
       setIdentity(data);
-      if (data?.person?.name && !displayNameEditing) {
+      // If the user is actively editing the display name, don't stomp their input.
+      // Use a ref to avoid re-creating this callback (and refetching) when edit mode toggles.
+      if (data?.person?.name && !displayNameEditingRef.current) {
         setDisplayName(data.person.name);
       }
     } catch (error) {
@@ -248,7 +255,7 @@ export default function SettingsPage() {
         setIdentityLoading(false);
       }
     }
-  }, [displayNameEditing]);
+  }, []);
 
   useEffect(() => {
     void loadIdentity();

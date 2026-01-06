@@ -189,6 +189,7 @@ test.describe('Roleplay flows', () => {
         });
         if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
+          return { contributorId: null, noteId: null };
         }
         const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
@@ -202,12 +203,14 @@ test.describe('Roleplay flows', () => {
         });
         if (!note?.id) {
           test.skip(true, 'Failed to create pending note fixture.');
+          return { contributorId, noteId: null };
         }
         const noteId = use(note.id, () => cleanupNote(note.id));
 
         return { contributorId, noteId };
       },
       async ({ contributorId, noteId }) => {
+        if (!contributorId || !noteId) return;
         const publishRes = await page.request.patch('/api/admin/notes', {
           data: { id: noteId, status: 'published' },
         });
@@ -250,12 +253,14 @@ test.describe('Roleplay flows', () => {
         });
         if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
+          return { token: null as string | null };
         }
         const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
         const editToken = await createEditTokenFixture({ contributorId, hoursValid: 24 });
         if (!editToken?.id || !editToken?.token) {
           test.skip(true, 'Failed to create edit token fixture.');
+          return { token: null as string | null };
         }
         use(contributorId, () => cleanupTrustRequests(contributorId));
         const token = editToken.token;
@@ -264,6 +269,7 @@ test.describe('Roleplay flows', () => {
         return { token };
       },
       async ({ token }) => {
+        if (!token) return;
         await page.goto(`/edit/${token}`);
         await page.waitForResponse((res) => res.url().includes('/api/edit/session') && res.ok());
 

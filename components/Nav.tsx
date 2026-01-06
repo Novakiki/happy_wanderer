@@ -59,6 +59,8 @@ export default function Nav({ variant = 'header', userProfile }: Props) {
     let isActive = true;
 
     if (!profileToUse) {
+      // If the user logs out or loses their profile, ensure we clear any prior admin UI state.
+      setIsAdmin(false);
       return () => {
         isActive = false;
       };

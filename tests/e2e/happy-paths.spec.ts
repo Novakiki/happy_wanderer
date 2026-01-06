@@ -1,15 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { ensureAdminProfile } from './actors/admin';
 import {
-    cleanupContributor,
-    cleanupInviteCode,
-    cleanupProfile,
-    cleanupTimelineEvent,
-    cleanupTrustRequest,
-    createContributorFixture,
-    createInviteCodeFixture,
-    createProfileFixture,
-    createTrustRequestFixture,
+  cleanupContributor,
+  cleanupInviteCode,
+  cleanupProfile,
+  cleanupTimelineEvent,
+  cleanupTrustRequest,
+  createContributorFixture,
+  createInviteCodeFixture,
+  createProfileFixture,
+  createTrustRequestFixture,
 } from './actors/db-fixtures';
 import { adminClient, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { withFixtures } from './fixtures/with-fixtures';
@@ -204,6 +204,7 @@ test.describe('Admin trust request approval', () => {
         });
         if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
+          return { contributorId: null, trustRequestId: null };
         }
         const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
@@ -213,12 +214,14 @@ test.describe('Admin trust request approval', () => {
         });
         if (!trustRequest?.id) {
           test.skip(true, 'Failed to create trust request fixture.');
+          return { contributorId, trustRequestId: null };
         }
         const trustRequestId = use(trustRequest.id, () => cleanupTrustRequest(trustRequest.id));
 
         return { contributorId, trustRequestId };
       },
       async ({ contributorId, trustRequestId }) => {
+      if (!contributorId || !trustRequestId) return;
       // Login as admin
       const params = new URLSearchParams({
         email: resolvedAdminEmail,
@@ -272,6 +275,7 @@ test.describe('Admin trust request approval', () => {
         });
         if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
+          return { contributorId: null, trustRequestId: null };
         }
         const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
@@ -281,12 +285,14 @@ test.describe('Admin trust request approval', () => {
         });
         if (!trustRequest?.id) {
           test.skip(true, 'Failed to create trust request fixture.');
+          return { contributorId, trustRequestId: null };
         }
         const trustRequestId = use(trustRequest.id, () => cleanupTrustRequest(trustRequest.id));
 
         return { contributorId, trustRequestId };
       },
       async ({ contributorId, trustRequestId }) => {
+      if (!contributorId || !trustRequestId) return;
       // Login as admin
       const params = new URLSearchParams({
         email: resolvedAdminEmail,
