@@ -1,6 +1,15 @@
 import { test, expect, request as playwrightRequest } from '@playwright/test';
 import { ensureAdminProfile } from './actors/admin';
-import { createClaimToken, cleanupClaimToken } from './actors/claims';
+import { createClaimToken, createExpiredClaimToken, cleanupClaimToken } from './actors/claims';
+import {
+  cleanupContributor,
+  cleanupEditToken,
+  cleanupNote,
+  cleanupTrustRequests,
+  createContributorFixture,
+  createEditTokenFixture,
+  createPendingNoteFixture,
+} from './actors/db-fixtures';
 import { adminClient, baseUrl, fixtureEnabled, fixtureKey, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { seedIdentityNote } from './actors/fixtures';
 import { cleanupInvite, createInvite } from './actors/invites';
@@ -118,30 +127,19 @@ test.describe('Roleplay flows', () => {
       return;
     }
 
-    // Create an expired token
-    const token = crypto.randomUUID();
-    const { data: claim } = await adminClient
-      .from('claim_tokens')
-      .insert({
-        token,
-        invite_id: inviteId,
-        recipient_name: 'E2E Expired Test',
-        recipient_phone: '+15551234567',
-        event_id: eventId,
-        expires_at: new Date(Date.now() - 1000).toISOString(), // Already expired
-        sms_status: 'sent',
-      })
-      .select('id')
-      .single();
-
-    const claimId = (claim as { id: string } | null)?.id ?? null;
+    const claimData = await createExpiredClaimToken(inviteId, eventId);
+    if (!claimData) {
+      await cleanupInvite(request, inviteId);
+      test.skip(true, 'Failed to create expired claim token.');
+      return;
+    }
 
     try {
-      await page.goto(`/claim/${token}`);
+      await page.goto(`/claim/${claimData.token}`);
       await expect(page.getByRole('heading', { name: 'Oops' })).toBeVisible();
       await expect(page.getByText('invalid or has expired')).toBeVisible();
     } finally {
-      if (claimId) await cleanupClaimToken(claimId);
+      await cleanupClaimToken(claimData.id);
       await cleanupInvite(request, inviteId);
     }
   });
@@ -177,42 +175,29 @@ test.describe('Roleplay flows', () => {
     await ensureAdminProfile(resolvedAdminEmail);
 
     const stamp = Date.now();
-    const { data: contributor } = await adminClient
-      .from('contributors')
-      .insert({
-        name: `E2E Admin Review ${stamp}`,
-        relation: 'family/friend',
-        email: `e2e-admin-review-${stamp}@example.com`,
-        trusted: false,
-      })
-      .select('id')
-      .single();
-
-    const contributorId = (contributor as { id?: string } | null)?.id ?? null;
+    const contributor = await createContributorFixture({
+      name: `E2E Admin Review ${stamp}`,
+      relation: 'family/friend',
+      email: `e2e-admin-review-${stamp}@example.com`,
+      trusted: false,
+    });
+    const contributorId = contributor?.id ?? null;
     if (!contributorId) {
       test.skip(true, 'Failed to create contributor fixture.');
       return;
     }
 
-    const { data: note } = await adminClient
-      .from('timeline_events')
-      .insert({
-        year: 2001,
-        type: 'memory',
-        title: `E2E Pending Note ${stamp}`,
-        preview: 'Pending note for admin review.',
-        full_entry: 'Pending note for admin review.',
-        why_included: 'Admin review test.',
-        status: 'pending',
-        privacy_level: 'family',
-        contributor_id: contributorId,
-      })
-      .select('id')
-      .single();
-
-    const noteId = (note as { id?: string } | null)?.id ?? null;
+    const note = await createPendingNoteFixture({
+      contributorId,
+      year: 2001,
+      title: `E2E Pending Note ${stamp}`,
+      preview: 'Pending note for admin review.',
+      full_entry: 'Pending note for admin review.',
+      why_included: 'Admin review test.',
+    });
+    const noteId = note?.id ?? null;
     if (!noteId) {
-      await adminClient.from('contributors').delete().eq('id', contributorId);
+      await cleanupContributor(contributorId);
       test.skip(true, 'Failed to create pending note fixture.');
       return;
     }
@@ -242,8 +227,8 @@ test.describe('Roleplay flows', () => {
         .single();
       expect((updatedContributor as { trusted?: boolean } | null)?.trusted).toBe(true);
     } finally {
-      await adminClient.from('timeline_events').delete().eq('id', noteId);
-      await adminClient.from('contributors').delete().eq('id', contributorId);
+      await cleanupNote(noteId);
+      await cleanupContributor(contributorId);
     }
   });
 
@@ -251,37 +236,23 @@ test.describe('Roleplay flows', () => {
     test.skip(!adminClient, 'Set SUPABASE_URL and SUPABASE_SECRET_KEY.');
 
     const stamp = Date.now();
-    const { data: contributor } = await adminClient
-      .from('contributors')
-      .insert({
-        name: `E2E Trust Request ${stamp}`,
-        relation: 'family/friend',
-        email: `e2e-trust-request-${stamp}@example.com`,
-        trusted: false,
-      })
-      .select('id')
-      .single();
-
-    const contributorId = (contributor as { id?: string } | null)?.id ?? null;
+    const contributor = await createContributorFixture({
+      name: `E2E Trust Request ${stamp}`,
+      relation: 'family/friend',
+      email: `e2e-trust-request-${stamp}@example.com`,
+      trusted: false,
+    });
+    const contributorId = contributor?.id ?? null;
     if (!contributorId) {
       test.skip(true, 'Failed to create contributor fixture.');
       return;
     }
 
-    const token = crypto.randomUUID();
-    const { data: editToken } = await adminClient
-      .from('edit_tokens')
-      .insert({
-        token,
-        contributor_id: contributorId,
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .select('id')
-      .single();
-
-    const editTokenId = (editToken as { id?: string } | null)?.id ?? null;
-    if (!editTokenId) {
-      await adminClient.from('contributors').delete().eq('id', contributorId);
+    const editToken = await createEditTokenFixture({ contributorId, hoursValid: 24 });
+    const editTokenId = editToken?.id ?? null;
+    const token = editToken?.token ?? null;
+    if (!editTokenId || !token) {
+      await cleanupContributor(contributorId);
       test.skip(true, 'Failed to create edit token fixture.');
       return;
     }
@@ -295,9 +266,9 @@ test.describe('Roleplay flows', () => {
       await requestButton.click();
       await expect(page.getByText('Trusted status request received')).toBeVisible();
     } finally {
-      await adminClient.from('trust_requests').delete().eq('contributor_id', contributorId);
-      await adminClient.from('edit_tokens').delete().eq('id', editTokenId);
-      await adminClient.from('contributors').delete().eq('id', contributorId);
+      await cleanupTrustRequests(contributorId);
+      await cleanupEditToken(editTokenId);
+      await cleanupContributor(contributorId);
     }
   });
 });
