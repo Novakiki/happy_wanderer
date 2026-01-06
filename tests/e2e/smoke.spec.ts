@@ -36,9 +36,17 @@ const pickNextOverride = (current: Visibility, base: Visibility) => {
 test.describe('Smoke checks', () => {
   test.skip(!email || !password, 'Set E2E_EMAIL and E2E_PASSWORD for login.');
 
+  const resolveLoginEmail = (page: Page) => {
+    const ctx = page.context() as unknown as { __e2eLoginEmail?: string };
+    return ctx.__e2eLoginEmail || email;
+  };
+
   const requestEditToken = async (page: Page) => {
+    const resolvedEmail = resolveLoginEmail(page);
+    if (!resolvedEmail) return null;
+
     const response = await page.request.post('/api/edit/request', {
-      data: { email },
+      data: { email: resolvedEmail },
     });
 
     if (!response.ok()) return null;
@@ -163,6 +171,7 @@ test.describe('Smoke checks', () => {
     await page.getByPlaceholder('Year, e.g. 1996').fill('1998');
 
     let noteId: string | null = null;
+    let noteStatus: string | null = null;
 
     try {
       const [response] = await Promise.all([
@@ -176,15 +185,25 @@ test.describe('Smoke checks', () => {
       expect(response.ok()).toBeTruthy();
 
       noteId = payload?.event?.id as string | undefined;
+      noteStatus = (payload?.event?.status as string | undefined) ?? null;
       expect(noteId).toBeTruthy();
 
       await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
 
       createdNote = { id: noteId as string, title };
 
-      await page.goto(`/memory/${noteId}`);
-      await expect(page.getByRole('heading', { name: title })).toBeVisible();
-      await expect(page.getByText(/^~?1998$/)).toBeVisible();
+      // Notes from untrusted contributors are created as `pending` and intentionally do not
+      // appear at /memory/:id yet. Trusted contributors auto-publish, so only assert /memory
+      // when the API returns status=published.
+      if (noteStatus === 'published') {
+        await page.goto(`/memory/${noteId}`);
+        await expect(page.getByRole('heading', { name: title })).toBeVisible();
+        await expect(page.getByText(/^~?1998$/)).toBeVisible();
+      } else {
+        await expect(
+          page.getByText('Your Note is pending review before it appears in The Score.')
+        ).toBeVisible();
+      }
     } finally {
       if (noteId) {
         await cleanupNote(page, noteId);
