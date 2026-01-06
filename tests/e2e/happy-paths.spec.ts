@@ -336,26 +336,26 @@ test.describe('Share memory flow', () => {
           email: testEmail,
           trusted: false,
         });
-        if (!contributor) {
+        if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
           return { contributorId: null, eventId: null, userId: null };
         }
-        use(contributor, () => cleanupContributor(contributor.id));
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
         // Create profile for the user
         const profile = await createProfileFixture({
           email: testEmail,
           name: `E2E Share User ${stamp}`,
           relation: 'friend',
-          contributorId: contributor.id,
+          contributorId,
         });
-        if (!profile) {
+        if (!profile?.userId) {
           test.skip(true, 'Failed to create profile fixture.');
-          return { contributorId: contributor.id, eventId: null, userId: null };
+          return { contributorId, eventId: null, userId: null };
         }
-        use(profile, () => cleanupProfile(profile.userId));
+        const userId = use(profile.userId, () => cleanupProfile(profile.userId));
 
-        return { contributorId: contributor.id, eventId: null as string | null, userId: profile.userId };
+        return { contributorId, eventId: null as string | null, userId };
       },
       async ({ contributorId, userId }) => {
         if (!contributorId || !userId) return;
@@ -437,26 +437,26 @@ test.describe('Share memory flow', () => {
           email: testEmail,
           trusted: true,
         });
-        if (!contributor) {
+        if (!contributor?.id) {
           test.skip(true, 'Failed to create contributor fixture.');
           return { contributorId: null, userId: null };
         }
-        use(contributor, () => cleanupContributor(contributor.id));
+        const contributorId = use(contributor.id, () => cleanupContributor(contributor.id));
 
         // Create profile
         const profile = await createProfileFixture({
           email: testEmail,
           name: `E2E Trusted User ${stamp}`,
           relation: 'family',
-          contributorId: contributor.id,
+          contributorId,
         });
-        if (!profile) {
+        if (!profile?.userId) {
           test.skip(true, 'Failed to create profile fixture.');
-          return { contributorId: contributor.id, userId: null };
+          return { contributorId, userId: null };
         }
-        use(profile, () => cleanupProfile(profile.userId));
+        const userId = use(profile.userId, () => cleanupProfile(profile.userId));
 
-        return { contributorId: contributor.id, userId: profile.userId };
+        return { contributorId, userId };
       },
       async ({ contributorId, userId }) => {
         if (!contributorId || !userId) return;
