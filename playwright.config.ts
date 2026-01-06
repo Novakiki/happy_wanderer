@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 const loadEnvFile = (filename: string) => {
   const filePath = path.resolve(process.cwd(), filename);
@@ -47,6 +47,15 @@ const webServerCommand = fixtureEnabled
   ? `npm run build && next start -p ${webServerPort}`
   : `next dev -p ${webServerPort}`;
 
+// By default we run a "Level 2" browser matrix:
+// - Desktop Chromium (largest audience reach; covers Chrome/Edge-style behavior)
+// - Mobile Chromium (small-screen layout + touch-ish interactions)
+//
+// For occasional extra confidence (Level 3), enable WebKit (Safari engine) via:
+// - E2E_LEVEL=3   OR   E2E_WEBKIT=true
+const includeWebkit =
+  process.env.E2E_LEVEL === '3' || process.env.E2E_WEBKIT === 'true';
+
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/fixtures/global-setup.ts',
@@ -55,6 +64,32 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
+  projects: [
+    {
+      name: 'Desktop Chromium',
+      use: {
+        browserName: 'chromium' as const,
+      },
+    },
+    {
+      name: 'Mobile Chromium',
+      use: {
+        ...devices['Pixel 5'],
+        browserName: 'chromium' as const,
+      },
+    },
+    ...(includeWebkit
+      ? [
+          {
+            name: 'Mobile WebKit',
+            use: {
+              ...devices['iPhone 13'],
+              browserName: 'webkit' as const,
+            },
+          },
+        ]
+      : []),
+  ],
   use: {
     baseURL,
     trace: 'on-first-retry',
