@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFixtures } from './fixtures/fixture-store';
 import { login } from './pages/auth';
-import { openMemory, expectMemoryContentHas } from './pages/memory';
+import { openMemory, expectMemoryContentHas, expectMemoryContentHasWithRetry } from './pages/memory';
 import { fillNoteContent, fillNoteTitle, submitNote } from './pages/share';
 import { openSettings, setDefaultVisibility, noteVisibilitySelect, toggleAllNotes, authorToggle } from './pages/settings';
 
@@ -211,32 +211,46 @@ test.describe('Smoke checks', () => {
     }
   });
 
-  test('identity default persists', async ({ page }) => {
-    await login(page, { email: email as string, password: password as string });
+  // Identity tests modify shared state (the same user's visibility settings).
+  // Run them serially to prevent parallel workers from interfering with each other.
+  // Only run in Desktop Chromium to avoid cross-project parallel conflicts.
+  test.describe('Identity visibility', () => {
+    test.describe.configure({ mode: 'serial' });
 
-    const identity = await loadIdentity(page);
-    if (!identity?.person) {
-      console.info('[e2e] Skipping identity default persists: no identity claim available for this user.');
-      test.skip(true, 'No identity claim available for this user.');
-      return;
-    }
+    test.beforeEach(async ({}, testInfo) => {
+      if (testInfo.project.name !== 'Desktop Chromium') {
+        test.skip(true, 'Identity tests only run in Desktop Chromium to avoid parallel state conflicts.');
+      }
+    });
 
-    const current = identity.default_visibility as string;
-    const next = current === 'blurred' ? 'approved' : 'blurred';
+    test('identity default persists', async ({ page }) => {
+      // Identity tests require the exact E2E_EMAIL since that's the only user with an identity claim
+      await login(page, { email: email as string, password: password as string, useExactEmail: true });
 
-    await openSettings(page);
-    await setDefaultVisibility(page, next as 'approved' | 'blurred' | 'anonymized' | 'removed');
+      const identity = await loadIdentity(page);
+      if (!identity?.person) {
+        console.info('[e2e] Skipping identity default persists: no identity claim available for this user.');
+        test.skip(true, 'No identity claim available for this user.');
+        return;
+      }
 
-    const updated = await loadIdentity(page);
-    expect(updated?.default_visibility).toBe(next);
+      const current = identity.default_visibility as string;
+      const next = current === 'blurred' ? 'approved' : 'blurred';
 
-    // revert to original to avoid polluting data
-    await openSettings(page);
-    await setDefaultVisibility(page, current as 'approved' | 'blurred' | 'anonymized' | 'removed');
-  });
+      await openSettings(page);
+      await setDefaultVisibility(page, next as 'approved' | 'blurred' | 'anonymized' | 'removed');
 
-  test('identity default applies across notes and sessions', async ({ page, browser }) => {
-    await login(page, { email: email as string, password: password as string });
+      const updated = await loadIdentity(page);
+      expect(updated?.default_visibility).toBe(next);
+
+      // revert to original to avoid polluting data
+      await openSettings(page);
+      await setDefaultVisibility(page, current as 'approved' | 'blurred' | 'anonymized' | 'removed');
+    });
+
+    test('identity default applies across notes and sessions', async ({ page, browser }) => {
+    // Identity tests require the exact E2E_EMAIL since that's the only user with an identity claim
+    await login(page, { email: email as string, password: password as string, useExactEmail: true });
 
     const fixtures = loadFixtures();
     const identity = await loadIdentity(page);
@@ -274,18 +288,30 @@ test.describe('Smoke checks', () => {
       await setDefaultVisibility(page, next as 'approved' | 'blurred' | 'anonymized' | 'removed');
       didUpdate = true;
 
+      // Wait and verify API reflects the change before checking pages
+      await page.waitForTimeout(1000);
+      const identityAfterChange = await loadIdentity(page);
+      if (identityAfterChange?.default_visibility !== next) {
+        throw new Error(
+          `API shows visibility "${identityAfterChange?.default_visibility}" but expected "${next}"`
+        );
+      }
+
+      // Navigate away from settings before checking memory pages to ensure fresh context
+      await page.goto('/score');
+      await page.waitForURL(/\/score/);
+
+      // Use retry helper to handle visibility propagation delays
       for (const note of seededNotes) {
-        await openMemory(page, note.id, note.title);
-        await expectMemoryContentHas(page, nameRegex, expectVisible);
+        await expectMemoryContentHasWithRetry(page, note.id, note.title, nameRegex, expectVisible);
       }
 
       const freshContext = await browser.newContext();
       const freshPage = await freshContext.newPage();
       try {
-        await login(freshPage, { email: email as string, password: password as string });
+        await login(freshPage, { email: email as string, password: password as string, useExactEmail: true });
         for (const note of seededNotes) {
-          await openMemory(freshPage, note.id, note.title);
-          await expectMemoryContentHas(freshPage, nameRegex, expectVisible);
+          await expectMemoryContentHasWithRetry(freshPage, note.id, note.title, nameRegex, expectVisible);
         }
       } finally {
         await freshContext.close();
@@ -299,7 +325,8 @@ test.describe('Smoke checks', () => {
   });
 
   test('per-note override persists', async ({ page }) => {
-    await login(page, { email: email as string, password: password as string });
+    // Identity tests require the exact E2E_EMAIL since that's the only user with an identity claim
+    await login(page, { email: email as string, password: password as string, useExactEmail: true });
 
     const fixtures = loadFixtures();
     const seededNotes = fixtures.identityNotes ?? [];
@@ -404,6 +431,7 @@ test.describe('Smoke checks', () => {
     await noteSelect.selectOption(revertValue);
     await expect(page.getByText('Note visibility updated.')).toBeVisible();
   });
+  }); // end Identity visibility serial block
 
   test('invite request succeeds', async ({ page }) => {
     await login(page, { email: email as string, password: password as string });

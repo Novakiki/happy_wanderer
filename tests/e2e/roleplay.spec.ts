@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest } from '@playwright/test';
+import { test, expect, request as playwrightRequest, Page } from '@playwright/test';
 import { ensureAdminProfile } from './actors/admin';
 import { createClaimToken, createExpiredClaimToken, cleanupClaimToken } from './actors/claims';
 import {
@@ -16,6 +16,41 @@ import { adminClient, baseUrl, fixtureEnabled, fixtureKey, resolvedAdminEmail, t
 import { seedIdentityNote } from './actors/fixtures';
 import { cleanupInvite, createInvite } from './actors/invites';
 import { withFixtures } from './fixtures/with-fixtures';
+
+/**
+ * Login via test API with retry logic to handle OTP race conditions
+ * when multiple browser workers use the same email concurrently.
+ */
+async function loginWithRetry(
+  page: Page,
+  email: string,
+  secret: string,
+  maxAttempts = 3
+): Promise<void> {
+  const params = new URLSearchParams({ email, secret });
+  const loginUrl = `/api/test/login?${params.toString()}`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await page.goto(loginUrl, { waitUntil: 'networkidle' });
+    const url = page.url();
+
+    if (url.includes('/score')) {
+      return; // Success
+    }
+
+    // Check if login failed (JSON error response)
+    const content = await page.content();
+    if (content.includes('Test login failed') && attempt < maxAttempts) {
+      // Wait before retry with exponential backoff
+      await page.waitForTimeout(500 * attempt);
+      continue;
+    }
+
+    if (attempt === maxAttempts) {
+      throw new Error(`Login failed after ${maxAttempts} attempts. Current URL: ${url}`);
+    }
+  }
+}
 
 test.describe('Roleplay flows', () => {
   test('score api requires auth or invite', async () => {
@@ -152,12 +187,7 @@ test.describe('Roleplay flows', () => {
       !resolvedAdminEmail || !testLoginSecret || !adminClient,
       'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
     );
-    const params = new URLSearchParams({
-      email: resolvedAdminEmail,
-      secret: testLoginSecret,
-    });
-    await page.goto(`/api/test/login?${params.toString()}`);
-    await page.waitForURL(/\/score/);
+    await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
     await ensureAdminProfile(resolvedAdminEmail);
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Review pending notes' })).toBeVisible();
@@ -169,12 +199,7 @@ test.describe('Roleplay flows', () => {
       'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
     );
 
-    const params = new URLSearchParams({
-      email: resolvedAdminEmail,
-      secret: testLoginSecret,
-    });
-    await page.goto(`/api/test/login?${params.toString()}`);
-    await page.waitForURL(/\/score/);
+    await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
     await ensureAdminProfile(resolvedAdminEmail);
 
     const stamp = Date.now();
@@ -324,12 +349,7 @@ test.describe('Roleplay flows', () => {
         if (!contributorId || !userId) return;
 
         // Login as non-admin user
-        const params = new URLSearchParams({
-          email: testEmail,
-          secret: testLoginSecret,
-        });
-        await page.goto(`/api/test/login?${params.toString()}`);
-        await page.waitForURL(/\/score/);
+        await loginWithRetry(page, testEmail, testLoginSecret);
 
         // Try to access admin page
         const response = await page.goto('/admin');

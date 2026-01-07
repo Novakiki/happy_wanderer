@@ -84,7 +84,9 @@ describe('respond API', () => {
         error: null,
       },
       { data: [], error: null }, // event_references
-      { data: null, error: null }, // invite update
+      { data: [], error: null }, // note_mentions
+      { data: null, error: null }, // invite status update
+      { data: [{ id: 'invite-1' }], error: null }, // uses_count increment
     ]);
     mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
 
@@ -121,7 +123,9 @@ describe('respond API', () => {
         error: null,
       },
       { data: [], error: null }, // event_references
-      { data: null, error: null }, // invite update
+      { data: [], error: null }, // note_mentions
+      { data: null, error: null }, // invite status update
+      { data: [{ id: 'invite-2' }], error: null }, // uses_count increment
     ]);
     mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
 
@@ -161,7 +165,9 @@ describe('respond API', () => {
         error: null,
       },
       { data: [], error: null }, // event_references
-      { data: null, error: null }, // invite update
+      { data: [], error: null }, // note_mentions
+      { data: null, error: null }, // invite status update
+      { data: [{ id: 'invite-3' }], error: null }, // uses_count increment
     ]);
     mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
 

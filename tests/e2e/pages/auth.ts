@@ -3,6 +3,12 @@ import { expect, type Cookie, type Page, test } from '@playwright/test';
 type LoginOptions = {
   email: string;
   password: string;
+  /**
+   * When true, use the exact email provided instead of generating a unique per-worker email.
+   * Use this for tests that require a specific pre-seeded user (e.g., identity claim tests).
+   * Warning: may cause flakiness if multiple workers use the same email concurrently.
+   */
+  useExactEmail?: boolean;
 };
 
 function makeUniqueEmail(baseEmail: string) {
@@ -23,15 +29,22 @@ function makeUniqueEmail(baseEmail: string) {
 const workerLoginEmail = new Map<number, string>();
 const workerAuthCookies = new Map<number, Array<Cookie>>();
 
-export async function login(page: Page, { email, password }: LoginOptions) {
+export async function login(page: Page, { email, password, useExactEmail }: LoginOptions) {
   const testSecret = process.env.TEST_LOGIN_SECRET;
   if (testSecret) {
     // Many e2e tests run in parallel workers. Supabase magiclink OTPs can race if multiple
     // workers request OTPs for the same email at the same time. To avoid flakiness *and*
     // avoid creating a new auth user for every test, use a stable unique email per worker.
+    //
+    // Exception: useExactEmail=true bypasses this for tests that need a specific pre-seeded
+    // user (e.g., identity claim tests where the claim only exists for the exact email).
     const workerIndex = test.info().workerIndex;
-    const resolvedEmail = workerLoginEmail.get(workerIndex) ?? makeUniqueEmail(email);
-    workerLoginEmail.set(workerIndex, resolvedEmail);
+    const resolvedEmail = useExactEmail
+      ? email
+      : (workerLoginEmail.get(workerIndex) ?? makeUniqueEmail(email));
+    if (!useExactEmail) {
+      workerLoginEmail.set(workerIndex, resolvedEmail);
+    }
 
     // Also stash it on the browser context so other helpers can reuse it.
     const ctx = page.context() as unknown as { __e2eLoginEmail?: string };
@@ -42,14 +55,18 @@ export async function login(page: Page, { email, password }: LoginOptions) {
 
     // If we've already logged in successfully in this worker, reuse the session cookies
     // to avoid repeatedly hammering the test-login endpoint (which can fail under load).
+    // Skip cookie caching for useExactEmail since the cache is keyed by worker index,
+    // not by email, and mixing exact/unique emails would cause auth issues.
     const cookieJar = page.context();
-    const cachedCookies = workerAuthCookies.get(workerIndex);
-    if (cachedCookies && cachedCookies.length > 0) {
-      await cookieJar.addCookies(cachedCookies);
-      await page.goto('/score');
-      if (page.url().includes('/score')) {
-        await expect(page).toHaveURL(/\/score/);
-        return;
+    if (!useExactEmail) {
+      const cachedCookies = workerAuthCookies.get(workerIndex);
+      if (cachedCookies && cachedCookies.length > 0) {
+        await cookieJar.addCookies(cachedCookies);
+        await page.goto('/score');
+        if (page.url().includes('/score')) {
+          await expect(page).toHaveURL(/\/score/);
+          return;
+        }
       }
     }
 
@@ -74,8 +91,11 @@ export async function login(page: Page, { email, password }: LoginOptions) {
     await expect(page).toHaveURL(/\/score/);
 
     // Cache cookies for this worker so subsequent tests can reuse the session.
-    const freshCookies = await cookieJar.cookies();
-    workerAuthCookies.set(workerIndex, freshCookies);
+    // Skip caching for useExactEmail to avoid mixing auth contexts.
+    if (!useExactEmail) {
+      const freshCookies = await cookieJar.cookies();
+      workerAuthCookies.set(workerIndex, freshCookies);
+    }
     return;
   }
 

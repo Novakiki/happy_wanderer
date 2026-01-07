@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, Page } from '@playwright/test';
 import { ensureAdminProfile } from './actors/admin';
 import {
   cleanupContributor,
@@ -15,6 +15,41 @@ import { adminClient, resolvedAdminEmail, testLoginSecret } from './actors/env';
 import { withFixtures } from './fixtures/with-fixtures';
 import { login } from './pages/auth';
 
+/**
+ * Login via test API with retry logic to handle OTP race conditions
+ * when multiple browser workers use the same email concurrently.
+ */
+async function loginWithRetry(
+  page: Page,
+  email: string,
+  secret: string,
+  maxAttempts = 3
+): Promise<void> {
+  const params = new URLSearchParams({ email, secret });
+  const loginUrl = `/api/test/login?${params.toString()}`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await page.goto(loginUrl, { waitUntil: 'networkidle' });
+    const url = page.url();
+
+    if (url.includes('/score')) {
+      return; // Success
+    }
+
+    // Check if login failed (JSON error response)
+    const content = await page.content();
+    if (content.includes('Test login failed') && attempt < maxAttempts) {
+      // Wait before retry with exponential backoff
+      await page.waitForTimeout(500 * attempt);
+      continue;
+    }
+
+    if (attempt === maxAttempts) {
+      throw new Error(`Login failed after ${maxAttempts} attempts. Current URL: ${url}`);
+    }
+  }
+}
+
 const email = process.env.E2E_EMAIL;
 const password = process.env.E2E_PASSWORD;
 
@@ -27,8 +62,9 @@ test.describe('Signup flow', () => {
     }
 
     const stamp = Date.now();
+    const workerIndex = test.info().workerIndex;
     const inviteCode = await createInviteCodeFixture({
-      code: `E2E-SIGNUP-${stamp}`,
+      code: `E2E-SIGNUP-${stamp}-W${workerIndex}`,
       usesRemaining: 10,
     });
 
@@ -223,12 +259,7 @@ test.describe('Admin trust request approval', () => {
       async ({ contributorId, trustRequestId }) => {
       if (!contributorId || !trustRequestId) return;
       // Login as admin
-      const params = new URLSearchParams({
-        email: resolvedAdminEmail,
-        secret: testLoginSecret,
-      });
-      await page.goto(`/api/test/login?${params.toString()}`);
-      await page.waitForURL(/\/score/);
+      await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
       await ensureAdminProfile(resolvedAdminEmail);
 
       // Approve via API
@@ -294,12 +325,7 @@ test.describe('Admin trust request approval', () => {
       async ({ contributorId, trustRequestId }) => {
       if (!contributorId || !trustRequestId) return;
       // Login as admin
-      const params = new URLSearchParams({
-        email: resolvedAdminEmail,
-        secret: testLoginSecret,
-      });
-      await page.goto(`/api/test/login?${params.toString()}`);
-      await page.waitForURL(/\/score/);
+      await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
       await ensureAdminProfile(resolvedAdminEmail);
 
       // Decline via API
@@ -375,12 +401,7 @@ test.describe('Share memory flow', () => {
 
         try {
           // Login via test endpoint
-          const params = new URLSearchParams({
-            email: `e2e-share-${stamp}@example.com`,
-            secret: testLoginSecret,
-          });
-          await page.goto(`/api/test/login?${params.toString()}`);
-          await page.waitForURL(/\/score/);
+          await loginWithRetry(page, `e2e-share-${stamp}@example.com`, testLoginSecret);
 
           // Navigate to share page
           await page.goto('/share');
@@ -489,12 +510,7 @@ test.describe('Share memory flow', () => {
 
         try {
           // Login
-          const params = new URLSearchParams({
-            email: testEmail,
-            secret: testLoginSecret,
-          });
-          await page.goto(`/api/test/login?${params.toString()}`);
-          await page.waitForURL(/\/score/);
+          await loginWithRetry(page, testEmail, testLoginSecret);
 
           // Navigate to share page
           await page.goto('/share');

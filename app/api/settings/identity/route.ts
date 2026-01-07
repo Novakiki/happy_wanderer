@@ -1,23 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-
-type Visibility = 'approved' | 'blurred' | 'anonymized' | 'removed' | 'pending';
-
-const ALLOWED_VISIBILITY = new Set<Visibility>([
-  'approved',
-  'blurred',
-  'anonymized',
-  'removed',
-  'pending',
-]);
-
-const PRIVACY_RANK: Record<Visibility, number> = {
-  approved: 0,
-  blurred: 1,
-  anonymized: 1,
-  pending: 1,
-  removed: 2,
-};
+import {
+  type Visibility,
+  normalizeVisibility,
+  isMorePrivateOrEqual,
+  resolveVisibility,
+} from '@/lib/identity/resolve-visibility';
 
 type VisibilityPreference = {
   person_id: string;
@@ -29,35 +17,13 @@ function escapeIlikePattern(value: string) {
   return value.replace(/[%_\\]/g, '\\$&');
 }
 
-function normalizeVisibility(value: string | null | undefined): Visibility {
-  if (!value) return 'pending';
-  return ALLOWED_VISIBILITY.has(value as Visibility) ? (value as Visibility) : 'pending';
-}
-
-function isMorePrivateOrEqual(candidate: Visibility, base: Visibility): boolean {
-  return PRIVACY_RANK[candidate] >= PRIVACY_RANK[base];
-}
-
-function resolveVisibility(
-  referenceVisibility: string | null | undefined,
-  personVisibility: string | null | undefined,
-  contributorPreference: string | null | undefined,
-  globalPreference: string | null | undefined
-): Visibility {
-  const refVis = normalizeVisibility(referenceVisibility);
-  const personVis = normalizeVisibility(personVisibility);
-  const contributorPref = normalizeVisibility(contributorPreference);
-  const globalPref = normalizeVisibility(globalPreference);
-
-  if (personVis === 'removed' || contributorPref === 'removed' || globalPref === 'removed') {
-    return 'removed';
-  }
-
-  if (refVis !== 'pending') return refVis;
-  if (contributorPref !== 'pending') return contributorPref;
-  if (globalPref !== 'pending') return globalPref;
-  return personVis;
-}
+const ALLOWED_VISIBILITY = new Set<Visibility>([
+  'approved',
+  'blurred',
+  'anonymized',
+  'removed',
+  'pending',
+]);
 
 async function getContributorId(admin: ReturnType<typeof createAdminClient>, userId: string) {
   const { data } = await admin.from('profiles')

@@ -24,6 +24,8 @@ function createAdminMock(responses: MockResponse[]) {
     upsert: () => chain,
     delete: () => chain,
     eq: () => chain,
+    is: () => chain,
+    order: () => chain,
     ilike: () => chain,
     limit: () => chain,
     in: () => chain,
@@ -199,7 +201,8 @@ describe('settings identity API', () => {
       { data: { contributor_id: 'contrib-1' }, error: null },
       { data: [{ person_id: 'person-1', status: 'approved' }], error: null },
       { data: null, error: null }, // people update
-      { data: null, error: null }, // visibility_preferences upsert
+      { data: [], error: null }, // default preference lookup (none exists)
+      { data: null, error: null }, // default preference insert
     ]);
     mockedCreateAdminClient.mockReturnValue(admin as unknown as ReturnType<typeof createAdminClient>);
 

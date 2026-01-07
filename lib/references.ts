@@ -106,13 +106,13 @@ function getMaskedDisplayName(
 ): string {
   if (visibility === 'approved') return name;
 
-  // Prefer relational masking when identity is hidden
+  // Prefer relational masking when identity is hidden (pending/anonymized),
+  // but *blurred* should show initials when possible.
   const relationshipLabel = relationship && relationship in RELATIONSHIP_DISPLAY
     ? RELATIONSHIP_DISPLAY[relationship as keyof typeof RELATIONSHIP_DISPLAY]
     : null;
 
   if (visibility === 'blurred') {
-    if (relationshipLabel) return relationshipLabel;
     const parts = name.split(' ').filter(Boolean);
     if (parts.length >= 2) {
       return `${parts[0][0]}.${parts[parts.length - 1][0]}.`;

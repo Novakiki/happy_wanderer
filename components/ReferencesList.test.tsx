@@ -229,8 +229,8 @@ describe('ReferencesList', () => {
       const privacyButton = screen.getByLabelText('Why is this name hidden?');
       fireEvent.mouseEnter(privacyButton);
 
-      expect(screen.getByText(/To protect privacy/)).toBeInTheDocument();
-      expect(screen.getByText('How identity works')).toBeInTheDocument();
+      expect(screen.getByText(/Identity guardian:/)).toBeInTheDocument();
+      expect(screen.getByText('How the identity guardian works')).toBeInTheDocument();
     });
 
     it('hides explainer on mouse leave', () => {
@@ -243,10 +243,10 @@ describe('ReferencesList', () => {
 
       const privacyButton = screen.getByLabelText('Why is this name hidden?');
       fireEvent.mouseEnter(privacyButton);
-      expect(screen.getByText(/To protect privacy/)).toBeInTheDocument();
+      expect(screen.getByText(/Identity guardian:/)).toBeInTheDocument();
 
       fireEvent.mouseLeave(privacyButton);
-      expect(screen.queryByText(/To protect privacy/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Identity guardian:/)).not.toBeInTheDocument();
     });
 
     it('toggles explainer on click', () => {
@@ -260,10 +260,10 @@ describe('ReferencesList', () => {
       const privacyButton = screen.getByLabelText('Why is this name hidden?');
 
       fireEvent.click(privacyButton);
-      expect(screen.getByText(/To protect privacy/)).toBeInTheDocument();
+      expect(screen.getByText(/Identity guardian:/)).toBeInTheDocument();
 
       fireEvent.click(privacyButton);
-      expect(screen.queryByText(/To protect privacy/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Identity guardian:/)).not.toBeInTheDocument();
     });
 
     it('links to /identity page', () => {
@@ -277,7 +277,7 @@ describe('ReferencesList', () => {
       const privacyButton = screen.getByLabelText('Why is this name hidden?');
       fireEvent.mouseEnter(privacyButton);
 
-      const link = screen.getByRole('link', { name: 'How identity works' });
+      const link = screen.getByRole('link', { name: 'How the identity guardian works' });
       expect(link).toHaveAttribute('href', '/identity');
     });
   });
