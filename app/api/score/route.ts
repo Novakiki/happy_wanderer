@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    const eventIds = rows.map((event) => event.id);
+    const eventIds = rows.map((event) => event.id).filter((id): id is string => id !== null);
     const contributorIds = Array.from(new Set(
       rows
         .map((event) => event.contributor_id)
@@ -185,8 +185,8 @@ export async function GET(request: NextRequest) {
     const typedEvents = rows.map((event) => ({
       ...event,
       contributor: event.contributor_id ? contributorsById.get(event.contributor_id) ?? null : null,
-      media: mediaByEventId.get(event.id) ?? [],
-      references: referencesByEventId.get(event.id) ?? [],
+      media: event.id ? mediaByEventId.get(event.id) ?? [] : [],
+      references: event.id ? referencesByEventId.get(event.id) ?? [] : [],
     })) as TimelineEventWithRefs[];
 
     // Collect all person_ids and contributor_ids for preference lookups
@@ -257,7 +257,7 @@ export async function GET(request: NextRequest) {
         void author_payload;
         return rest;
       });
-      const mentions = mentionsByEventId.get(event.id) ?? [];
+      const mentions = event.id ? mentionsByEventId.get(event.id) ?? [] : [];
 
       return {
         ...safeEvent,

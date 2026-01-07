@@ -25,7 +25,8 @@ async function getContributorId(request: NextRequest) {
   if (!editSession?.token) return null;
 
   const admin = createAdminClient();
-  const { data: tokenRow } = await ((admin.from('edit_tokens') as unknown) as ReturnType<typeof admin.from>)
+  const { data: tokenRow } = await admin
+    .from('edit_tokens')
     .select('contributor_id, expires_at')
     .eq('token', editSession.token)
     .single();
@@ -35,7 +36,7 @@ async function getContributorId(request: NextRequest) {
     return null;
   }
 
-  return tokenRow.contributor_id as string;
+  return tokenRow.contributor_id;
 }
 
 export async function POST(request: NextRequest) {
@@ -61,7 +62,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Already trusted' }, { status: 400 });
     }
 
-    const { data: pendingRows } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+    const { data: pendingRows } = await admin
+      .from('trust_requests')
       .select('id, status')
       .eq('contributor_id', contributorId)
       .eq('status', 'pending')
@@ -72,7 +74,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, id: pending.id, status: pending.status });
     }
 
-    const { data: requestRow, error } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+    const { data: requestRow, error } = await admin
+      .from('trust_requests')
       .insert({
         contributor_id: contributorId,
         message,

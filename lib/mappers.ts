@@ -1,4 +1,9 @@
-import type { Database, EventReferenceWithContributor } from "./database.types";
+import type { Database } from "./database.types";
+
+// Event reference with joined contributor data
+export type EventReferenceWithContributor = Database["public"]["Tables"]["event_references"]["Row"] & {
+  contributor?: { name: string } | null;
+};
 
 export type TimelineEvent = {
   id: string;
@@ -60,8 +65,8 @@ export function mapTimelineEvent(event: RawTimelineEvent): TimelineEvent {
     : [];
 
   return {
-    id: event.id,
-    year: event.year,
+    id: event.id ?? '',
+    year: event.year ?? 0,
     yearEnd: event.year_end ?? null,
     ageStart: event.age_start ?? null,
     ageEnd: event.age_end ?? null,
@@ -71,7 +76,7 @@ export function mapTimelineEvent(event: RawTimelineEvent): TimelineEvent {
     timingNote: event.timing_note ?? null,
     date: event.date,
     type: event.type as "origin" | "milestone" | "memory",
-    title: event.title,
+    title: event.title ?? '',
     preview: event.preview,
     fullEntry: event.full_entry,
     whyIncluded: event.why_included,

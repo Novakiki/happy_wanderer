@@ -53,13 +53,17 @@ export default async function SharePage({ searchParams }: Props) {
 
     userProfile.trusted = contributor?.trusted === true;
 
-    const { data: requestRows } = await ((admin.from("trust_requests") as unknown) as ReturnType<typeof admin.from>)
+    const { data: requestRows } = await admin
+      .from("trust_requests")
       .select("status")
       .eq("contributor_id", profile.contributor_id)
       .order("created_at", { ascending: false })
       .limit(1);
 
-    trustRequestStatus = Array.isArray(requestRows) ? (requestRows[0]?.status ?? null) : null;
+    const rawStatus = requestRows?.[0]?.status ?? null;
+    if (rawStatus === 'pending' || rawStatus === 'approved' || rawStatus === 'declined') {
+      trustRequestStatus = rawStatus;
+    }
   }
 
   return (

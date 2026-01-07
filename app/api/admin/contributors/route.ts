@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/admin';
 import { createAdminClient } from '@/lib/supabase/server';
+import type { Database } from '@/lib/database.types';
+
+type ContributorUpdate = Database['public']['Tables']['contributors']['Update'];
+type ProfileUpdate = Database['public']['Tables']['profiles']['Update'];
 
 export async function PATCH(request: Request) {
   const adminUser = await getAdminUser();
@@ -57,7 +61,7 @@ export async function PATCH(request: Request) {
 
   const admin = createAdminClient();
 
-  const updates: Record<string, unknown> = {};
+  const updates: ContributorUpdate = {};
   if (hasTrustedUpdate) updates.trusted = trusted;
   if (hasNameUpdate) updates.name = name.trim();
   if (hasRelationUpdate) updates.relation = relation.trim();
@@ -65,7 +69,8 @@ export async function PATCH(request: Request) {
   if (hasPhoneUpdate) updates.phone = phone === null ? null : phone.trim();
   if (hasDisabledUpdate) updates.disabled_at = disabled ? new Date().toISOString() : null;
 
-  const { error } = await ((admin.from('contributors') as unknown) as ReturnType<typeof admin.from>)
+  const { error } = await admin
+    .from('contributors')
     .update(updates)
     .eq('id', contributorId);
 
@@ -75,12 +80,13 @@ export async function PATCH(request: Request) {
 
   // Keep profiles in sync for any linked auth users.
   if (hasNameUpdate || hasRelationUpdate || hasEmailUpdate) {
-    const profileUpdates: Record<string, unknown> = {};
+    const profileUpdates: ProfileUpdate = {};
     if (hasNameUpdate) profileUpdates.name = name.trim();
     if (hasRelationUpdate) profileUpdates.relation = relation.trim();
     if (hasEmailUpdate) profileUpdates.email = email === null ? null : email.trim();
 
-    const { error: profileError } = await ((admin.from('profiles') as unknown) as ReturnType<typeof admin.from>)
+    const { error: profileError } = await admin
+      .from('profiles')
       .update(profileUpdates)
       .eq('contributor_id', contributorId);
 

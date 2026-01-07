@@ -192,7 +192,7 @@ async function handleEnrichedChat(
   const motifLinksByEvent = new Map<string, DbMotifLinkRow[]>();
   if (eventIds.length > 0) {
     const { data: motifLinks, error: motifError } = await supabase
-      .from('motif_note_links')
+      .from('motif_links')
       .select(`
         note_id,
         motif_id,

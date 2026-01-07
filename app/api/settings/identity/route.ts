@@ -450,9 +450,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Default visibility cannot be pending' }, { status: 400 });
     }
 
-    await admin.from('people')
+    const { error: personUpdateError } = await admin.from('people')
       .update({ visibility: normalizedVisibility })
       .eq('id', personId);
+
+    if (personUpdateError) {
+      console.error('Failed to update person visibility:', personUpdateError);
+      return NextResponse.json({ error: 'Failed to update default visibility' }, { status: 500 });
+    }
 
     const now = new Date().toISOString();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

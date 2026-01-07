@@ -24,7 +24,8 @@ export async function PATCH(request: Request) {
 
   const admin = createAdminClient();
 
-  const { data: requestRow, error: requestError } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+  const { data: requestRow, error: requestError } = await admin
+    .from('trust_requests')
     .select('id, contributor_id')
     .eq('id', id)
     .single();
@@ -33,14 +34,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
   }
 
-  const { data: profile } = await ((admin.from('profiles') as unknown) as ReturnType<typeof admin.from>)
+  const { data: profile } = await admin
+    .from('profiles')
     .select('contributor_id')
     .eq('id', adminUser.id)
     .single();
 
-  const resolvedBy = (profile as { contributor_id?: string | null } | null)?.contributor_id || null;
+  const resolvedBy = profile?.contributor_id || null;
 
-  const { error: updateError } = await ((admin.from('trust_requests') as unknown) as ReturnType<typeof admin.from>)
+  const { error: updateError } = await admin
+    .from('trust_requests')
     .update({
       status,
       resolved_at: new Date().toISOString(),
@@ -53,8 +56,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Could not update request.' }, { status: 500 });
   }
 
-  if (status === 'approved') {
-    const { error: contributorError } = await ((admin.from('contributors') as unknown) as ReturnType<typeof admin.from>)
+  if (status === 'approved' && requestRow.contributor_id) {
+    const { error: contributorError } = await admin
+      .from('contributors')
       .update({ trusted: true })
       .eq('id', requestRow.contributor_id);
 
