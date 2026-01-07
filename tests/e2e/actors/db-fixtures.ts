@@ -109,15 +109,20 @@ export async function createInviteCodeFixture(input: {
 }) {
   if (!adminClient) return null;
 
-  const { data: inviteCode } = await adminClient
+  const { data: inviteCode, error } = await adminClient
     .from('invite_codes')
-    .insert({
+    .upsert({
       code: input.code,
       uses_remaining: input.usesRemaining ?? null,
       expires_at: input.expiresAt ?? null,
-    })
+    }, { onConflict: 'code' })
     .select('id')
     .single();
+
+  if (error) {
+    console.error('Failed to create invite code fixture:', error);
+    return null;
+  }
 
   const id = (inviteCode as { id?: string } | null)?.id ?? null;
   return id ? { id, code: input.code } : null;

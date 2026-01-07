@@ -59,13 +59,92 @@ function isAuthorized(request: Request) {
 async function ensureIdentityClaim(email: string): Promise<IdentityInfo | null> {
   if (!admin) return null;
 
-  const { data: profile } = await admin
+  // Fixture runs often authenticate via `/api/test/login`, which creates a profile with
+  // `contributor_id = null`. For identity visibility tests we need a contributor link.
+  // Make this idempotent by finding/creating:
+  // - auth user (for the email)
+  // - profile row (id=user.id, email=email)
+  // - contributor row (email=email)
+  // - profile.contributor_id -> contributor.id
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const { data: existingProfile } = await admin
     .from('profiles')
-    .select('contributor_id')
-    .eq('email', email)
+    .select('id, contributor_id, name')
+    .eq('email', normalizedEmail)
     .maybeSingle();
 
-  const contributorId = profile?.contributor_id;
+  let userId = (existingProfile as { id?: string } | null)?.id ?? null;
+
+  if (!userId) {
+    const createResult = await admin.auth.admin.createUser({
+      email: normalizedEmail,
+      email_confirm: true,
+    });
+
+    if (createResult.error || !createResult.data?.user?.id) {
+      console.warn('Fixture seed: could not create auth user:', createResult.error?.message);
+      return null;
+    }
+
+    userId = createResult.data.user.id;
+
+    await admin
+      .from('profiles')
+      .insert({
+        id: userId,
+        name: normalizedEmail.split('@')[0] || 'E2E Fixture',
+        relation: 'test',
+        email: normalizedEmail,
+        contributor_id: null,
+      })
+      .catch(() => undefined);
+  }
+
+  let contributorId = (existingProfile as { contributor_id?: string | null } | null)?.contributor_id ?? null;
+
+  if (!contributorId) {
+    const { data: existingContributor } = await admin
+      .from('contributors')
+      .select('id')
+      .ilike('email', normalizedEmail)
+      .limit(1);
+
+    contributorId = existingContributor?.[0]?.id ?? null;
+
+    if (!contributorId) {
+      const fallbackName =
+        (existingProfile as { name?: string | null } | null)?.name?.trim() ||
+        normalizedEmail.split('@')[0] ||
+        TEST_IDENTITY_FALLBACK;
+
+      const { data: newContributor, error: contributorError } = await admin
+        .from('contributors')
+        .insert({
+          name: fallbackName,
+          relation: 'test',
+          email: normalizedEmail,
+          trusted: true,
+        })
+        .select('id')
+        .single();
+
+      if (contributorError) {
+        console.warn('Fixture seed: could not create contributor:', contributorError.message);
+        return null;
+      }
+
+      contributorId = newContributor?.id ?? null;
+    }
+
+    if (contributorId) {
+      await admin
+        .from('profiles')
+        .update({ contributor_id: contributorId })
+        .eq('id', userId);
+    }
+  }
+
   if (!contributorId) return null;
 
   const { data: claim } = await admin
