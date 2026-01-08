@@ -49,7 +49,7 @@ function mockAuthUser(userId: string | null) {
         error: null,
       }),
     },
-  } as unknown as ReturnType<typeof createClient>);
+  } as unknown as Awaited<ReturnType<typeof createClient>>);
 }
 
 function makePost(body: Record<string, unknown>) {

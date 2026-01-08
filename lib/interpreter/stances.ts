@@ -307,6 +307,12 @@ export function buildMixedIntentResponse(
     guide: 'helping you use the tool',
     listener: 'capturing your feedback',
   };
+  const stanceModeLabels: Record<Stance, string> = {
+    interpreter: 'Interpreter',
+    guide: 'Guide',
+    listener: 'Listener',
+  };
+  const primaryModeLabel = stanceModeLabels[primaryStance];
 
   const otherModes = secondaryIntents
     .map((intent) => {
@@ -316,7 +322,7 @@ export function buildMixedIntentResponse(
       return null;
     })
     .filter(Boolean)
-    .filter((mode) => mode !== primaryStance);
+    .filter((mode) => mode !== primaryModeLabel);
 
   if (otherModes.length === 0) {
     return '';

@@ -98,7 +98,11 @@ test.describe('Roleplay flows', () => {
   });
 
   test('claim token flow allows visibility control', async ({ page, request }) => {
-    test.skip(!fixtureEnabled || !fixtureKey || !adminClient, 'Enable fixtures to run claim tests.');
+    if (!fixtureEnabled || !fixtureKey || !adminClient) {
+      test.skip(true, 'Enable fixtures to run claim tests.');
+      return;
+    }
+    const admin = adminClient;
 
     const eventId = await seedIdentityNote(request);
     if (!eventId) {
@@ -138,7 +142,7 @@ test.describe('Roleplay flows', () => {
       await expect(page.getByText('initials only')).toBeVisible();
 
       // Verify token was marked as used
-      const { data: updatedToken } = await adminClient
+      const { data: updatedToken } = await admin
         .from('claim_tokens')
         .select('used_at')
         .eq('id', claimData.id)
@@ -183,24 +187,29 @@ test.describe('Roleplay flows', () => {
   });
 
   test('admin dashboard loads for admins', async ({ page }) => {
-    test.skip(
-      !resolvedAdminEmail || !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
-    );
-    await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
-    await ensureAdminProfile(resolvedAdminEmail);
+    if (!resolvedAdminEmail || !testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const adminEmail = resolvedAdminEmail;
+    const loginSecret = testLoginSecret;
+    await loginWithRetry(page, adminEmail, loginSecret);
+    await ensureAdminProfile(adminEmail);
     await page.goto('/admin');
     await expect(page.getByRole('heading', { name: 'Review pending notes' })).toBeVisible();
   });
 
   test('admin can update notes and trust contributors', async ({ page }) => {
-    test.skip(
-      !resolvedAdminEmail || !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
-    );
+    if (!resolvedAdminEmail || !testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const adminEmail = resolvedAdminEmail;
+    const loginSecret = testLoginSecret;
+    const admin = adminClient;
 
-    await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
-    await ensureAdminProfile(resolvedAdminEmail);
+    await loginWithRetry(page, adminEmail, loginSecret);
+    await ensureAdminProfile(adminEmail);
 
     const stamp = Date.now();
 
@@ -246,14 +255,14 @@ test.describe('Roleplay flows', () => {
         });
         expect(trustRes.ok()).toBeTruthy();
 
-        const { data: updatedNote } = await adminClient
+        const { data: updatedNote } = await admin
           .from('timeline_events')
           .select('status')
           .eq('id', noteId)
           .single();
         expect((updatedNote as { status?: string } | null)?.status).toBe('published');
 
-        const { data: updatedContributor } = await adminClient
+        const { data: updatedContributor } = await admin
           .from('contributors')
           .select('trusted')
           .eq('id', contributorId)
@@ -307,10 +316,11 @@ test.describe('Roleplay flows', () => {
   });
 
   test('non-admin user cannot access admin dashboard', async ({ page }) => {
-    test.skip(
-      !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.'
-    );
+    if (!testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const loginSecret = testLoginSecret;
 
     const stamp = Date.now();
     const testEmail = `e2e-nonadmin-${stamp}@example.com`;
@@ -349,7 +359,7 @@ test.describe('Roleplay flows', () => {
         if (!contributorId || !userId) return;
 
         // Login as non-admin user
-        await loginWithRetry(page, testEmail, testLoginSecret);
+        await loginWithRetry(page, testEmail, loginSecret);
 
         // Try to access admin page
         const response = await page.goto('/admin');

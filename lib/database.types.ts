@@ -448,6 +448,33 @@ export type Database = {
           },
         ]
       }
+      link_types: {
+        Row: {
+          code: string
+          created_at: string | null
+          description: string | null
+          id: number
+          is_symmetric: boolean | null
+          label: string
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          description?: string | null
+          id: number
+          is_symmetric?: boolean | null
+          label: string
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          description?: string | null
+          id?: number
+          is_symmetric?: boolean | null
+          label?: string
+        }
+        Relationships: []
+      }
       media: {
         Row: {
           caption: string | null
@@ -482,6 +509,82 @@ export type Database = {
             columns: ["uploaded_by"]
             isOneToOne: false
             referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memory_links: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          from_event_id: string
+          id: string
+          link_type_id: number
+          note: string | null
+          status: string | null
+          to_event_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          from_event_id: string
+          id?: string
+          link_type_id: number
+          note?: string | null
+          status?: string | null
+          to_event_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          from_event_id?: string
+          id?: string
+          link_type_id?: number
+          note?: string | null
+          status?: string | null
+          to_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memory_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "contributors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_links_from_event_id_fkey"
+            columns: ["from_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_links_from_event_id_fkey"
+            columns: ["from_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_links_link_type_id_fkey"
+            columns: ["link_type_id"]
+            isOneToOne: false
+            referencedRelation: "link_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_links_to_event_id_fkey"
+            columns: ["to_event_id"]
+            isOneToOne: false
+            referencedRelation: "current_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_links_to_event_id_fkey"
+            columns: ["to_event_id"]
+            isOneToOne: false
+            referencedRelation: "timeline_events"
             referencedColumns: ["id"]
           },
         ]
@@ -1158,6 +1261,7 @@ export type Database = {
           prompted_by_event_id: string | null
           recurrence: string | null
           root_event_id: string | null
+          shared_moment_id: string | null
           source_name: string | null
           source_url: string | null
           status: string | null
@@ -1197,6 +1301,7 @@ export type Database = {
           prompted_by_event_id?: string | null
           recurrence?: string | null
           root_event_id?: string | null
+          shared_moment_id?: string | null
           source_name?: string | null
           source_url?: string | null
           status?: string | null
@@ -1236,6 +1341,7 @@ export type Database = {
           prompted_by_event_id?: string | null
           recurrence?: string | null
           root_event_id?: string | null
+          shared_moment_id?: string | null
           source_name?: string | null
           source_url?: string | null
           status?: string | null
@@ -1620,7 +1726,83 @@ export type Database = {
           recent_fragments: Json
         }[]
       }
+      get_linked_memories: {
+        Args: { event_id: string }
+        Returns: {
+          direction: string
+          is_symmetric: boolean
+          link_label: string
+          link_type: string
+          linked_at: string
+          memory_id: string
+          note: string
+          title: string
+        }[]
+      }
+      get_sibling_memories: {
+        Args: { event_id: string }
+        Returns: {
+          age_end: number | null
+          age_start: number | null
+          chain_depth: number | null
+          contributor_id: string | null
+          created_at: string | null
+          date: string | null
+          entry_mode: string | null
+          fragment_kind: string | null
+          full_entry: string | null
+          id: string
+          latitude: number | null
+          life_stage: string | null
+          location: string | null
+          longitude: number | null
+          needs_signal_assignment: boolean | null
+          people_involved: string[] | null
+          preview: string | null
+          privacy_level: string | null
+          prompted_by_event_id: string | null
+          recurrence: string | null
+          root_event_id: string | null
+          shared_moment_id: string | null
+          source_name: string | null
+          source_url: string | null
+          status: string | null
+          subject_focus: string | null
+          subject_id: string | null
+          timing_certainty: string | null
+          timing_input_type: string | null
+          timing_note: string | null
+          timing_raw_text: string | null
+          title: string
+          trigger_event_id: string | null
+          type: string
+          why_included: string | null
+          witness_type: string | null
+          year: number
+          year_end: number | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "timeline_events"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      link_as_siblings: {
+        Args: { event_id_a: string; event_id_b: string }
+        Returns: string
+      }
       lint_note: { Args: { note_body: string }; Returns: Json }
+      list_lint_rules: {
+        Args: never
+        Returns: {
+          code: string
+          example_after: string
+          example_before: string
+          message: string
+          suggestion: string
+        }[]
+      }
       search_motifs: {
         Args: {
           confirm_threshold?: number

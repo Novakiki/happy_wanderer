@@ -67,8 +67,16 @@ type UserProfile = {
   trusted?: boolean | null;
 };
 
+type RespondingToEvent = {
+  id: string;
+  title: string;
+  preview: string | null;
+  contributorName: string | null;
+};
+
 type Props = {
   respondingToEventId?: string;
+  respondingToEvent?: RespondingToEvent | null;
   storytellerName?: string;
   userProfile: UserProfile;
   trustRequestStatus?: 'pending' | 'approved' | 'declined' | null;
@@ -78,6 +86,7 @@ type ThreadRelationship = keyof typeof THREAD_RELATIONSHIP_LABELS;
 
 export default function MemoryForm({
   respondingToEventId,
+  respondingToEvent,
   storytellerName,
   userProfile,
   trustRequestStatus,
@@ -537,6 +546,32 @@ export default function MemoryForm({
             yourself&mdash;tell it the way you remember it.
           </p>
         </>
+      ) : respondingToEvent ? (
+        <>
+          <h1 className="text-3xl sm:text-4xl font-serif text-white mt-4">
+            Your perspective on this moment
+          </h1>
+          <p className="text-lg text-white/60 leading-relaxed mt-3">
+            Share how you remember this&mdash;your view adds depth to the story.
+          </p>
+          {/* Show the event being responded to */}
+          <div className="mt-4 p-4 rounded-xl border border-white/10 bg-white/5">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/40 mb-2">
+              Responding to
+            </p>
+            <p className="text-white font-medium">{respondingToEvent.title}</p>
+            {respondingToEvent.preview && (
+              <p className="text-sm text-white/60 mt-1 line-clamp-2">
+                {respondingToEvent.preview}
+              </p>
+            )}
+            {respondingToEvent.contributorName && (
+              <p className="text-xs text-white/40 mt-2">
+                Added by {respondingToEvent.contributorName}
+              </p>
+            )}
+          </div>
+        </>
       ) : (
         <>
           <h1 className="text-3xl sm:text-4xl font-serif text-white mt-4">
@@ -712,47 +747,25 @@ export default function MemoryForm({
           </div>
         </div>
 
-        {/* Connection to the original note */}
+        {/* Connection to the original note - simplified for perspectives */}
         {respondingToEventId && (
           <div className={formStyles.section}>
-            <p className={formStyles.sectionLabel}>Connection</p>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="thread_relationship" className={formStyles.label}>
-                  How does your note connect?
-                </label>
-                <select
-                  id="thread_relationship"
-                  value={threadRelationship}
-                  onChange={(e) => setThreadRelationship(e.target.value as ThreadRelationship)}
-                  className={formStyles.select}
-                >
-                  {Object.entries(THREAD_RELATIONSHIP_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-                <p className={formStyles.hint}>
-                  {THREAD_RELATIONSHIP_DESCRIPTIONS[threadRelationship]}
-                </p>
-              </div>
-              <div>
-                <label htmlFor="thread_note" className={formStyles.label}>
-                  Short note (optional)
-                </label>
-                <textarea
-                  id="thread_note"
-                  rows={2}
-                  value={threadNote}
-                  onChange={(e) => setThreadNote(e.target.value)}
-                  placeholder="e.g., I remember this in 1989, not 1990"
-                  className={formStyles.textarea}
-                />
-                <p className={formStyles.hint}>
-                  This appears with the link between notes.
-                </p>
-              </div>
+            <p className={formStyles.sectionLabel}>Your perspective</p>
+            <div>
+              <label htmlFor="thread_note" className={formStyles.label}>
+                What&apos;s different about your view? (optional)
+              </label>
+              <textarea
+                id="thread_note"
+                rows={2}
+                value={threadNote}
+                onChange={(e) => setThreadNote(e.target.value)}
+                placeholder="e.g., I remember this differently... / From where I was standing..."
+                className={formStyles.textarea}
+              />
+              <p className={formStyles.hint}>
+                A short note about how your memory differs or what you noticed.
+              </p>
             </div>
           </div>
         )}

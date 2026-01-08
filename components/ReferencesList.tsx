@@ -1,6 +1,6 @@
 'use client';
 
-import type { EventReferenceWithContributor } from '@/lib/database.types';
+import type { EventReferenceWithContributor } from '@/lib/mappers';
 import type { RedactedReference } from '@/lib/references';
 import { REFERENCE_ROLE_LABELS, RELATIONSHIP_OPTIONS } from '@/lib/terminology';
 import Link from 'next/link';

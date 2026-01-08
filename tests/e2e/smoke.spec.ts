@@ -184,7 +184,7 @@ test.describe('Smoke checks', () => {
       const payload = await response.json().catch(() => ({}));
       expect(response.ok()).toBeTruthy();
 
-      noteId = payload?.event?.id as string | undefined;
+      noteId = (payload as { event?: { id?: string } } | null)?.event?.id ?? null;
       noteStatus = (payload?.event?.status as string | undefined) ?? null;
       expect(noteId).toBeTruthy();
 
@@ -439,6 +439,7 @@ test.describe('Smoke checks', () => {
     const candidate = await findInviteCandidate();
     if (!candidate) {
       test.skip(true, 'No memory with person references available for invite test.');
+      return;
     }
 
     let inviteId: string | null = null;

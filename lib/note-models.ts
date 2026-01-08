@@ -3,7 +3,8 @@
  * Keeps "Note" vocabulary without renaming tables.
  */
 
-import type { Database, EventReferenceWithContributor } from './database.types';
+import type { Database } from './database.types';
+import type { EventReferenceWithContributor } from './mappers';
 
 export type Note = Database['public']['Tables']['timeline_events']['Row'];
 export type NoteInsert = Database['public']['Tables']['timeline_events']['Insert'];

@@ -236,7 +236,10 @@ export default function GraphVisualization() {
             e.preventSigmaDefault?.();
             e.original.preventDefault();
             e.original.stopPropagation();
-            window.scrollBy({ top: e.original.deltaY, left: e.original.deltaX, behavior: 'auto' });
+            if ('deltaY' in e.original) {
+              const wheelEvent = e.original as WheelEvent;
+              window.scrollBy({ top: wheelEvent.deltaY, left: wheelEvent.deltaX, behavior: 'auto' });
+            }
           });
 
           // Event handlers
@@ -396,7 +399,7 @@ export default function GraphVisualization() {
               {hoveredNode.metadata?.year != null && (
                 <div className="text-xs text-white/50 mt-1">Year: {String(hoveredNode.metadata.year)}</div>
               )}
-              {hoveredNode.metadata?.visibility && (
+              {hoveredNode.metadata?.visibility != null && (
                 <div className="text-xs text-white/50 mt-1">
                   Visibility: {String(hoveredNode.metadata.visibility)}
                 </div>

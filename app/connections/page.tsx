@@ -77,12 +77,13 @@ export default async function ConnectionsPage() {
   const contributorId = profile.contributor_id!;
 
   // Fetch invites sent by this contributor
-  const { data: invitesData = [] } = await supabase
+  const { data: invitesData } = await supabase
     .from('invites')
     .select('id, event_id, recipient_name, recipient_contact, status, sent_at, contributed_at, timeline_events(title)')
     .eq('sender_id', contributorId)
     .order('created_at', { ascending: false })
     .returns<InviteRow[]>();
+  const invites = invitesData ?? [];
 
   // Fetch this contributor's notes to find connections
   const { data: myNotesData } = await supabase
@@ -94,22 +95,24 @@ export default async function ConnectionsPage() {
   const myEventIds = myNotes.map((n) => n.id);
 
   // Fetch threads where others responded to this contributor's notes
-  const { data: threads = [] } = myEventIds.length
+  const { data: threadsData } = myEventIds.length
     ? await supabase
         .from('memory_threads')
         .select('id, original_event_id, response_event_id')
         .in('original_event_id', myEventIds)
         .returns<ThreadRow[]>()
     : { data: [] as ThreadRow[] };
+  const threads = threadsData ?? [];
 
   const responseIds = Array.from(new Set(threads.map((t) => t.response_event_id))).filter(Boolean);
-  const { data: responseNotes = [] } = responseIds.length
+  const { data: responseNotesData } = responseIds.length
     ? await supabase
         .from('current_notes')
         .select('id, title, type')
         .in('id', responseIds)
         .returns<NoteSummary[]>()
     : { data: [] as NoteSummary[] };
+  const responseNotes = responseNotesData ?? [];
 
   const responseById = new Map(responseNotes.map((n) => [n.id, n]));
   const myNoteById = new Map(myNotes.map((n) => [n.id, n.title ?? 'Untitled']));
@@ -139,11 +142,11 @@ export default async function ConnectionsPage() {
             <h2 className="text-lg font-semibold text-white">Invites you sent</h2>
             <span className="text-xs text-white/50">Status updates as they engage</span>
           </div>
-          {invitesData.length === 0 ? (
+          {invites.length === 0 ? (
             <p className="text-sm text-white/60">No invites yet. Add a phone number when you mention someone to invite them.</p>
           ) : (
             <div className="space-y-3">
-              {invitesData.map((invite) => {
+              {invites.map((invite) => {
                 const noteTitle = invite.timeline_events?.title || 'Linked note';
                 const statusLabel = formatStatus(invite.status);
                 return (

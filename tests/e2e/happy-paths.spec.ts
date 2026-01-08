@@ -223,10 +223,13 @@ test.describe('Chat interaction', () => {
 
 test.describe('Admin trust request approval', () => {
   test('admin can approve a trust request', async ({ page }) => {
-    test.skip(
-      !resolvedAdminEmail || !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
-    );
+    if (!resolvedAdminEmail || !testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const adminEmail = resolvedAdminEmail;
+    const loginSecret = testLoginSecret;
+    const admin = adminClient;
 
     const stamp = Date.now();
 
@@ -259,8 +262,8 @@ test.describe('Admin trust request approval', () => {
       async ({ contributorId, trustRequestId }) => {
       if (!contributorId || !trustRequestId) return;
       // Login as admin
-      await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
-      await ensureAdminProfile(resolvedAdminEmail);
+      await loginWithRetry(page, adminEmail, loginSecret);
+      await ensureAdminProfile(adminEmail);
 
       // Approve via API
       const approveRes = await page.request.patch('/api/admin/trust-requests', {
@@ -269,7 +272,7 @@ test.describe('Admin trust request approval', () => {
       expect(approveRes.ok()).toBeTruthy();
 
       // Verify trust request was updated
-      const { data: updatedRequest } = await adminClient
+      const { data: updatedRequest } = await admin
         .from('trust_requests')
         .select('status, resolved_at')
         .eq('id', trustRequestId)
@@ -278,7 +281,7 @@ test.describe('Admin trust request approval', () => {
       expect((updatedRequest as { resolved_at?: string } | null)?.resolved_at).toBeTruthy();
 
       // Verify contributor is now trusted
-      const { data: updatedContributor } = await adminClient
+      const { data: updatedContributor } = await admin
         .from('contributors')
         .select('trusted')
         .eq('id', contributorId)
@@ -289,10 +292,13 @@ test.describe('Admin trust request approval', () => {
   });
 
   test('admin can decline a trust request', async ({ page }) => {
-    test.skip(
-      !resolvedAdminEmail || !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.'
-    );
+    if (!resolvedAdminEmail || !testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET, ADMIN_EMAILS/E2E_ADMIN_EMAIL, and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const adminEmail = resolvedAdminEmail;
+    const loginSecret = testLoginSecret;
+    const admin = adminClient;
 
     const stamp = Date.now();
 
@@ -325,8 +331,8 @@ test.describe('Admin trust request approval', () => {
       async ({ contributorId, trustRequestId }) => {
       if (!contributorId || !trustRequestId) return;
       // Login as admin
-      await loginWithRetry(page, resolvedAdminEmail, testLoginSecret);
-      await ensureAdminProfile(resolvedAdminEmail);
+      await loginWithRetry(page, adminEmail, loginSecret);
+      await ensureAdminProfile(adminEmail);
 
       // Decline via API
       const declineRes = await page.request.patch('/api/admin/trust-requests', {
@@ -335,7 +341,7 @@ test.describe('Admin trust request approval', () => {
       expect(declineRes.ok()).toBeTruthy();
 
       // Verify trust request was declined
-      const { data: updatedRequest } = await adminClient
+      const { data: updatedRequest } = await admin
         .from('trust_requests')
         .select('status')
         .eq('id', trustRequestId)
@@ -343,7 +349,7 @@ test.describe('Admin trust request approval', () => {
       expect((updatedRequest as { status?: string } | null)?.status).toBe('declined');
 
       // Verify contributor is still NOT trusted
-      const { data: updatedContributor } = await adminClient
+      const { data: updatedContributor } = await admin
         .from('contributors')
         .select('trusted')
         .eq('id', contributorId)
@@ -356,10 +362,12 @@ test.describe('Admin trust request approval', () => {
 
 test.describe('Share memory flow', () => {
   test('authenticated user can share a memory', async ({ page }) => {
-    test.skip(
-      !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.'
-    );
+    if (!testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const loginSecret = testLoginSecret;
+    const admin = adminClient;
 
     const stamp = Date.now();
     const testEmail = `e2e-share-${stamp}@example.com`;
@@ -401,7 +409,7 @@ test.describe('Share memory flow', () => {
 
         try {
           // Login via test endpoint
-          await loginWithRetry(page, `e2e-share-${stamp}@example.com`, testLoginSecret);
+          await loginWithRetry(page, `e2e-share-${stamp}@example.com`, loginSecret);
 
           // Navigate to share page
           await page.goto('/share');
@@ -445,7 +453,7 @@ test.describe('Share memory flow', () => {
           expect(createdEventId).toBeTruthy();
 
           // Verify in database
-          const { data: events } = await adminClient
+          const { data: events } = await admin
             .from('timeline_events')
             .select('id, title, status, contributor_id')
             .eq('contributor_id', contributorId)
@@ -465,10 +473,12 @@ test.describe('Share memory flow', () => {
   });
 
   test('trusted user memory is published immediately', async ({ page }) => {
-    test.skip(
-      !testLoginSecret || !adminClient,
-      'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.'
-    );
+    if (!testLoginSecret || !adminClient) {
+      test.skip(true, 'Set TEST_LOGIN_SECRET and SUPABASE_SECRET_KEY.');
+      return;
+    }
+    const loginSecret = testLoginSecret;
+    const admin = adminClient;
 
     const stamp = Date.now();
     const testEmail = `e2e-share-trusted-${stamp}@example.com`;
@@ -510,7 +520,7 @@ test.describe('Share memory flow', () => {
 
         try {
           // Login
-          await loginWithRetry(page, testEmail, testLoginSecret);
+          await loginWithRetry(page, testEmail, loginSecret);
 
           // Navigate to share page
           await page.goto('/share');
@@ -547,7 +557,7 @@ test.describe('Share memory flow', () => {
           expect(createdEventId).toBeTruthy();
 
           // Verify status is published
-          const { data: events } = await adminClient
+          const { data: events } = await admin
             .from('timeline_events')
             .select('id, status')
             .eq('contributor_id', contributorId)

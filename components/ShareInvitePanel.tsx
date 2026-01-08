@@ -10,7 +10,7 @@ type ShareInvitePanelProps = {
   content: string;
   contributorName: string | null;
   contributorRelation: string | null;
-  year: number;
+  year: number | null;
   yearEnd: number | null;
   timingCertainty: "exact" | "approximate" | "vague" | null;
   eventType: "memory" | "milestone" | "origin" | null;
@@ -35,10 +35,11 @@ const RELATIONSHIP_GROUPS = {
 } as const;
 
 function formatYearLabel(
-  year: number,
+  year: number | null,
   yearEnd: number | null,
   timingCertainty: ShareInvitePanelProps["timingCertainty"]
 ) {
+  if (typeof year !== "number") return "Unknown year";
   const isApproximate = timingCertainty && timingCertainty !== "exact";
   const hasRange = typeof yearEnd === "number" && yearEnd !== year;
   if (hasRange) {

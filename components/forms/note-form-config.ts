@@ -47,7 +47,7 @@ export const WRITING_GUIDANCE = {
   label: 'Writing guidance',
   toggleShow: 'why?',
   toggleHide: 'hide',
-  explainer: 'Anchor notes in concrete scenes - who, where, what happened - so memories stay verifiable and personal.',
+  explainer: 'The code is looking for common ways people turn opinions or interpretations into "facts."',
   meaningAssertionAction: 'Move this to "Why it matters to you"',
 } as const;
 

@@ -127,17 +127,19 @@ export async function POST(request: NextRequest) {
   // Determine story chain root and depth
     let chainInfo = computeChainInfo(null);
   let parentPrivacy: 'public' | 'family' | null = null;
+  let parentSharedMomentId: string | null = null;
 
     if (prompted_by_event_id) {
-      // Look up the parent event's chain info
+      // Look up the parent event's chain info and shared_moment_id for sibling linking
       const { data: parentEvent } = await admin.from('timeline_events')
-      .select('id, root_event_id, chain_depth, privacy_level')
+      .select('id, root_event_id, chain_depth, privacy_level, shared_moment_id')
         .eq('id', prompted_by_event_id)
         .single();
 
       if (parentEvent) {
         chainInfo = computeChainInfo(parentEvent as ParentEventInfo);
       parentPrivacy = (parentEvent as { privacy_level?: string | null }).privacy_level === 'public' ? 'public' : 'family';
+      parentSharedMomentId = (parentEvent as { shared_moment_id?: string | null }).shared_moment_id || prompted_by_event_id;
       }
     }
 
@@ -249,6 +251,29 @@ export async function POST(request: NextRequest) {
       await admin.from('timeline_events')
         .update({ root_event_id: eventId })
         .eq('id', eventId);
+    }
+
+    // Event-centered model: Set shared_moment_id for sibling grouping
+    if (eventId) {
+      if (parentSharedMomentId) {
+        // This is a perspective on an existing moment - share the same shared_moment_id
+        await admin.from('timeline_events')
+          .update({ shared_moment_id: parentSharedMomentId })
+          .eq('id', eventId);
+
+        // Create OVERLAPS memory_link to connect siblings
+        await admin.from('memory_links').insert({
+          from_event_id: prompted_by_event_id,
+          to_event_id: eventId,
+          link_type_id: 1, // OVERLAPS
+          created_by: contributorId,
+        });
+      } else {
+        // Standalone event - set shared_moment_id to self
+        await admin.from('timeline_events')
+          .update({ shared_moment_id: eventId })
+          .eq('id', eventId);
+      }
     }
 
     // TODO: Enable geocoding when map feature is implemented

@@ -40,6 +40,14 @@ type LinkedStory = {
   isOriginal: boolean; // true if this event is the original, false if it's a response
 };
 
+type SiblingPerspective = {
+  id: string;
+  title: string;
+  preview: string | null;
+  contributor_id: string | null;
+  contributor: { name: string; relation: string | null } | null;
+};
+
 export default async function MemoryPage({
   params,
 }: {
@@ -72,6 +80,7 @@ export default async function MemoryPage({
 
   let event: TimelineEvent | null = null;
   const linkedStories: LinkedStory[] = [];
+  const siblingPerspectives: SiblingPerspective[] = [];
 
   if (admin) {
     const { data: eventData, error: eventError } = await admin
@@ -88,6 +97,7 @@ export default async function MemoryPage({
       }
     } else if (eventData) {
       const baseEvent = eventData as Database["public"]["Views"]["current_notes"]["Row"];
+      const baseEventId = baseEvent.id ?? id;
 
       let contributor: { name: string; relation: string | null } | null = null;
       if (baseEvent.contributor_id) {
@@ -110,7 +120,7 @@ export default async function MemoryPage({
       const { data: mediaRows, error: mediaError } = await admin
         .from("event_media")
         .select("event_id, media:media(*)")
-        .eq("event_id", baseEvent.id);
+        .eq("event_id", baseEventId);
       if (mediaError) {
         console.warn("Error fetching media:", mediaError);
       } else {
@@ -134,7 +144,7 @@ export default async function MemoryPage({
           person:people(id, canonical_name, visibility),
           contributor:contributors!event_references_contributor_id_fkey(name)
         `)
-        .eq("event_id", baseEvent.id);
+        .eq("event_id", baseEventId);
       if (referenceError) {
         if (referenceError.code !== "PGRST200") {
           console.warn("Error fetching references:", referenceError);
@@ -152,7 +162,7 @@ export default async function MemoryPage({
       const { data: mentionData, error: mentionError } = await admin
         .from("note_mentions")
         .select("mention_text, status, visibility, display_label")
-        .eq("event_id", baseEvent.id);
+        .eq("event_id", baseEventId);
       if (mentionError) {
         if (mentionError.code !== "PGRST200") {
           console.warn("Error fetching mentions:", mentionError);
@@ -178,6 +188,7 @@ export default async function MemoryPage({
       // Redact private names before rendering (include author payload so owner can see real names)
       event = {
         ...baseEvent,
+        id: baseEventId,
         contributor,
         media,
         references: redactReferences(rawRefs, { includeAuthorPayload: true }),
@@ -305,6 +316,42 @@ export default async function MemoryPage({
           }
         }
       }
+
+      // Fetch sibling perspectives (event-centered model)
+      const { data: siblings } = await admin.rpc('get_sibling_memories', { event_id: id });
+      if (siblings && Array.isArray(siblings)) {
+        const siblingContributorIds = new Set<string>();
+        for (const sibling of siblings) {
+          if (sibling.contributor_id) siblingContributorIds.add(sibling.contributor_id);
+        }
+
+        const siblingContributorsById = new Map<string, { name: string; relation: string | null }>();
+        if (siblingContributorIds.size > 0) {
+          const { data: siblingContributors } = await admin
+            .from("contributors")
+            .select("id, name, relation")
+            .in("id", [...siblingContributorIds]);
+
+          for (const contributor of siblingContributors ?? []) {
+            siblingContributorsById.set(contributor.id, {
+              name: contributor.name,
+              relation: contributor.relation ?? null,
+            });
+          }
+        }
+
+        for (const sibling of siblings) {
+          siblingPerspectives.push({
+            id: sibling.id,
+            title: sibling.title,
+            preview: sibling.preview,
+            contributor_id: sibling.contributor_id,
+            contributor: sibling.contributor_id
+              ? siblingContributorsById.get(sibling.contributor_id) ?? null
+              : null,
+          });
+        }
+      }
     }
   }
 
@@ -367,14 +414,27 @@ export default async function MemoryPage({
     ?.map((item) => item.media)
     .filter((item): item is Database["public"]["Tables"]["media"]["Row"] => Boolean(item));
 
+  const eventId = event.id ?? id;
   const respondLink =
-    event.type === "memory" ? `/share?responding_to=${event.id}` : "/share";
-  const respondLabel = event.type === "memory" ? "Add your perspective" : "Contribute";
+    event.type === "memory" ? `/share?responding_to=${eventId}` : "/share";
+
+  // Check if current user already has a perspective on this moment
+  const viewerHasPerspective = authContributorId
+    ? siblingPerspectives.some((p) => p.contributor_id === authContributorId) ||
+      event.contributor_id === authContributorId
+    : false;
+
+  // Dynamic label based on whether perspectives exist
+  const respondLabel = event.type !== "memory"
+    ? "Contribute"
+    : siblingPerspectives.length > 0
+      ? "Add your perspective"
+      : "Share your version of this moment";
 
   const promptedEvent = (event as unknown as { prompted_event?: { id: string; title: string; privacy_level?: string | null } | null }).prompted_event;
   const canShowPrompted =
     promptedEvent &&
-    promptedEvent.id !== event.id &&
+    promptedEvent.id !== eventId &&
     (promptedEvent.privacy_level === "public" || promptedEvent.privacy_level === event.privacy_level);
 
   // Mask names in content for non-owners based on visibility preferences
@@ -385,8 +445,8 @@ export default async function MemoryPage({
   // Build edit link - prefer edit session token, fall back to auth-based edit page
   const editLink = viewerIsOwner
     ? editSession?.token
-      ? `/edit/${editSession.token}?event_id=${event.id}`
-      : `/edit?event_id=${event.id}`
+      ? `/edit/${editSession.token}?event_id=${eventId}`
+      : `/edit?event_id=${eventId}`
     : null;
 
   return (
@@ -399,7 +459,7 @@ export default async function MemoryPage({
           {canShowPrompted && promptedEvent && (
             <PromptedEventLink
               promptedEvent={promptedEvent}
-              currentEventId={event.id}
+              currentEventId={eventId}
             />
           )}
           <h1 className="text-3xl sm:text-4xl font-serif text-white">
@@ -563,6 +623,47 @@ export default async function MemoryPage({
           )}
         </div>
 
+        {/* Sibling perspectives (event-centered model) */}
+        {siblingPerspectives.length > 0 && (
+          <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/50 mb-4">
+              Other perspectives on this moment
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {siblingPerspectives.map((perspective) => {
+                const isViewersPerspective = authContributorId === perspective.contributor_id;
+                return (
+                  <Link
+                    key={perspective.id}
+                    href={`/memory/${perspective.id}`}
+                    className="block p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5"
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <p className="text-sm text-white/70">
+                        {perspective.contributor?.name || "Someone"}
+                        {perspective.contributor?.relation && (
+                          <span className="text-white/40"> ({perspective.contributor.relation})</span>
+                        )}
+                      </p>
+                      {isViewersPerspective && (
+                        <span className="text-[10px] uppercase tracking-wider text-[#e07a5f] bg-[#e07a5f]/10 px-2 py-0.5 rounded">
+                          You
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-white line-clamp-2">{perspective.title}</p>
+                    {perspective.preview && (
+                      <p className="text-xs text-white/50 mt-1 line-clamp-2">
+                        {perspective.preview}
+                      </p>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Linked notes */}
         {linkedStories.length > 0 && (
           <div className="mt-8 rounded-xl border border-white/10 bg-white/5 p-5">
@@ -614,27 +715,29 @@ export default async function MemoryPage({
         )}
 
         <ShareInvitePanel
-          eventId={event.id}
-          title={event.title}
+          eventId={eventId}
+          title={event.title ?? 'Untitled note'}
           content={event.full_entry || event.preview || ""}
           contributorName={event.contributor?.name || null}
           contributorRelation={event.contributor?.relation || null}
-          year={event.year}
+          year={event.year ?? null}
           yearEnd={event.year_end ?? null}
           timingCertainty={(event.timing_certainty ?? null) as "exact" | "approximate" | "vague" | null}
           eventType={(event.type ?? null) as "memory" | "milestone" | "origin" | null}
           viewerIsOwner={viewerIsOwner}
         />
 
-        {/* Single CTA - respond/add perspective */}
-        <div className="mt-10">
-          <Link
-            href={respondLink}
-            className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2.5 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
-          >
-            {respondLabel}
-          </Link>
-        </div>
+        {/* Single CTA - respond/add perspective (hide if viewer already has one) */}
+        {!viewerHasPerspective && (
+          <div className="mt-10">
+            <Link
+              href={respondLink}
+              className="inline-flex items-center gap-2 rounded-full bg-[#e07a5f] text-white px-5 py-2.5 text-xs uppercase tracking-[0.2em] hover:bg-[#d06a4f] transition-colors"
+            >
+              {respondLabel}
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

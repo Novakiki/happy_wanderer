@@ -89,7 +89,7 @@ async function ensureIdentityClaim(email: string): Promise<IdentityInfo | null> 
 
     userId = createResult.data.user.id;
 
-    await admin
+    const { error: profileInsertError } = await admin
       .from('profiles')
       .insert({
         id: userId,
@@ -97,8 +97,10 @@ async function ensureIdentityClaim(email: string): Promise<IdentityInfo | null> 
         relation: 'test',
         email: normalizedEmail,
         contributor_id: null,
-      })
-      .catch(() => undefined);
+      });
+    if (profileInsertError) {
+      console.warn('Fixture seed: could not insert profile:', profileInsertError.message);
+    }
   }
 
   let contributorId = (existingProfile as { contributor_id?: string | null } | null)?.contributor_id ?? null;

@@ -8,6 +8,13 @@ type Props = {
   searchParams: Promise<{ responding_to?: string; storyteller?: string }>;
 };
 
+type RespondingToEvent = {
+  id: string;
+  title: string;
+  preview: string | null;
+  contributorName: string | null;
+};
+
 export default async function SharePage({ searchParams }: Props) {
   const params = await searchParams;
   const respondingTo = params.responding_to;
@@ -66,6 +73,36 @@ export default async function SharePage({ searchParams }: Props) {
     }
   }
 
+  // Fetch the event being responded to (if any)
+  let respondingToEvent: RespondingToEvent | null = null;
+  if (respondingTo) {
+    const admin = createAdminClient();
+    const { data: eventData } = await admin
+      .from("current_notes")
+      .select("id, title, preview, contributor_id")
+      .eq("id", respondingTo)
+      .single();
+
+    if (eventData && eventData.id && eventData.title) {
+      let contributorName: string | null = null;
+      if (eventData.contributor_id) {
+        const { data: contributor } = await admin
+          .from("contributors")
+          .select("name")
+          .eq("id", eventData.contributor_id)
+          .single();
+        contributorName = contributor?.name ?? null;
+      }
+
+      respondingToEvent = {
+        id: eventData.id,
+        title: eventData.title,
+        preview: eventData.preview,
+        contributorName,
+      };
+    }
+  }
+
   return (
     <div
       className="min-h-screen text-white bg-[#0b0b0b]"
@@ -75,6 +112,7 @@ export default async function SharePage({ searchParams }: Props) {
       <section className="max-w-2xl mx-auto px-6 pt-24 pb-16">
         <MemoryForm
           respondingToEventId={respondingTo}
+          respondingToEvent={respondingToEvent}
           storytellerName={storytellerName}
           userProfile={userProfile}
           trustRequestStatus={trustRequestStatus}
