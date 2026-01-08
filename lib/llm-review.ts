@@ -128,17 +128,18 @@ export async function runLlmReview(input: LlmReviewInput): Promise<LlmReviewResu
     return { approve: false, reasons: ['Missing content.'] };
   }
 
-  // Test / CI escape hatch: allow running E2E flows without making external LLM calls.
-  // This preserves the production safety gate while keeping automated tests deterministic
-  // (and avoiding token usage) when explicitly enabled.
-  if (process.env.SKIP_LLM_REVIEW === 'true') {
-    return { approve: true, reasons: [] };
-  }
-
-  // Deterministic preflight checks (no LLM call).
+  // Deterministic preflight checks (no LLM call). These should apply everywhere,
+  // including tests/CI, so obvious PII never slips through.
   const piiScan = scanForDisallowedPii(input);
   if (!piiScan.ok) {
     return { approve: false, reasons: piiScan.reasons };
+  }
+
+  // Test / CI escape hatch: allow running E2E flows without making external LLM calls.
+  // This keeps automated tests deterministic (and avoids token usage) when explicitly enabled,
+  // while still enforcing the deterministic PII preflight checks above.
+  if (process.env.SKIP_LLM_REVIEW === 'true') {
+    return { approve: true, reasons: [] };
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
