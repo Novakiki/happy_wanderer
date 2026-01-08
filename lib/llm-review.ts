@@ -12,11 +12,41 @@ export type LlmReviewResult = {
   reasons: string[];
 };
 
+type PiiScanResult = { ok: true } | { ok: false; reasons: string[] };
+
 const FUNCTION_URL = (supabaseUrl: string) => {
   const url = new URL(supabaseUrl);
   const host = url.hostname.replace('.supabase.co', '.functions.supabase.co');
   return `${url.protocol}//${host}/gpt5-mini`;
 };
+
+function scanForDisallowedPii(input: LlmReviewInput): PiiScanResult {
+  const text = `${input.title ?? ''}\n${input.why ?? ''}\n${input.content ?? ''}`;
+  const reasons: string[] = [];
+
+  // Email addresses
+  const emailRegex = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+  if (emailRegex.test(text)) {
+    reasons.push('Contains an email address.');
+  }
+
+  // Phone numbers (US-ish + international-ish). Intentionally broad; false positives are OK (fail-closed).
+  // Examples matched: (555) 123-4567, 555-123-4567, +1 555 123 4567, 5551234567
+  const phoneRegex =
+    /\b(?:\+?\d{1,3}[\s.-]?)?(?:\(\s*\d{3}\s*\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}\b/;
+  if (phoneRegex.test(text)) {
+    reasons.push('Contains a phone number.');
+  }
+
+  // Physical addresses (very heuristic): number + street name + common suffix.
+  const addressRegex =
+    /\b\d{1,6}\s+[A-Z0-9.'-]+(?:\s+[A-Z0-9.'-]+){0,4}\s+(?:st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|ct|court|cir|circle|way|pl|place|trl|trail)\b/i;
+  if (addressRegex.test(text)) {
+    reasons.push('Contains a physical address.');
+  }
+
+  return reasons.length > 0 ? { ok: false, reasons } : { ok: true };
+}
 
 const buildPrompt = (input: LlmReviewInput) => {
   const title = input.title?.trim() || '(none)';
@@ -29,7 +59,8 @@ const buildPrompt = (input: LlmReviewInput) => {
     'Reject if it contains: phone numbers, email addresses, physical addresses, sensitive medical or financial details, minors + explicit content, or slurs/hate speech.',
     'Handle person names with consent rules:',
     '- Always allow and never flag Valerie Park Anderson and her variants: Val, Valerie, Valeri, Valera, Valeria, Valerie Anderson, Valerie Park Anderson.',
-    '- Do NOT block well-known public figures or fictional characters; they can remain as plain text and must NOT create person records.',
+    '- Only treat a name as a public figure if you are EXTREMELY confident it is a widely-known real person (actors, presidents, major historical figures). If you are unsure, treat it as a private individual.',
+    '- Do NOT block fictional characters; they can remain as plain text and must NOT create person records.',
     '- For any other person name (likely family/relative/private individual), require consent: return approve=false with reason "Needs consent for named person."',
     'Otherwise approve.',
     'Respond ONLY in JSON with shape: {"approve": true|false, "reasons": ["..."]}.',
@@ -95,6 +126,19 @@ const parseLlmResponse = (raw: unknown): LlmReviewResult => {
 export async function runLlmReview(input: LlmReviewInput): Promise<LlmReviewResult> {
   if (!input.content?.trim()) {
     return { approve: false, reasons: ['Missing content.'] };
+  }
+
+  // Test / CI escape hatch: allow running E2E flows without making external LLM calls.
+  // This preserves the production safety gate while keeping automated tests deterministic
+  // (and avoiding token usage) when explicitly enabled.
+  if (process.env.SKIP_LLM_REVIEW === 'true') {
+    return { approve: true, reasons: [] };
+  }
+
+  // Deterministic preflight checks (no LLM call).
+  const piiScan = scanForDisallowedPii(input);
+  if (!piiScan.ok) {
+    return { approve: false, reasons: piiScan.reasons };
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;
